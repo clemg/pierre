@@ -165,13 +165,19 @@ export function Root({
     [files, sortComparator]
   );
 
-  // Build path<->id maps from treeData
+  // Build the path/id lookup maps without allocating a large Object.entries()
+  // array for the whole tree on every fresh render.
   const { pathToId, idToPath } = useMemo(() => {
     const p2i = new Map<string, string>();
     const i2p = new Map<string, string>();
-    for (const [id, node] of Object.entries(treeData)) {
-      p2i.set(node.path, id);
-      i2p.set(id, node.path);
+    for (const id in treeData) {
+      const node = treeData[id];
+      if (node == null) {
+        continue;
+      }
+      const path = node.path;
+      p2i.set(path, id);
+      i2p.set(id, path);
     }
     return { pathToId: p2i, idToPath: i2p };
   }, [treeData]);
