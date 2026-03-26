@@ -184,7 +184,6 @@ export function Root({
   }
 
   const restTreeConfig = useTreeStateConfig({
-    treeData,
     pathToId,
     stateConfig,
     flattenEmptyDirectories,

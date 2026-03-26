@@ -254,8 +254,8 @@ export const createTree = <T>(
       getItems: () => {
         if (rebuildScheduled) rebuildItemMeta();
         itemInstances ??= visibleItemIds.map((itemId) =>
-            getOrCreateItemInstance(itemId)
-          );
+          getOrCreateItemInstance(itemId)
+        );
         return itemInstances;
       },
       registerElement: (_opts, element) => {

@@ -2,15 +2,20 @@
 
 ## Objective
 
-Reduce the end-to-end render-path cost for very large file trees in
-`@pierre/trees` using the existing render benchmark workload:
+Reduce the fresh client-mount render cost for very large file trees in
+`@pierre/trees` using the new client benchmark workload:
 
-`bun ws trees benchmark:render`
+`bun ws trees benchmark:render:client`
 
-This benchmark models the virtualized initial render path for a very large file
-list while still requiring the component to ingest the full list of files. The
-primary goal is to lower the end-to-end median milliseconds for the benchmark's
-`constructAndRender` operation on the default Linux fixture.
+This benchmark models a fresh `FileTree.render(...)` mount for a virtualized
+Linux file tree in a DOM harness. It still requires the component to ingest the
+full file list, run the real client render path, and mount the initial
+virtualized window. The primary goal is to lower the median milliseconds for
+`clientMount` on the default Linux fixture.
+
+We are keeping the older SSR-oriented `benchmark:render` as a fast sub-benchmark
+for isolated data-structure/render-string work, but it is no longer the primary
+optimization target because it misses too much of the real fresh-mount path.
 
 Prior optimization work already improved:
 
@@ -22,19 +27,20 @@ that happens before virtualization decides which rows to emit.
 
 ## Metrics
 
-- **Primary**: `construct_and_render_ms` (ms, lower is better) — benchmark
-  median for the `constructAndRender` operation on the default render benchmark.
+- **Primary**: `client_mount_ms` (ms, lower is better) — benchmark median for a
+  fresh `FileTree.render(...)` client mount on the default Linux fixture.
 - **Secondary**:
-  - `static_window_render_ms` — isolated SSR cost for rendering the visible
-    virtualized window once the instance already exists.
-  - `construct_and_render_p95_ms` — tail latency for the end-to-end path.
+  - `client_mount_p95_ms` — tail latency for the fresh mount path.
   - `html_items` — rendered item count checksum guard.
+  - `shadow_html_length` — mounted shadow-root output size checksum guard.
   - `expanded_folders` — expanded folder count checksum guard.
+  - `ssr_construct_and_render_ms` — optional cross-check from the older SSR
+    sub-benchmark when needed during diagnosis, but not the primary target.
 
 ## How to Run
 
-`./autoresearch.sh` — runs the render benchmark and emits structured `METRIC`
-lines.
+`./autoresearch.sh` — runs the client-mount benchmark and emits structured
+`METRIC` lines.
 
 ## Files in Scope
 
@@ -51,9 +57,11 @@ lines.
 - `packages/trees/src/utils/expandPaths.ts` — ancestor expansion mapping.
 - `packages/trees/src/utils/fileListToTree.ts` — still in scope only if it
   remains a dominant part of the full render benchmark.
+- `packages/trees/scripts/benchmarkVirtualizedFileTreeClientMount.ts` — primary
+  fresh client-mount benchmark.
 - `packages/trees/scripts/benchmarkVirtualizedFileTreeRender.ts` and
-  `packages/trees/scripts/lib/benchmarkVirtualizedRenderRuntime.tsx` —
-  instrumentation only when needed for better optimization signal.
+  `packages/trees/scripts/lib/benchmarkVirtualizedRenderRuntime.tsx` — older
+  SSR-oriented sub-benchmark and instrumentation helpers.
 - `packages/trees/test/**` — update only when behavior changes are intentional
   and externally correct.
 
@@ -93,8 +101,13 @@ lines.
   virtualized render paths (`Root.tsx` and the render benchmark runtime) to
   slice/render from those IDs, and still rebuilt the synthetic root item
   instance on each rebuild to preserve the existing `instanceBuilder` contract.
-  This cut `construct_and_render_ms` from ~120.3ms to ~58.2ms while keeping
-  tests/typecheck green.
+  This cut the older SSR-oriented `construct_and_render_ms` from ~120.3ms to
+  ~58.2ms while keeping tests/typecheck green.
+- ✅ **Observed / target shift**: a new jsdom client-mount benchmark is a much
+  better proxy for the real docs-page button click. On smoke runs it reports
+  roughly ~38.8ms for `tiny-flat` and ~153.2ms for the Linux fixture, which is
+  much closer to the real-world large-vs-small scaling than the SSR benchmark.
+  Future experiments should optimize this client-mount benchmark first.
 - ❌ **Checks-failed prototype**: fully lazy item-instance materialization with
   no rebuild-time root instance refresh achieved a similar win (~57.6ms) but
   broke internal `instanceBuilder` expectations in `test/core/core.test.ts`.
