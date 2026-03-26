@@ -74,6 +74,7 @@ export interface FileTreeRootProps {
   stateConfig?: FileTreeStateConfig;
   handleRef?: { current: FileTreeHandle | null };
   callbacksRef?: { current: FileTreeCallbacks };
+  initialViewportHeight?: number | null;
 }
 
 const EMPTY_ANCESTORS: string[] = [];
@@ -92,6 +93,7 @@ export function Root({
   stateConfig,
   handleRef,
   callbacksRef,
+  initialViewportHeight,
 }: FileTreeRootProps): JSX.Element {
   'use no memo';
   const {
@@ -734,6 +736,7 @@ export function Root({
                     ? focusedIndex
                     : null
                 }
+                initialViewportHeight={initialViewportHeight}
               />
               {contextMenuTrigger}
             </div>
