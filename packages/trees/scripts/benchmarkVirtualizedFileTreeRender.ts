@@ -1,19 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { h } from 'preact';
-import { renderToString } from 'preact-render-to-string';
+import { fileURLToPath } from 'node:url';
 
-import { type FileTreeRootProps, Root } from '../src/components/Root';
-import type { VirtualRange } from '../src/components/VirtualizedList';
-import {
-  FileTree,
-  type FileTreeOptions,
-  type FileTreeStateConfig,
-} from '../src/FileTree';
-import {
-  forEachFolderInNormalizedPath,
-  normalizeInputPath,
-} from '../src/utils/normalizeInputPath';
+import type { FileTreeOptions, FileTreeStateConfig } from '../src/FileTree';
 import {
   type BenchmarkEnvironment,
   calculateDeltaPercent,
@@ -27,6 +16,11 @@ import {
   summarizeSamples,
   type TimingSummary,
 } from './lib/benchmarkUtils';
+import type {
+  BenchmarkRenderRuntime,
+  BenchmarkVirtualizedRootProps,
+  BenchmarkVirtualRange,
+} from './lib/benchmarkVirtualizedRenderRuntime';
 import {
   type FileListToTreeBenchmarkCase,
   filterBenchmarkCases,
@@ -47,6 +41,26 @@ export interface BenchmarkConfig {
   viewportHeight: number;
 }
 
+interface BenchmarkRuntimeInfo {
+  codePath: 'dist';
+  nodeEnv: 'production';
+  renderer: 'preact-render-to-string';
+  renderHarness: 'benchmark-local-static-virtualizer';
+  buildCommand: 'bun run build';
+}
+
+interface LoadedBenchmarkRuntime {
+  runtimeInfo: BenchmarkRuntimeInfo;
+  h: typeof import('preact').h;
+  renderToString: typeof import('preact-render-to-string').renderToString;
+  benchmarkRuntime: BenchmarkRenderRuntime;
+}
+
+interface BenchmarkFileTreeInstance {
+  options: FileTreeOptions;
+  stateConfig: FileTreeStateConfig;
+}
+
 interface PreparedBenchmarkCase {
   name: string;
   source: FileListToTreeBenchmarkCase['source'];
@@ -56,8 +70,8 @@ interface PreparedBenchmarkCase {
   expandedFolderCount: number;
   options: FileTreeOptions;
   stateConfig: FileTreeStateConfig;
-  sharedRenderInstance: FileTree;
-  expectedWindowRange: VirtualRange;
+  sharedRenderInstance: BenchmarkFileTreeInstance;
+  expectedWindowRange: BenchmarkVirtualRange;
   expectedRenderedItemCount: number;
   expectedHtmlLength: number;
   htmlChecksum: number;
@@ -104,6 +118,7 @@ interface CaseComparison {
 interface BenchmarkComparison {
   baselinePath: string;
   baselineEnvironment: BenchmarkEnvironment;
+  baselineRuntime: BenchmarkRuntimeInfo;
   baselineConfig: BenchmarkConfig;
   unmatchedCurrentCases: string[];
   unmatchedBaselineCases: string[];
@@ -114,6 +129,7 @@ interface BenchmarkComparison {
 interface BenchmarkOutput {
   benchmark: 'virtualizedFileTreeRender';
   environment: BenchmarkEnvironment;
+  runtime: BenchmarkRuntimeInfo;
   config: BenchmarkConfig;
   checksum: number;
   cases: CaseSummary[];
@@ -156,16 +172,29 @@ const COMPARE_SENSITIVE_CONFIG_FIELDS = [
 ] as const;
 type CompareSensitiveConfigField =
   (typeof COMPARE_SENSITIVE_CONFIG_FIELDS)[number];
+const COMPARE_SENSITIVE_RUNTIME_FIELDS = [
+  'codePath',
+  'nodeEnv',
+  'renderer',
+  'renderHarness',
+] as const;
+type CompareSensitiveRuntimeField =
+  (typeof COMPARE_SENSITIVE_RUNTIME_FIELDS)[number];
+type ComparableRuntimeMetadata = Record<CompareSensitiveRuntimeField, string>;
 type ComparableRenderBenchmarkBaseline = {
   path: string;
   output: {
     config: Pick<BenchmarkConfig, CompareSensitiveConfigField>;
+    runtime?: Partial<ComparableRuntimeMetadata>;
   };
 };
 type ComparableRenderBenchmarkComparison = {
   unmatchedCurrentCases: string[];
   checksumMismatches: string[];
 };
+
+const packageRoot = fileURLToPath(new URL('../', import.meta.url));
+const textDecoder = new TextDecoder();
 
 function printHelpAndExit(): never {
   console.log('Usage: bun ws trees benchmark:render -- [options]');
@@ -262,6 +291,71 @@ function parseArgs(argv: string[]): BenchmarkConfig {
   return config;
 }
 
+function decodeOutput(output: Uint8Array): string {
+  return textDecoder.decode(output).trim();
+}
+
+// Benchmark the same code we publish by rebuilding `dist/` up front and then
+// importing the built modules under an explicit production NODE_ENV.
+function ensureProductionDistBuild(): BenchmarkRuntimeInfo {
+  process.env.NODE_ENV = 'production';
+
+  const buildResult = Bun.spawnSync({
+    cmd: ['bun', 'run', 'build'],
+    cwd: packageRoot,
+    env: {
+      ...process.env,
+      AGENT: '1',
+      NODE_ENV: 'production',
+    },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+
+  if (buildResult.exitCode !== 0) {
+    const stdout = decodeOutput(buildResult.stdout);
+    const stderr = decodeOutput(buildResult.stderr);
+    throw new Error(
+      [
+        'Failed to build @pierre/trees before running the render benchmark.',
+        stdout !== '' ? `stdout:\n${stdout}` : null,
+        stderr !== '' ? `stderr:\n${stderr}` : null,
+      ]
+        .filter((line): line is string => line != null)
+        .join('\n\n')
+    );
+  }
+
+  return {
+    codePath: 'dist',
+    nodeEnv: 'production',
+    renderer: 'preact-render-to-string',
+    renderHarness: 'benchmark-local-static-virtualizer',
+    buildCommand: 'bun run build',
+  };
+}
+
+async function loadBenchmarkRuntime(): Promise<LoadedBenchmarkRuntime> {
+  const runtimeInfo = ensureProductionDistBuild();
+  const [{ h }, renderToStringModule, runtimeModule] = await Promise.all([
+    import('preact'),
+    import('preact-render-to-string'),
+    import(
+      new URL('./lib/benchmarkVirtualizedRenderRuntime.tsx', import.meta.url)
+        .href
+    ),
+  ]);
+  const benchmarkRuntime =
+    await runtimeModule.loadBenchmarkVirtualizedRenderRuntime();
+
+  return {
+    runtimeInfo,
+    h,
+    renderToString: renderToStringModule.renderToString,
+    benchmarkRuntime,
+  };
+}
+
 function createOperationSampleStorage(): Record<
   TreeRenderOperationName,
   number[]
@@ -285,23 +379,26 @@ function countRenderedItems(html: string): number {
   return html.split('data-type="item"').length - 1;
 }
 
-function buildWindowRange(config: BenchmarkConfig): VirtualRange {
+function buildWindowRange(config: BenchmarkConfig): BenchmarkVirtualRange {
   return {
     start: config.windowStart,
     end: config.windowStart + config.windowSize - 1,
   };
 }
 
-function collectExpandedFolderPaths(files: string[]): string[] {
+function collectExpandedFolderPaths(
+  files: string[],
+  benchmarkRuntime: BenchmarkRenderRuntime
+): string[] {
   const expandedPaths = new Set<string>();
 
   for (const filePath of files) {
-    const normalizedPath = normalizeInputPath(filePath);
+    const normalizedPath = benchmarkRuntime.normalizeInputPath(filePath);
     if (normalizedPath == null) {
       continue;
     }
 
-    forEachFolderInNormalizedPath(
+    benchmarkRuntime.forEachFolderInNormalizedPath(
       normalizedPath.path,
       normalizedPath.isDirectory,
       (folderPath) => {
@@ -326,24 +423,23 @@ function createFileTreeOptions(
 }
 
 function createStateConfig(
-  caseConfig: FileListToTreeBenchmarkCase
+  caseConfig: FileListToTreeBenchmarkCase,
+  benchmarkRuntime: BenchmarkRenderRuntime
 ): FileTreeStateConfig {
   return {
     initialExpandedItems:
       caseConfig.expandedFolders ??
-      collectExpandedFolderPaths(caseConfig.files),
+      collectExpandedFolderPaths(caseConfig.files, benchmarkRuntime),
   };
 }
 
 function buildRootProps(
-  fileTree: FileTree,
+  fileTree: BenchmarkFileTreeInstance,
   config: BenchmarkConfig
-): FileTreeRootProps {
+): BenchmarkVirtualizedRootProps {
   return {
     fileTreeOptions: fileTree.options,
     stateConfig: fileTree.stateConfig,
-    handleRef: fileTree.handleRef,
-    callbacksRef: fileTree.callbacksRef,
     virtualizedRenderWindow: {
       range: buildWindowRange(config),
       itemHeight: config.itemHeight,
@@ -353,10 +449,16 @@ function buildRootProps(
 }
 
 function renderBenchmarkWindow(
-  fileTree: FileTree,
-  config: BenchmarkConfig
+  fileTree: BenchmarkFileTreeInstance,
+  config: BenchmarkConfig,
+  runtime: LoadedBenchmarkRuntime
 ): RenderSnapshot {
-  const html = renderToString(h(Root, buildRootProps(fileTree, config)));
+  const html = runtime.renderToString(
+    runtime.h(
+      runtime.benchmarkRuntime.BenchmarkVirtualizedRoot,
+      buildRootProps(fileTree, config)
+    )
+  );
   return {
     html,
     renderedItemCount: countRenderedItems(html),
@@ -369,12 +471,20 @@ function renderBenchmarkWindow(
 // for instance construction and/or SSR rendering, not fixture discovery.
 function prepareBenchmarkCase(
   caseConfig: FileListToTreeBenchmarkCase,
-  config: BenchmarkConfig
+  config: BenchmarkConfig,
+  runtime: LoadedBenchmarkRuntime
 ): PreparedBenchmarkCase {
   const options = createFileTreeOptions(caseConfig);
-  const stateConfig = createStateConfig(caseConfig);
-  const sharedRenderInstance = new FileTree(options, stateConfig);
-  const expectedSnapshot = renderBenchmarkWindow(sharedRenderInstance, config);
+  const stateConfig = createStateConfig(caseConfig, runtime.benchmarkRuntime);
+  const sharedRenderInstance = new runtime.benchmarkRuntime.FileTree(
+    options,
+    stateConfig
+  );
+  const expectedSnapshot = renderBenchmarkWindow(
+    sharedRenderInstance,
+    config,
+    runtime
+  );
 
   return {
     name: caseConfig.name,
@@ -434,6 +544,12 @@ function readBenchmarkBaseline(comparePath: string): LoadedBenchmarkBaseline {
   if (!Array.isArray(parsed.cases)) {
     throw new Error(
       `Invalid benchmark baseline at ${resolvedPath}. Expected a cases array.`
+    );
+  }
+
+  if (parsed.runtime == null || typeof parsed.runtime !== 'object') {
+    throw new Error(
+      `Invalid benchmark baseline at ${resolvedPath}. Expected runtime metadata from the current benchmark script.`
     );
   }
 
@@ -534,6 +650,7 @@ function buildComparison(
   return {
     baselinePath: baseline.path,
     baselineEnvironment: baseline.output.environment,
+    baselineRuntime: baseline.output.runtime,
     baselineConfig: baseline.output.config,
     unmatchedCurrentCases: caseSummaries
       .filter((summary) => !baselineCases.has(summary.name))
@@ -556,7 +673,8 @@ function buildComparison(
 function buildCompareCompatibilityErrors(
   baseline: ComparableRenderBenchmarkBaseline,
   comparison: ComparableRenderBenchmarkComparison,
-  currentConfig: Pick<BenchmarkConfig, CompareSensitiveConfigField>
+  currentConfig: Pick<BenchmarkConfig, CompareSensitiveConfigField>,
+  currentRuntime: ComparableRuntimeMetadata
 ): string[] {
   const errors: string[] = [];
 
@@ -564,6 +682,14 @@ function buildCompareCompatibilityErrors(
     if (baseline.output.config[field] !== currentConfig[field]) {
       errors.push(
         `baseline ${field}=${baseline.output.config[field]} does not match current ${field}=${currentConfig[field]}`
+      );
+    }
+  }
+
+  for (const field of COMPARE_SENSITIVE_RUNTIME_FIELDS) {
+    if (baseline.output.runtime?.[field] !== currentRuntime[field]) {
+      errors.push(
+        `baseline ${field}=${baseline.output.runtime?.[field] ?? 'missing'} does not match current ${field}=${currentRuntime[field]}`
       );
     }
   }
@@ -588,12 +714,14 @@ function buildCompareCompatibilityErrors(
 export function assertComparableRenderBenchmarkBaseline(
   baseline: ComparableRenderBenchmarkBaseline,
   comparison: ComparableRenderBenchmarkComparison,
-  currentConfig: Pick<BenchmarkConfig, CompareSensitiveConfigField>
+  currentConfig: Pick<BenchmarkConfig, CompareSensitiveConfigField>,
+  currentRuntime: ComparableRuntimeMetadata
 ): void {
   const errors = buildCompareCompatibilityErrors(
     baseline,
     comparison,
-    currentConfig
+    currentConfig,
+    currentRuntime
   );
   if (errors.length === 0) {
     return;
@@ -617,6 +745,9 @@ function printComparison(comparison: BenchmarkComparison): void {
   );
   console.log(
     `baselineRunsPerCase=${comparison.baselineConfig.runs} baselineWarmupRunsPerCase=${comparison.baselineConfig.warmupRuns}`
+  );
+  console.log(
+    `baselineCodePath=${comparison.baselineRuntime.codePath} baselineNodeEnv=${comparison.baselineRuntime.nodeEnv} baselineRenderer=${comparison.baselineRuntime.renderer} baselineHarness=${comparison.baselineRuntime.renderHarness}`
   );
   console.log(
     `baselineWindowStart=${comparison.baselineConfig.windowStart} baselineWindowSize=${comparison.baselineConfig.windowSize}`
@@ -675,8 +806,9 @@ function printComparison(comparison: BenchmarkComparison): void {
   );
 }
 
-export function main() {
+export async function main() {
   const config = parseArgs(process.argv.slice(2));
+  const runtime = await loadBenchmarkRuntime();
   const selectedCaseConfigs =
     config.caseFilters.length > 0
       ? filterBenchmarkCases(
@@ -693,7 +825,7 @@ export function main() {
   }
 
   const preparedCases = selectedCaseConfigs.map((caseConfig) =>
-    prepareBenchmarkCase(caseConfig, config)
+    prepareBenchmarkCase(caseConfig, config, runtime)
   );
   const samplesByCase = preparedCases.map(() => createOperationSampleStorage());
 
@@ -705,10 +837,17 @@ export function main() {
 
     const startTime = performance.now();
     if (operation === 'renderStaticWindow') {
-      snapshot = renderBenchmarkWindow(caseConfig.sharedRenderInstance, config);
+      snapshot = renderBenchmarkWindow(
+        caseConfig.sharedRenderInstance,
+        config,
+        runtime
+      );
     } else {
-      const fileTree = new FileTree(caseConfig.options, caseConfig.stateConfig);
-      snapshot = renderBenchmarkWindow(fileTree, config);
+      const fileTree = new runtime.benchmarkRuntime.FileTree(
+        caseConfig.options,
+        caseConfig.stateConfig
+      );
+      snapshot = renderBenchmarkWindow(fileTree, config, runtime);
     }
     const elapsedMs = performance.now() - startTime;
 
@@ -787,12 +926,18 @@ export function main() {
   const comparison =
     baseline != null ? buildComparison(baseline, caseSummaries) : undefined;
   if (baseline != null && comparison != null) {
-    assertComparableRenderBenchmarkBaseline(baseline, comparison, config);
+    assertComparableRenderBenchmarkBaseline(
+      baseline,
+      comparison,
+      config,
+      runtime.runtimeInfo
+    );
   }
 
   const output: BenchmarkOutput = {
     benchmark: 'virtualizedFileTreeRender',
     environment,
+    runtime: runtime.runtimeInfo,
     config,
     checksum,
     cases: caseSummaries,
@@ -808,6 +953,10 @@ export function main() {
   console.log(
     `bun=${environment.bunVersion} platform=${environment.platform} arch=${environment.arch}`
   );
+  console.log(
+    `runtime=${runtime.runtimeInfo.codePath} nodeEnv=${runtime.runtimeInfo.nodeEnv} renderer=${runtime.runtimeInfo.renderer} harness=${runtime.runtimeInfo.renderHarness}`
+  );
+  console.log(`buildCommand=${runtime.runtimeInfo.buildCommand}`);
   console.log(
     `cases=${preparedCases.length} runsPerCase=${config.runs} warmupRunsPerCase=${config.warmupRuns}`
   );
@@ -861,5 +1010,5 @@ export function main() {
 }
 
 if (import.meta.main) {
-  main();
+  await main();
 }

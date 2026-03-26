@@ -311,17 +311,22 @@ bun ws trees benchmark:render
 
 By default this benchmark runs only the Linux kernel fixture with all folders
 expanded, matching the trees-dev virtualization workload while keeping the
-virtualizer itself out of scope. It still exercises the full render pipeline:
+virtualizer itself out of scope. The runner rebuilds `dist/` first and then
+measures the production bundle with a benchmark-local static window adapter. It
+still exercises the full render pipeline:
 
 - `new FileTree(...)`
 - `fileListToTree(...)`
-- core tree creation inside the shared `Root` component
-- SSR rendering of a fixed first window (30 rows by default) through the real
+- core tree creation through the same built hooks and features that power `Root`
+- SSR rendering of a fixed first window (30 rows by default) through the built
   `TreeItem` path
 
 The fixed window avoids the misleading cost of serializing ~93k rows to HTML
 while still forcing the tree to process the full dataset before deciding which
 items to render.
+
+No baseline is required for normal runs. `--compare` is optional and only used
+when you want to validate a saved baseline.
 
 Useful flags:
 
