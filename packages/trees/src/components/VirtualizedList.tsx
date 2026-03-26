@@ -19,6 +19,14 @@ export interface VirtualizedListProps {
   itemHeight?: number;
 }
 
+export interface StaticVirtualizedListProps {
+  itemCount: number;
+  renderItem: (index: number) => JSX.Element | null;
+  range: VirtualRange;
+  itemHeight?: number;
+  viewportHeight?: number;
+}
+
 const OVERSCAN = 10;
 const DEFAULT_ITEM_HEIGHT = 30;
 const EMPTY_RANGE: VirtualRange = { start: 0, end: -1 };
@@ -218,6 +226,70 @@ export function computeStickyWindowLayout({
   };
 }
 
+function renderRangeChildren(
+  range: VirtualRange,
+  renderItem: (index: number) => JSX.Element | null
+): JSX.Element[] {
+  const { start: startIndex, end: endIndex } = range;
+  const children: JSX.Element[] = [];
+  for (let index = startIndex; index <= endIndex; index++) {
+    const item = renderItem(index);
+    if (item != null) {
+      children.push(item);
+    }
+  }
+  return children;
+}
+
+// Renders the same DOM structure as VirtualizedList, but with a fixed window.
+// This lets SSR benchmarks measure a deterministic "first visible rows" pass
+// without depending on layout effects or DOM viewport measurement.
+export function StaticVirtualizedList({
+  itemCount,
+  renderItem,
+  range,
+  itemHeight,
+  viewportHeight,
+}: StaticVirtualizedListProps): JSX.Element {
+  const resolvedHeight =
+    itemHeight != null && itemHeight > 0 ? itemHeight : DEFAULT_ITEM_HEIGHT;
+  const resolvedViewportHeight =
+    viewportHeight != null && viewportHeight > 0
+      ? viewportHeight
+      : resolvedHeight;
+  const normalizedRange = normalizeRange(range, itemCount);
+  const { totalHeight, offsetHeight, windowHeight, stickyInset } =
+    computeStickyWindowLayout({
+      range: normalizedRange,
+      itemCount,
+      itemHeight: resolvedHeight,
+      viewportHeight: resolvedViewportHeight,
+    });
+
+  return (
+    <div
+      data-file-tree-virtualized-list="true"
+      style={{ height: `${totalHeight}px` }}
+    >
+      <div
+        data-file-tree-virtualized-sticky-offset="true"
+        aria-hidden="true"
+        style={{ height: `${offsetHeight}px` }}
+      />
+      <div
+        data-file-tree-virtualized-sticky="true"
+        style={{
+          height: `${windowHeight}px`,
+          top: `${stickyInset}px`,
+          bottom: `${stickyInset}px`,
+        }}
+      >
+        {renderRangeChildren(normalizedRange, renderItem)}
+      </div>
+    </div>
+  );
+}
+
 export function VirtualizedList({
   itemCount,
   renderItem,
@@ -368,15 +440,6 @@ export function VirtualizedList({
     }
   }, [totalHeight, offsetHeight, windowHeight, stickyInset]);
 
-  const { start: startIndex, end: endIndex } = range;
-  const children: JSX.Element[] = [];
-  for (let i = startIndex; i <= endIndex; i++) {
-    const item = renderItem(i);
-    if (item != null) {
-      children.push(item);
-    }
-  }
-
   return (
     <div ref={containerRef} data-file-tree-virtualized-list="true">
       <div
@@ -385,7 +448,7 @@ export function VirtualizedList({
         aria-hidden="true"
       />
       <div ref={stickyWindowRef} data-file-tree-virtualized-sticky="true">
-        {children}
+        {renderRangeChildren(range, renderItem)}
       </div>
     </div>
   );

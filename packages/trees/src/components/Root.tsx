@@ -66,13 +66,26 @@ import { useTree } from './hooks/useTree';
 import { useTreeStateConfig } from './hooks/useTreeStateConfig';
 import { Icon } from './Icon';
 import { TreeItem } from './TreeItem';
-import { VirtualizedList } from './VirtualizedList';
+import {
+  StaticVirtualizedList,
+  VirtualizedList,
+  type VirtualRange,
+} from './VirtualizedList';
 
 export interface FileTreeRootProps {
   fileTreeOptions: FileTreeOptions;
   stateConfig?: FileTreeStateConfig;
   handleRef?: { current: FileTreeHandle | null };
   callbacksRef?: { current: FileTreeCallbacks };
+  /**
+   * Benchmark-only escape hatch that renders a deterministic virtualized window
+   * during SSR without relying on DOM measurement.
+   */
+  virtualizedRenderWindow?: {
+    range: VirtualRange;
+    itemHeight?: number;
+    viewportHeight?: number;
+  };
 }
 
 const EMPTY_ANCESTORS: string[] = [];
@@ -82,6 +95,7 @@ export function Root({
   stateConfig,
   handleRef,
   callbacksRef,
+  virtualizedRenderWindow,
 }: FileTreeRootProps): JSX.Element {
   'use no memo';
   const {
@@ -706,15 +720,25 @@ export function Root({
               : null;
           return (
             <div data-file-tree-virtualized-scroll="true">
-              <VirtualizedList
-                itemCount={items.length}
-                renderItem={renderItemAtIndex}
-                scrollToIndex={
-                  focusedIndex != null && focusedIndex >= 0
-                    ? focusedIndex
-                    : null
-                }
-              />
+              {virtualizedRenderWindow != null ? (
+                <StaticVirtualizedList
+                  itemCount={items.length}
+                  renderItem={renderItemAtIndex}
+                  range={virtualizedRenderWindow.range}
+                  itemHeight={virtualizedRenderWindow.itemHeight}
+                  viewportHeight={virtualizedRenderWindow.viewportHeight}
+                />
+              ) : (
+                <VirtualizedList
+                  itemCount={items.length}
+                  renderItem={renderItemAtIndex}
+                  scrollToIndex={
+                    focusedIndex != null && focusedIndex >= 0
+                      ? focusedIndex
+                      : null
+                  }
+                />
+              )}
               {contextMenuTrigger}
             </div>
           );
