@@ -9,7 +9,7 @@ import { getSelectionPath } from '../../utils/getSelectionPath';
 export interface UseStateChangeCallbacksArgs {
   tree: TreeInstance<FileTreeNode>;
   callbacksRef: { current: FileTreeCallbacks } | undefined;
-  idToPath: Map<string, string>;
+  idToPath: Pick<Map<string, string>, 'get' | 'has'>;
   pathToId: Map<string, string>;
   flattenEmptyDirectories: boolean | undefined;
 }

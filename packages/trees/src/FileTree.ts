@@ -80,7 +80,7 @@ export type FileTreeCollision = {
 export interface FileTreeHandle {
   tree: TreeInstance<FileTreeNode>;
   pathToId: Map<string, string>;
-  idToPath: Map<string, string>;
+  idToPath: Pick<Map<string, string>, 'get' | 'has'>;
   closeContextMenu?: () => void;
 }
 

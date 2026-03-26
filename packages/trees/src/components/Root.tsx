@@ -165,22 +165,26 @@ export function Root({
     [files, sortComparator]
   );
 
-  // Build the path/id lookup maps without allocating a large Object.entries()
-  // array for the whole tree on every fresh render.
-  const { pathToId, idToPath } = useMemo(() => {
-    const p2i = new Map<string, string>();
-    const i2p = new Map<string, string>();
+  // Build the hot path->id map with a direct for-in scan and answer id->path
+  // lookups straight from treeData so we do not duplicate the whole tree into a
+  // second Map on every fresh mount.
+  const pathToId = useMemo(() => {
+    const next = new Map<string, string>();
     for (const id in treeData) {
       const node = treeData[id];
-      if (node == null) {
-        continue;
+      if (node != null) {
+        next.set(node.path, id);
       }
-      const path = node.path;
-      p2i.set(path, id);
-      i2p.set(id, path);
     }
-    return { pathToId: p2i, idToPath: i2p };
+    return next;
   }, [treeData]);
+  const idToPath = useMemo<Pick<Map<string, string>, 'get' | 'has'>>(
+    () => ({
+      get: (id: string) => treeData[id]?.path,
+      has: (id: string) => treeData[id] != null,
+    }),
+    [treeData]
+  );
 
   const ancestorChainsCacheRef = useRef<Map<string, string[]>>(new Map());
   const prevIdToPathForCacheRef = useRef(idToPath);
