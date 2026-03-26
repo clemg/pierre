@@ -11,3 +11,11 @@
   contract by eagerly materializing only enough instances to satisfy
   builder-side effects while still avoiding full `tree.getItems()` arrays in the
   virtualized render path.
+- fileListToTree child-array reuse with copy-on-write: the unsorted `sort:false`
+  workload likely still spends time converting the same `folderChildren` Sets
+  into arrays for flattening and folder-node creation. A direct array-sharing
+  prototype crashed because `hashTreeKeys()` mutates `children.direct` in place,
+  so shared arrays were rewritten to hashed IDs too early. A safer follow-up
+  would keep the cached arrays immutable and only copy at the final
+  node-ownership boundaries, or make `hashTreeKeys()` explicitly tolerate
+  already-hashed child IDs without hiding real missing-key bugs.

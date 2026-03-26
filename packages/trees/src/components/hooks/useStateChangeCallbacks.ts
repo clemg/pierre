@@ -60,7 +60,10 @@ export function useStateChangeCallbacks({
 
   // --- Expanded items change callback ---
   const expandedSnapshotRef = useRef<string | null>(null);
-  const expandedSnapshot = tree.getState().expandedItems?.join('|') ?? '';
+  const expandedSnapshot =
+    callbacksRef?.current.onExpandedItemsChange != null
+      ? (tree.getState().expandedItems?.join('|') ?? '')
+      : '';
 
   useEffect(() => {
     const onExpandedItemsChange = callbacksRef?.current.onExpandedItemsChange;
@@ -102,7 +105,10 @@ export function useStateChangeCallbacks({
 
   // --- Selected items change callback ---
   const selectedSnapshotRef = useRef<string | null>(null);
-  const selectedSnapshot = tree.getState().selectedItems?.join('|') ?? '';
+  const selectedSnapshot =
+    callbacksRef?.current.onSelectedItemsChange != null
+      ? (tree.getState().selectedItems?.join('|') ?? '')
+      : '';
 
   useEffect(() => {
     const onSelectedItemsChange = callbacksRef?.current.onSelectedItemsChange;
