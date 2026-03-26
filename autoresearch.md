@@ -79,7 +79,7 @@ lines.
 
 - Prior work outside this session already improved `fileListToTree` and core
   `rebuildTree`.
-- Initial source review suggests likely remaining hotspots are:
+- Initial source review suggested likely remaining hotspots were:
   - building `pathToId` / `idToPath` maps for the entire tree on every render
   - expanding all folder paths through `expandPathsWithAncestors`
   - `createTree` / `rebuildTree` materializing item metadata and item instances
@@ -89,3 +89,12 @@ lines.
     only a small window is rendered
   - `TreeItem.tsx` per-row structure and spacing generation, though this is less
     likely to dominate than full-tree preprocessing
+- ✅ **Kept**: cached visible item IDs in core during `rebuildTree`, changed
+  virtualized render paths (`Root.tsx` and the render benchmark runtime) to
+  slice/render from those IDs, and still rebuilt the synthetic root item
+  instance on each rebuild to preserve the existing `instanceBuilder` contract.
+  This cut `construct_and_render_ms` from ~120.3ms to ~58.2ms while keeping
+  tests/typecheck green.
+- ❌ **Checks-failed prototype**: fully lazy item-instance materialization with
+  no rebuild-time root instance refresh achieved a similar win (~57.6ms) but
+  broke internal `instanceBuilder` expectations in `test/core/core.test.ts`.
