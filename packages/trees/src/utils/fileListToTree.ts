@@ -208,8 +208,15 @@ export function buildFileListToTreePathGraph(
       }
 
       if (isFile) {
+        // Most file paths are unique, so use the parent Set membership change
+        // as the primary duplicate check and only touch tree.has() on the rare
+        // collision path (duplicate file entry or file/folder key conflict).
+        const previousChildCount = parentChildren.size;
         parentChildren.add(currentPath);
-        if (!tree.has(currentPath)) {
+        if (
+          parentChildren.size !== previousChildCount ||
+          !tree.has(currentPath)
+        ) {
           const node: FileTreeNode = {
             name: path.slice(segmentStart, segmentEnd),
             path: currentPath,
