@@ -32,9 +32,10 @@ export interface FileListToTreeBuildState {
    *  than plain-object property access for 99K string-keyed entries). */
   tree: Map<string, FileTreeNode>;
   folderChildren: Map<string, Set<string>>;
-  /** Ordered list of [key, node] pairs in insertion order, enabling
-   *  hashTreeKeys to iterate without Object.keys + tree[key] lookups. */
-  treeEntries: Array<[string, FileTreeNode]>;
+  /** Ordered list of nodes in insertion order, enabling hashTreeKeys to
+   *  iterate without Object.keys + tree[key] lookups and without allocating
+   *  one tuple per entry. */
+  treeEntries: FileTreeNode[];
 }
 
 export interface FileListToTreeBuildContext {
@@ -190,6 +191,8 @@ export function buildFileListToTreePathGraph(
       if (hasEmptySegment) {
         const part = path.slice(segmentStart, segmentEnd);
         currentPath = currentPath != null ? `${currentPath}/${part}` : part;
+      } else if (isFile) {
+        currentPath = path;
       } else {
         currentPath = path.slice(0, segmentEnd);
       }
@@ -208,16 +211,23 @@ export function buildFileListToTreePathGraph(
       }
 
       if (isFile) {
+        // Most file paths are unique, so use the parent Set membership change
+        // as the primary duplicate check and only touch tree.has() on the rare
+        // collision path (duplicate file entry or file/folder key conflict).
+        const previousChildCount = parentChildren.size;
         parentChildren.add(currentPath);
-        if (!tree.has(currentPath)) {
+        if (
+          parentChildren.size !== previousChildCount ||
+          !tree.has(currentPath)
+        ) {
           const node: FileTreeNode = {
-            name: path.slice(segmentStart, segmentEnd),
+            name: path.slice(segmentStart),
             path: currentPath,
           };
           (node as Record<symbol, string>)[NODE_ID] =
             `n${(hashValue >>> 0).toString(36)}`;
           tree.set(currentPath, node);
-          state.treeEntries.push([currentPath, node]);
+          state.treeEntries.push(node);
           createdFileNodeCount += 1;
         }
       } else {
@@ -377,7 +387,7 @@ export function buildFileListToTreeFlattenedNodes(
         },
       };
       tree.set(flattenedKey, flatNode);
-      state.treeEntries.push([flattenedKey, flatNode]);
+      state.treeEntries.push(flatNode);
       flattenedNodeCount += 1;
     }
   }
@@ -437,7 +447,7 @@ export function buildFileListToTreeFolderNodes(
       },
     };
     tree.set(path, folderNode);
-    state.treeEntries.push([path, folderNode]);
+    state.treeEntries.push(folderNode);
   }
 
   setBenchmarkCounter(
@@ -459,7 +469,7 @@ const NODE_ID: unique symbol = Symbol('id');
 
 export function hashFileListToTreeKeys(
   tree: Map<string, FileTreeNode>,
-  treeEntries: Array<[string, FileTreeNode]>,
+  treeEntries: FileTreeNode[],
   rootId: string,
   instrumentation?: BenchmarkInstrumentation
 ): Record<string, FileTreeNode> {
@@ -491,9 +501,8 @@ export function hashFileListToTreeKeys(
   // tree[key] lookups. This avoids one ~99K array allocation and ~99K
   // redundant hash-table property accesses.
   for (let ei = 0; ei < treeEntries.length; ei++) {
-    const entry = treeEntries[ei];
-    const key = entry[0];
-    const node = entry[1];
+    const node = treeEntries[ei];
+    const key = node.path;
 
     // Read cached ID (pre-computed for files, compute for folders/flattened).
     let mappedKey = (node as Record<symbol, string>)[NODE_ID];
