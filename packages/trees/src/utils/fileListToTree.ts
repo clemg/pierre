@@ -191,6 +191,8 @@ export function buildFileListToTreePathGraph(
       if (hasEmptySegment) {
         const part = path.slice(segmentStart, segmentEnd);
         currentPath = currentPath != null ? `${currentPath}/${part}` : part;
+      } else if (isFile) {
+        currentPath = path;
       } else {
         currentPath = path.slice(0, segmentEnd);
       }
@@ -219,7 +221,7 @@ export function buildFileListToTreePathGraph(
           !tree.has(currentPath)
         ) {
           const node: FileTreeNode = {
-            name: path.slice(segmentStart, segmentEnd),
+            name: path.slice(segmentStart),
             path: currentPath,
           };
           (node as Record<symbol, string>)[NODE_ID] =
