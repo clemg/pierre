@@ -428,6 +428,34 @@ export class FileDiff<LAnnotation = undefined, LDecoration = undefined> {
     this.decorations = decorations;
   }
 
+  private syncRenderState({
+    nextLineAnnotations,
+    nextDecorations,
+    syncAnnotations,
+    syncDecorations,
+  }: {
+    nextLineAnnotations?: DiffLineAnnotation<LAnnotation>[];
+    nextDecorations?: DiffDecorationItem<LDecoration>[];
+    syncAnnotations: boolean;
+    syncDecorations: boolean;
+  }): void {
+    if (syncAnnotations && nextLineAnnotations != null) {
+      this.setLineAnnotations(nextLineAnnotations);
+    }
+
+    if (syncDecorations && nextDecorations != null) {
+      this.setDecorations(nextDecorations);
+    }
+
+    if (syncAnnotations) {
+      this.hunksRenderer.setLineAnnotations(this.lineAnnotations);
+    }
+
+    if (syncDecorations) {
+      this.hunksRenderer.setDecorations(this.decorations);
+    }
+  }
+
   private canPartiallyRender(
     forceRender: boolean,
     annotationsChanged: boolean,
@@ -632,11 +660,17 @@ export class FileDiff<LAnnotation = undefined, LDecoration = undefined> {
         ? parseDiffFromFile(oldFile, newFile, this.options.parseDiffOptions)
         : undefined);
 
+    this.syncRenderState({
+      nextLineAnnotations: lineAnnotations,
+      nextDecorations: decorations,
+      syncAnnotations: true,
+      syncDecorations: true,
+    });
+
     if (this.pre == null) {
       return;
     }
 
-    this.hunksRenderer.setDecorations(this.decorations);
     this.hunksRenderer.hydrate(this.fileDiff);
     // FIXME(amadeus): not sure how to handle this yet...
     // this.renderSeparators();
@@ -713,7 +747,6 @@ export class FileDiff<LAnnotation = undefined, LDecoration = undefined> {
     }
     const { collapsed = false } = this.options;
     const nextRenderRange = collapsed ? undefined : renderRange;
-    const nextDecorations = decorations;
     const filesDidChange =
       oldFile != null &&
       newFile != null &&
@@ -726,9 +759,9 @@ export class FileDiff<LAnnotation = undefined, LDecoration = undefined> {
         ? lineAnnotations !== this.lineAnnotations
         : false;
     const decorationsChanged =
-      nextDecorations != null &&
-      (nextDecorations.length > 0 || this.decorations.length > 0)
-        ? nextDecorations !== this.decorations
+      decorations != null &&
+      (decorations.length > 0 || this.decorations.length > 0)
+        ? decorations !== this.decorations
         : false;
 
     if (
@@ -763,19 +796,16 @@ export class FileDiff<LAnnotation = undefined, LDecoration = undefined> {
       );
     }
 
-    if (lineAnnotations != null) {
-      this.setLineAnnotations(lineAnnotations);
-    }
-    if (nextDecorations != null) {
-      this.decorations = nextDecorations;
-    }
+    this.hunksRenderer.setOptions(this.getHunksRendererOptions(this.options));
+    this.syncRenderState({
+      nextLineAnnotations: lineAnnotations,
+      nextDecorations: decorations,
+      syncAnnotations: annotationsChanged,
+      syncDecorations: decorationsChanged,
+    });
     if (this.fileDiff == null) {
       return false;
     }
-    this.hunksRenderer.setOptions(this.getHunksRendererOptions(this.options));
-
-    this.hunksRenderer.setLineAnnotations(this.lineAnnotations);
-    this.hunksRenderer.setDecorations(this.decorations);
 
     const {
       diffStyle = 'split',
