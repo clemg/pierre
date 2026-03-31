@@ -7,17 +7,20 @@ import type {
   SelectedLineRange,
 } from '../managers/InteractionManager';
 import type {
+  DiffDecorationItem,
   DiffLineAnnotation,
   FileContents,
+  FileDecorationItem,
   FileDiffMetadata,
   LineAnnotation,
   VirtualFileMetrics,
 } from '../types';
 
-export interface DiffBasePropsReact<LAnnotation> {
-  options?: FileDiffOptions<LAnnotation>;
+export interface DiffBasePropsReact<LAnnotation, LDecoration> {
+  options?: FileDiffOptions<LAnnotation, LDecoration>;
   metrics?: VirtualFileMetrics;
   lineAnnotations?: DiffLineAnnotation<LAnnotation>[];
+  decorations?: DiffDecorationItem<LDecoration>[];
   selectedLines?: SelectedLineRange | null;
   renderAnnotation?(annotations: DiffLineAnnotation<LAnnotation>): ReactNode;
   renderCustomHeader?(fileDiff: FileDiffMetadata): ReactNode;
@@ -37,11 +40,12 @@ export interface DiffBasePropsReact<LAnnotation> {
   prerenderedHTML?: string;
 }
 
-export interface FileProps<LAnnotation> {
+export interface FileProps<LAnnotation, LDecoration> {
   file: FileContents;
-  options?: FileOptions<LAnnotation>;
+  options?: FileOptions<LAnnotation, LDecoration>;
   metrics?: VirtualFileMetrics;
   lineAnnotations?: LineAnnotation<LAnnotation>[];
+  decorations?: FileDecorationItem<LDecoration>[];
   selectedLines?: SelectedLineRange | null;
   renderAnnotation?(annotations: LineAnnotation<LAnnotation>): ReactNode;
   renderCustomHeader?(file: FileContents): ReactNode;

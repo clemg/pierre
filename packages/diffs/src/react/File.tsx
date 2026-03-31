@@ -9,9 +9,10 @@ import { useFileInstance } from './utils/useFileInstance';
 
 export type { FileOptions };
 
-export function File<LAnnotation = undefined>({
+export function File<LAnnotation = undefined, LDecoration = undefined>({
   file,
   lineAnnotations,
+  decorations,
   selectedLines,
   options,
   metrics,
@@ -25,12 +26,13 @@ export function File<LAnnotation = undefined>({
   renderGutterUtility,
   renderHoverUtility,
   disableWorkerPool = false,
-}: FileProps<LAnnotation>): React.JSX.Element {
+}: FileProps<LAnnotation, LDecoration>): React.JSX.Element {
   const { ref, getHoveredLine } = useFileInstance({
     file,
     options,
     metrics,
     lineAnnotations,
+    decorations,
     selectedLines,
     prerenderedHTML,
     hasGutterRenderUtility:

@@ -27,7 +27,8 @@ let instanceId = -1;
 
 export class AdvancedVirtualizedFileDiff<
   LAnnotation = undefined,
-> extends FileDiff<LAnnotation> {
+  LDecoration = undefined,
+> extends FileDiff<LAnnotation, LDecoration> {
   override readonly __id: string = `virtualized-file-diff:${++instanceId}`;
 
   public unifiedTop: number;
@@ -41,7 +42,9 @@ export class AdvancedVirtualizedFileDiff<
 
   constructor(
     { unifiedTop, splitTop, fileDiff }: PositionProps,
-    options: FileDiffOptions<LAnnotation> = { theme: DEFAULT_THEMES },
+    options: FileDiffOptions<LAnnotation, LDecoration> = {
+      theme: DEFAULT_THEMES,
+    },
     metrics?: Partial<VirtualFileMetrics>,
     workerManager?: WorkerPoolManager | undefined
   ) {
@@ -217,8 +220,8 @@ export class AdvancedVirtualizedFileDiff<
   }
 }
 
-function getSpecs<LAnnotation>(
-  instance: AdvancedVirtualizedFileDiff<LAnnotation>,
+function getSpecs<LAnnotation, LDecoration>(
+  instance: AdvancedVirtualizedFileDiff<LAnnotation, LDecoration>,
   type: 'split' | 'unified' = 'split'
 ) {
   if (type === 'split') {

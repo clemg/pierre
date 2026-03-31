@@ -452,14 +452,30 @@ type OptionalMetadata<T> = T extends undefined
   ? { metadata?: undefined }
   : { metadata: T };
 
-export type LineAnnotation<T = undefined> = {
+export type LineAnnotation<Metadata = undefined> = {
   lineNumber: number;
-} & OptionalMetadata<T>;
+} & OptionalMetadata<Metadata>;
 
-export type DiffLineAnnotation<T = undefined> = {
+export type DiffLineAnnotation<Metadata = undefined> = {
   side: AnnotationSide;
   lineNumber: number;
-} & OptionalMetadata<T>;
+} & OptionalMetadata<Metadata>;
+
+export type DecorationRange<Metadata = undefined> = {
+  lineNumber: number;
+  endLineNumber?: number;
+  bar?: boolean;
+  color?: string;
+  background?: boolean | string;
+} & OptionalMetadata<Metadata>;
+
+export type FileDecorationItem<Metadata = undefined> =
+  DecorationRange<Metadata>;
+
+export type DiffDecorationItem<Metadata = undefined> =
+  DecorationRange<Metadata> & {
+    side: AnnotationSide;
+  };
 
 export type MergeConflictResolution = 'current' | 'incoming' | 'both';
 

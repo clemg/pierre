@@ -14,6 +14,7 @@ import type {
 } from '../../managers/InteractionManager';
 import type {
   FileContents,
+  FileDecorationItem,
   LineAnnotation,
   VirtualFileMetrics,
 } from '../../types';
@@ -26,10 +27,11 @@ import { useStableCallback } from './useStableCallback';
 const useIsometricEffect =
   typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
-interface UseFileInstanceProps<LAnnotation> {
+interface UseFileInstanceProps<LAnnotation, LDecoration> {
   file: FileContents;
-  options: FileOptions<LAnnotation> | undefined;
+  options: FileOptions<LAnnotation, LDecoration> | undefined;
   lineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+  decorations: FileDecorationItem<LDecoration>[] | undefined;
   selectedLines: SelectedLineRange | null | undefined;
   prerenderedHTML: string | undefined;
   metrics?: VirtualFileMetrics;
@@ -43,21 +45,24 @@ interface UseFileInstanceReturn {
   getHoveredLine(): GetHoveredLineResult<'file'> | undefined;
 }
 
-export function useFileInstance<LAnnotation>({
+export function useFileInstance<LAnnotation, LDecoration>({
   file,
   options,
   lineAnnotations,
+  decorations,
   selectedLines,
   prerenderedHTML,
   metrics,
   hasGutterRenderUtility,
   hasCustomHeader,
   disableWorkerPool,
-}: UseFileInstanceProps<LAnnotation>): UseFileInstanceReturn {
+}: UseFileInstanceProps<LAnnotation, LDecoration>): UseFileInstanceReturn {
   const simpleVirtualizer = useVirtualizer();
   const poolManager = useContext(WorkerPoolContext);
   const instanceRef = useRef<
-    File<LAnnotation> | VirtualizedFile<LAnnotation> | null
+    | File<LAnnotation, LDecoration>
+    | VirtualizedFile<LAnnotation, LDecoration>
+    | null
   >(null);
   const ref = useStableCallback((node: HTMLElement | null) => {
     if (node != null) {
@@ -93,6 +98,7 @@ export function useFileInstance<LAnnotation>({
         file,
         fileContainer: node,
         lineAnnotations,
+        decorations,
         prerenderedHTML,
       });
     } else {
@@ -116,7 +122,12 @@ export function useFileInstance<LAnnotation>({
       newOptions
     );
     instanceRef.current.setOptions(newOptions);
-    void instanceRef.current.render({ file, lineAnnotations, forceRender });
+    void instanceRef.current.render({
+      file,
+      lineAnnotations,
+      decorations,
+      forceRender,
+    });
     if (selectedLines !== undefined) {
       instanceRef.current.setSelectedLines(selectedLines);
     }
@@ -130,17 +141,19 @@ export function useFileInstance<LAnnotation>({
   return { ref, getHoveredLine };
 }
 
-interface MergeFileOptionsProps<LAnnotation> {
-  options: FileOptions<LAnnotation> | undefined;
+interface MergeFileOptionsProps<LAnnotation, LDecoration> {
+  options: FileOptions<LAnnotation, LDecoration> | undefined;
   hasGutterRenderUtility: boolean;
   hasCustomHeader: boolean;
 }
 
-function mergeFileOptions<LAnnotation>({
+function mergeFileOptions<LAnnotation, LDecoration>({
   options,
   hasCustomHeader,
   hasGutterRenderUtility,
-}: MergeFileOptionsProps<LAnnotation>): FileOptions<LAnnotation> | undefined {
+}: MergeFileOptionsProps<LAnnotation, LDecoration>):
+  | FileOptions<LAnnotation, LDecoration>
+  | undefined {
   if (hasGutterRenderUtility || hasCustomHeader) {
     return {
       ...options,

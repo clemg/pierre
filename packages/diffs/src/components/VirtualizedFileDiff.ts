@@ -28,7 +28,8 @@ let instanceId = -1;
 
 export class VirtualizedFileDiff<
   LAnnotation = undefined,
-> extends FileDiff<LAnnotation> {
+  LDecoration = undefined,
+> extends FileDiff<LAnnotation, LDecoration> {
   override readonly __id: string = `little-virtualized-file-diff:${++instanceId}`;
 
   public top: number | undefined;
@@ -42,7 +43,7 @@ export class VirtualizedFileDiff<
   private virtualizer: Virtualizer;
 
   constructor(
-    options: FileDiffOptions<LAnnotation> | undefined,
+    options: FileDiffOptions<LAnnotation, LDecoration> | undefined,
     virtualizer: Virtualizer,
     metrics?: Partial<VirtualFileMetrics>,
     workerManager?: WorkerPoolManager,
@@ -69,7 +70,9 @@ export class VirtualizedFileDiff<
   }
 
   // Override setOptions to clear height cache when diffStyle changes
-  override setOptions(options: FileDiffOptions<LAnnotation> | undefined): void {
+  override setOptions(
+    options: FileDiffOptions<LAnnotation, LDecoration> | undefined
+  ): void {
     if (options == null) return;
     const previousDiffStyle = this.options.diffStyle;
     const previousOverflow = this.options.overflow;
@@ -341,7 +344,7 @@ export class VirtualizedFileDiff<
     newFile,
     fileDiff,
     ...props
-  }: FileDiffRenderProps<LAnnotation> = {}): boolean {
+  }: FileDiffRenderProps<LAnnotation, LDecoration> = {}): boolean {
     const { isSetup } = this;
 
     this.fileDiff ??=

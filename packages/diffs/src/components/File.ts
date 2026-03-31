@@ -25,6 +25,7 @@ import type {
   AppliedThemeStyleCache,
   BaseCodeOptions,
   FileContents,
+  FileDecorationItem,
   LineAnnotation,
   PrePropertiesConfig,
   RenderFileMetadata,
@@ -54,25 +55,26 @@ import { DiffsContainerLoaded } from './web-components';
 
 const EMPTY_STRINGS: string[] = [];
 
-export interface FileRenderProps<LAnnotation> {
+export interface FileRenderProps<LAnnotation, LDecoration> {
   file: FileContents;
   fileContainer?: HTMLElement;
   containerWrapper?: HTMLElement;
   forceRender?: boolean;
   preventEmit?: boolean;
   lineAnnotations?: LineAnnotation<LAnnotation>[];
+  decorations?: FileDecorationItem<LDecoration>[];
   renderRange?: RenderRange;
 }
 
-export interface FileHydrateProps<LAnnotation> extends Omit<
-  FileRenderProps<LAnnotation>,
+export interface FileHydrateProps<LAnnotation, LDecoration> extends Omit<
+  FileRenderProps<LAnnotation, LDecoration>,
   'fileContainer'
 > {
   fileContainer: HTMLElement;
   prerenderedHTML?: string;
 }
 
-export interface FileOptions<LAnnotation>
+export interface FileOptions<LAnnotation = undefined, LDecoration = undefined>
   extends BaseCodeOptions, InteractionManagerBaseOptions<'file'> {
   disableFileHeader?: boolean;
   /**
@@ -101,7 +103,10 @@ export interface FileOptions<LAnnotation>
     getHoveredRow: () => GetHoveredLineResult<'file'> | undefined
   ): HTMLElement | null | undefined;
 
-  onPostRender?(node: HTMLElement, instance: File<LAnnotation>): unknown;
+  onPostRender?(
+    node: HTMLElement,
+    instance: File<LAnnotation, LDecoration>
+  ): unknown;
 }
 
 interface AnnotationElementCache<LAnnotation> {
@@ -114,14 +119,15 @@ interface ColumnElements {
   content: HTMLElement;
 }
 
-interface HydrationSetup<LAnnotation> {
+interface HydrationSetup<LAnnotation, LDecoration> {
   file: FileContents;
   lineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+  decorations: FileDecorationItem<LDecoration>[] | undefined;
 }
 
 let instanceId = -1;
 
-export class File<LAnnotation = undefined> {
+export class File<LAnnotation = undefined, LDecoration = undefined> {
   static LoadedCustomComponent: boolean = DiffsContainerLoaded;
 
   readonly __id: string = `file:${++instanceId}`;
@@ -148,23 +154,26 @@ export class File<LAnnotation = undefined> {
   protected headerPrefix: HTMLElement | undefined;
   protected headerMetadata: HTMLElement | undefined;
 
-  protected fileRenderer: FileRenderer<LAnnotation>;
+  protected fileRenderer: FileRenderer<LAnnotation, LDecoration>;
   protected resizeManager: ResizeManager;
   protected interactionManager: InteractionManager<'file'>;
 
   protected annotationCache: Map<string, AnnotationElementCache<LAnnotation>> =
     new Map();
   protected lineAnnotations: LineAnnotation<LAnnotation>[] = [];
+  protected decorations: FileDecorationItem<LDecoration>[] = [];
 
   protected file: FileContents | undefined;
   protected renderRange: RenderRange | undefined;
 
   constructor(
-    public options: FileOptions<LAnnotation> = { theme: DEFAULT_THEMES },
+    public options: FileOptions<LAnnotation, LDecoration> = {
+      theme: DEFAULT_THEMES,
+    },
     private workerManager?: WorkerPoolManager | undefined,
     private isContainerManaged = false
   ) {
-    this.fileRenderer = new FileRenderer<LAnnotation>(
+    this.fileRenderer = new FileRenderer<LAnnotation, LDecoration>(
       options,
       this.handleHighlightRender,
       this.workerManager
@@ -190,13 +199,17 @@ export class File<LAnnotation = undefined> {
     });
   }
 
-  public setOptions(options: FileOptions<LAnnotation> | undefined): void {
+  public setOptions(
+    options: FileOptions<LAnnotation, LDecoration> | undefined
+  ): void {
     if (options == null) return;
     this.options = options;
     this.interactionManager.setOptions(pluckInteractionOptions(options));
   }
 
-  private mergeOptions(options: Partial<FileOptions<LAnnotation>>): void {
+  private mergeOptions(
+    options: Partial<FileOptions<LAnnotation, LDecoration>>
+  ): void {
     this.options = { ...this.options, ...options };
   }
 
@@ -228,6 +241,10 @@ export class File<LAnnotation = undefined> {
     lineAnnotations: LineAnnotation<LAnnotation>[]
   ): void {
     this.lineAnnotations = lineAnnotations;
+  }
+
+  public setDecorations(decorations: FileDecorationItem<LDecoration>[]): void {
+    this.decorations = decorations;
   }
 
   public setSelectedLines(range: SelectedLineRange | null): void {
@@ -271,13 +288,14 @@ export class File<LAnnotation = undefined> {
     this.placeHolder = undefined;
   }
 
-  public hydrate(props: FileHydrateProps<LAnnotation>): void {
+  public hydrate(props: FileHydrateProps<LAnnotation, LDecoration>): void {
     const {
       fileContainer,
       prerenderedHTML,
       preventEmit = false,
       file,
       lineAnnotations,
+      decorations,
     } = props;
     this.hydrateElements(fileContainer, prerenderedHTML);
     if (
@@ -292,7 +310,7 @@ export class File<LAnnotation = undefined> {
     }
     // Otherwise orchestrate our setup.
     else {
-      this.hydrationSetup({ file, lineAnnotations });
+      this.hydrationSetup({ file, lineAnnotations, decorations });
     }
     if (!preventEmit) {
       this.emitPostRender();
@@ -351,15 +369,18 @@ export class File<LAnnotation = undefined> {
   protected hydrationSetup({
     file,
     lineAnnotations,
-  }: HydrationSetup<LAnnotation>): void {
+    decorations,
+  }: HydrationSetup<LAnnotation, LDecoration>): void {
     const { overflow = 'scroll' } = this.options;
     this.lineAnnotations = lineAnnotations ?? this.lineAnnotations;
+    this.decorations = decorations ?? this.decorations;
     this.file = file;
     this.fileRenderer.setOptions({
       ...this.options,
       headerRenderMode:
         this.options.renderCustomHeader != null ? 'custom' : 'default',
     });
+    this.fileRenderer.setDecorations(this.decorations);
     if (this.pre == null) {
       return;
     }
@@ -386,15 +407,22 @@ export class File<LAnnotation = undefined> {
     preventEmit = false,
     containerWrapper,
     lineAnnotations,
+    decorations,
     renderRange,
-  }: FileRenderProps<LAnnotation>): boolean {
+  }: FileRenderProps<LAnnotation, LDecoration>): boolean {
     const { collapsed = false, themeType = 'system' } = this.options;
     const nextRenderRange = collapsed ? undefined : renderRange;
     const previousRenderRange = this.renderRange;
+    const nextDecorations = decorations;
     const annotationsChanged =
       lineAnnotations != null &&
       (lineAnnotations.length > 0 || this.lineAnnotations.length > 0)
         ? lineAnnotations !== this.lineAnnotations
+        : false;
+    const decorationsChanged =
+      nextDecorations != null &&
+      (nextDecorations.length > 0 || this.decorations.length > 0)
+        ? nextDecorations !== this.decorations
         : false;
     const didFileChange = !areFilesEqual(this.file, file);
     if (
@@ -402,7 +430,8 @@ export class File<LAnnotation = undefined> {
       !forceRender &&
       areRenderRangesEqual(nextRenderRange, this.renderRange) &&
       !didFileChange &&
-      !annotationsChanged
+      !annotationsChanged &&
+      !decorationsChanged
     ) {
       return false;
     }
@@ -417,7 +446,11 @@ export class File<LAnnotation = undefined> {
     if (lineAnnotations != null) {
       this.setLineAnnotations(lineAnnotations);
     }
+    if (nextDecorations != null) {
+      this.decorations = nextDecorations;
+    }
     this.fileRenderer.setLineAnnotations(this.lineAnnotations);
+    this.fileRenderer.setDecorations(this.decorations);
 
     const {
       disableErrorHandling = false,

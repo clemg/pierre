@@ -31,38 +31,45 @@ export type MergeConflictActionsTypeOption =
   | 'default'
   | RenderMergeConflictActions;
 
-export interface UnresolvedFileReactOptions<LAnnotation>
+export interface UnresolvedFileReactOptions<
+  LAnnotation = undefined,
+  LDecoration = undefined,
+>
   extends
     Omit<
-      FileDiffOptions<LAnnotation>,
+      FileDiffOptions<LAnnotation, LDecoration>,
       'hunkSeparators' | 'diffStyle' | 'onMergeConflictAction' | 'onPostRender'
     >,
     UnresolvedFileHunksRendererOptions {
   hunkSeparators?: HunkSeparators;
   onPostRender?(
     node: HTMLElement,
-    instance: UnresolvedFileClass<LAnnotation>
+    instance: UnresolvedFileClass<LAnnotation, LDecoration>
   ): unknown;
   maxContextLines?: number;
 }
 
-export interface UnresolvedFileProps<LAnnotation> extends Omit<
-  FileDiffProps<LAnnotation>,
+export interface UnresolvedFileProps<LAnnotation, LDecoration> extends Omit<
+  FileDiffProps<LAnnotation, LDecoration>,
   'fileDiff' | 'options'
 > {
   file: FileContents;
-  options?: UnresolvedFileReactOptions<LAnnotation>;
+  options?: UnresolvedFileReactOptions<LAnnotation, LDecoration>;
   renderMergeConflictUtility?(
     action: MergeConflictDiffAction,
-    getInstance: () => UnresolvedFileClass<LAnnotation> | undefined
+    getInstance: () => UnresolvedFileClass<LAnnotation, LDecoration> | undefined
   ): ReactNode;
   disableWorkerPool?: boolean;
 }
 
-export function UnresolvedFile<LAnnotation = undefined>({
+export function UnresolvedFile<
+  LAnnotation = undefined,
+  LDecoration = undefined,
+>({
   file,
   options,
   lineAnnotations,
+  decorations,
   selectedLines,
   className,
   style,
@@ -75,12 +82,13 @@ export function UnresolvedFile<LAnnotation = undefined>({
   renderHoverUtility,
   renderMergeConflictUtility,
   disableWorkerPool = false,
-}: UnresolvedFileProps<LAnnotation>): React.JSX.Element {
+}: UnresolvedFileProps<LAnnotation, LDecoration>): React.JSX.Element {
   const { ref, getHoveredLine, fileDiff, actions, getInstance } =
-    useUnresolvedFileInstance({
+    useUnresolvedFileInstance<LAnnotation, LDecoration>({
       file,
       options,
       lineAnnotations,
+      decorations,
       selectedLines,
       prerenderedHTML,
       hasConflictUtility: renderMergeConflictUtility != null,

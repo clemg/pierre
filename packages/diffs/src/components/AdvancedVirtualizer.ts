@@ -14,22 +14,25 @@ import type { FileDiffOptions } from './FileDiff';
 const ENABLE_RENDERING = true;
 const OVERSCROLL_SIZE = 500;
 
-interface RenderedItems<LAnnotations> {
-  instance: AdvancedVirtualizedFileDiff<LAnnotations>;
+interface RenderedItems<LAnnotations, LDecoration> {
+  instance: AdvancedVirtualizedFileDiff<LAnnotations, LDecoration>;
   element: HTMLElement;
 }
 
-export class AdvancedVirtualizer<LAnnotations = undefined> {
+export class AdvancedVirtualizer<
+  LAnnotations = undefined,
+  LDecoration = undefined,
+> {
   static __STOP = false;
   static __lastScrollPosition = 0;
 
   public type = 'advanced';
-  private files: AdvancedVirtualizedFileDiff<LAnnotations>[] = [];
+  private files: AdvancedVirtualizedFileDiff<LAnnotations, LDecoration>[] = [];
   private totalHeightUnified = 0;
   private totalHeightSplit = 0;
   private rendered: Map<
-    AdvancedVirtualizedFileDiff<LAnnotations>,
-    RenderedItems<LAnnotations>
+    AdvancedVirtualizedFileDiff<LAnnotations, LDecoration>,
+    RenderedItems<LAnnotations, LDecoration>
   > = new Map();
 
   private containerOffset = 0;
@@ -44,7 +47,7 @@ export class AdvancedVirtualizer<LAnnotations = undefined> {
 
   constructor(
     private container: HTMLElement,
-    private fileOptions: FileDiffOptions<LAnnotations> = {
+    private fileOptions: FileDiffOptions<LAnnotations, LDecoration> = {
       theme: DEFAULT_THEMES,
       // FIXME(amadeus): Fix selected lines crashing when scroll out of the window
       enableLineSelection: true,
@@ -103,7 +106,10 @@ export class AdvancedVirtualizer<LAnnotations = undefined> {
   addFiles(parsedPatches: ParsedPatch[]): void {
     for (const patch of parsedPatches) {
       for (const fileDiff of patch.files) {
-        const vFileDiff = new AdvancedVirtualizedFileDiff<LAnnotations>(
+        const vFileDiff = new AdvancedVirtualizedFileDiff<
+          LAnnotations,
+          LDecoration
+        >(
           {
             unifiedTop: this.totalHeightUnified,
             splitTop: this.totalHeightSplit,
@@ -164,8 +170,12 @@ export class AdvancedVirtualizer<LAnnotations = undefined> {
       }
     }
     let prevElement: HTMLElement | undefined;
-    let firstInstance: AdvancedVirtualizedFileDiff<LAnnotations> | undefined;
-    let lastInstance: AdvancedVirtualizedFileDiff<LAnnotations> | undefined;
+    let firstInstance:
+      | AdvancedVirtualizedFileDiff<LAnnotations, LDecoration>
+      | undefined;
+    let lastInstance:
+      | AdvancedVirtualizedFileDiff<LAnnotations, LDecoration>
+      | undefined;
     for (const instance of this.files) {
       // We can stop iterating when we get to elements after the window
       if (getInstanceSpecs(instance, diffStyle).top > bottom) {
@@ -272,7 +282,9 @@ export class AdvancedVirtualizer<LAnnotations = undefined> {
   };
 }
 
-function cleanupRenderedItem<LAnnotations>(item: RenderedItems<LAnnotations>) {
+function cleanupRenderedItem<LAnnotations, LDecoration>(
+  item: RenderedItems<LAnnotations, LDecoration>
+) {
   item.instance.cleanUp(true);
   item.element.remove();
   item.element.innerHTML = '';
@@ -281,8 +293,8 @@ function cleanupRenderedItem<LAnnotations>(item: RenderedItems<LAnnotations>) {
   }
 }
 
-function getInstanceSpecs<LAnnotations>(
-  instance: AdvancedVirtualizedFileDiff<LAnnotations>,
+function getInstanceSpecs<LAnnotations, LDecoration>(
+  instance: AdvancedVirtualizedFileDiff<LAnnotations, LDecoration>,
   diffStyle: 'split' | 'unified' = 'split'
 ) {
   if (diffStyle === 'split') {

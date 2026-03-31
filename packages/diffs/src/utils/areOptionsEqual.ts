@@ -6,11 +6,14 @@ import type { FileOptions } from '../react';
 import { areObjectsEqual } from './areObjectsEqual';
 import { areThemesEqual } from './areThemesEqual';
 
-type AnyOptions<L> = FileOptions<L> | FileDiffOptions<L> | undefined;
+type AnyOptions<LAnnotation, LDecoration> =
+  | FileOptions<LAnnotation, LDecoration>
+  | FileDiffOptions<LAnnotation, LDecoration>
+  | undefined;
 
-export function areOptionsEqual<LAnnotation>(
-  optionsA: AnyOptions<LAnnotation>,
-  optionsB: AnyOptions<LAnnotation>
+export function areOptionsEqual<LAnnotation, LDecoration>(
+  optionsA: AnyOptions<LAnnotation, LDecoration>,
+  optionsB: AnyOptions<LAnnotation, LDecoration>
 ): boolean {
   const themeA = optionsA?.theme ?? DEFAULT_THEMES;
   const themeB = optionsB?.theme ?? DEFAULT_THEMES;
@@ -26,8 +29,8 @@ export function areOptionsEqual<LAnnotation>(
   );
 }
 
-function getParseDiffOptions<L>(
-  options: AnyOptions<L>
+function getParseDiffOptions<LAnnotation, LDecoration>(
+  options: AnyOptions<LAnnotation, LDecoration>
 ): CreatePatchOptionsNonabortable | undefined {
   if (options != null && 'parseDiffOptions' in options) {
     return options.parseDiffOptions;

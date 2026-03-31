@@ -14,18 +14,23 @@ export type { FileContents };
 
 export interface MultiFileDiffProps<
   LAnnotation,
-> extends DiffBasePropsReact<LAnnotation> {
+  LDecoration,
+> extends DiffBasePropsReact<LAnnotation, LDecoration> {
   oldFile: FileContents;
   newFile: FileContents;
   disableWorkerPool?: boolean;
 }
 
-export function MultiFileDiff<LAnnotation = undefined>({
+export function MultiFileDiff<
+  LAnnotation = undefined,
+  LDecoration = undefined,
+>({
   oldFile,
   newFile,
   options,
   metrics,
   lineAnnotations,
+  decorations,
   selectedLines,
   className,
   style,
@@ -37,7 +42,7 @@ export function MultiFileDiff<LAnnotation = undefined>({
   renderGutterUtility,
   renderHoverUtility,
   disableWorkerPool = false,
-}: MultiFileDiffProps<LAnnotation>): React.JSX.Element {
+}: MultiFileDiffProps<LAnnotation, LDecoration>): React.JSX.Element {
   const fileDiff = useMemo(() => {
     return parseDiffFromFile(oldFile, newFile, options?.parseDiffOptions);
   }, [oldFile, newFile, options?.parseDiffOptions]);
@@ -46,6 +51,7 @@ export function MultiFileDiff<LAnnotation = undefined>({
     options,
     metrics,
     lineAnnotations,
+    decorations,
     selectedLines,
     prerenderedHTML,
     hasGutterRenderUtility:

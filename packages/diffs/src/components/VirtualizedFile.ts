@@ -14,7 +14,8 @@ let instanceId = -1;
 
 export class VirtualizedFile<
   LAnnotation = undefined,
-> extends File<LAnnotation> {
+  LDecoration = undefined,
+> extends File<LAnnotation, LDecoration> {
   override readonly __id: string = `virtualized-file:${++instanceId}`;
 
   public top: number | undefined;
@@ -27,7 +28,7 @@ export class VirtualizedFile<
   private isSetup: boolean = false;
 
   constructor(
-    options: FileOptions<LAnnotation> | undefined,
+    options: FileOptions<LAnnotation, LDecoration> | undefined,
     private virtualizer: Virtualizer,
     private metrics: VirtualFileMetrics = DEFAULT_VIRTUAL_FILE_METRICS,
     workerManager?: WorkerPoolManager,
@@ -49,7 +50,9 @@ export class VirtualizedFile<
   }
 
   // Override setOptions to clear height cache when overflow changes
-  override setOptions(options: FileOptions<LAnnotation> | undefined): void {
+  override setOptions(
+    options: FileOptions<LAnnotation, LDecoration> | undefined
+  ): void {
     if (options == null) return;
     const previousOverflow = this.options.overflow;
     const previousCollapsed = this.options.collapsed;
@@ -245,7 +248,7 @@ export class VirtualizedFile<
     fileContainer,
     file,
     ...props
-  }: FileRenderProps<LAnnotation>): boolean {
+  }: FileRenderProps<LAnnotation, LDecoration>): boolean {
     const { isSetup } = this;
 
     this.file ??= file;
