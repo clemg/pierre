@@ -80,6 +80,14 @@ export type FileTreeMovePathsRequest = {
   targetPath: string;
 };
 
+export type FileTreeAddPathsRequest = {
+  paths: string[];
+};
+
+export type FileTreeDeletePathsRequest = {
+  paths: string[];
+};
+
 export interface FileTreeRenamingConfig {
   canRename?: (item: FileTreeRenamingItem) => boolean;
   onError?: (error: string) => void;
@@ -522,7 +530,11 @@ export class FileTree {
       return;
     }
 
-    if (mutation.kind === 'move-paths') {
+    if (
+      mutation.kind === 'move-paths' ||
+      mutation.kind === 'add-paths' ||
+      mutation.kind === 'delete-paths'
+    ) {
       if (mutation.affectedParentIds.length === 0) {
         handle.tree.markBranchDirty(
           handle.tree.getConfig().rootItemId,
@@ -571,6 +583,14 @@ export class FileTree {
       targetPath: request.targetPath,
       onCollision: this.options.onCollision,
     });
+  }
+
+  addPaths(request: FileTreeAddPathsRequest): void {
+    this.model.addPaths({ paths: request.paths });
+  }
+
+  deletePaths(request: FileTreeDeletePathsRequest): void {
+    this.model.deletePaths({ paths: request.paths });
   }
 
   getFiles(): string[] {

@@ -1,4 +1,5 @@
 import { FLATTENED_PREFIX } from '../constants';
+import { MutablePathTree } from './mutablePathTree';
 
 export interface DropCollision {
   origin: string | null;
@@ -7,6 +8,10 @@ export interface DropCollision {
 
 export interface ComputeDropOptions {
   onCollision?: (collision: DropCollision) => boolean;
+  /** Optional persistent path tree to reuse across drag operations. */
+  pathTree?: MutablePathTree;
+  /** Mutate the provided path tree in place when true. */
+  mutatePathTree?: boolean;
 }
 
 const normalizePath = (path: string): string =>
@@ -21,6 +26,16 @@ const getBasename = (path: string): string => {
 
 const isDescendantOf = (path: string, ancestor: string): boolean =>
   path.startsWith(`${ancestor}/`);
+
+const getPathDepth = (path: string): number => {
+  let depth = 1;
+  for (let index = 0; index < path.length; index += 1) {
+    if (path.charCodeAt(index) === 47) {
+      depth += 1;
+    }
+  }
+  return depth;
+};
 
 const hasSelectedFolderAncestor = (
   path: string,
@@ -37,41 +52,59 @@ const hasSelectedFolderAncestor = (
   return false;
 };
 
-const buildFolderSet = (files: string[]): Set<string> => {
-  const folders = new Set<string>();
-  for (const file of files) {
-    let slash = file.lastIndexOf('/');
-    while (slash !== -1) {
-      folders.add(file.slice(0, slash));
-      slash = file.lastIndexOf('/', slash - 1);
-    }
+const splitPath = (path: string): { parentPath: string; baseName: string } => {
+  const separatorIndex = path.lastIndexOf('/');
+  if (separatorIndex < 0) {
+    return { parentPath: '', baseName: path };
   }
-  return folders;
-};
-
-const getSelectedFolderForFile = (
-  file: string,
-  selectedFolders: Set<string>
-): string | undefined => {
-  let slash = file.lastIndexOf('/');
-  while (slash !== -1) {
-    const folder = file.slice(0, slash);
-    if (selectedFolders.has(folder)) {
-      return folder;
-    }
-    slash = folder.lastIndexOf('/');
-  }
-  return undefined;
+  return {
+    parentPath: path.slice(0, separatorIndex),
+    baseName: path.slice(separatorIndex + 1),
+  };
 };
 
 /**
- * Computes the new file list after dragging items to a target folder.
- *
- * @param currentFiles - The current flat list of file paths
- * @param draggedPaths - Paths being dragged (may include `f::` prefix)
- * @param targetFolderPath - Destination folder path, or `'root'` for top level
- * @param options - Optional move behavior, including collision handling
- * @returns A new file list with the dragged items moved
+ * Applies an origin->destination map into a mutable path tree. Returns false
+ * if a path inconsistency is detected.
+ */
+function applyMappedFilesToPathTree(
+  pathTree: MutablePathTree,
+  currentFiles: string[],
+  finalPathByOrigin: Map<string, string | null>
+): boolean {
+  for (let index = 0; index < currentFiles.length; index += 1) {
+    const origin = currentFiles[index];
+    if (finalPathByOrigin.get(origin) != null) {
+      continue;
+    }
+    pathTree.deleteFilePath(origin);
+  }
+
+  for (let index = 0; index < currentFiles.length; index += 1) {
+    const origin = currentFiles[index];
+    const destination = finalPathByOrigin.get(origin);
+    if (destination == null || destination === origin) {
+      continue;
+    }
+
+    const { parentPath, baseName } = splitPath(destination);
+    const moveResult = pathTree.movePath(
+      origin,
+      parentPath === '' ? 'root' : parentPath,
+      baseName,
+      'file'
+    );
+
+    if (moveResult !== 'ok') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Computes the next flat file list for a drag-and-drop move.
  */
 export function computeNewFilesAfterDrop(
   currentFiles: string[],
@@ -83,69 +116,73 @@ export function computeNewFilesAfterDrop(
   const targetPrefix =
     normalizedTarget === 'root' ? '' : `${normalizedTarget}/`;
 
-  const currentFileSet = new Set(currentFiles);
-  const folderSet = buildFolderSet(currentFiles);
+  const pathTree = options.pathTree ?? MutablePathTree.fromFiles(currentFiles);
 
   const normalizedDragged = [...new Set(draggedPaths.map(normalizePath))];
   const orderedDragged = normalizedDragged
-    .map((path) => ({
-      path,
-      kind: folderSet.has(path) ? 'folder' : 'file',
-      depth: path.split('/').length,
-    }))
-    .sort((a, b) => a.depth - b.depth);
+    .filter((path) => pathTree.hasPath(path))
+    .sort((left, right) => getPathDepth(left) - getPathDepth(right));
 
   const selectedFolders = new Set<string>();
-  const selectedFiles = new Set<string>();
-  for (const item of orderedDragged) {
-    if (hasSelectedFolderAncestor(item.path, selectedFolders)) {
+  const selectedFiles: string[] = [];
+
+  for (let index = 0; index < orderedDragged.length; index += 1) {
+    const path = orderedDragged[index];
+    if (hasSelectedFolderAncestor(path, selectedFolders)) {
       continue;
     }
-    if (item.kind === 'folder') {
-      selectedFolders.add(item.path);
+
+    if (pathTree.hasFolder(path)) {
+      selectedFolders.add(path);
       continue;
     }
-    if (currentFileSet.has(item.path)) {
-      selectedFiles.add(item.path);
+
+    if (pathTree.hasFile(path)) {
+      selectedFiles.push(path);
     }
   }
 
   const proposedDestinationByOrigin = new Map<string, string>();
-  for (const file of currentFiles) {
-    if (selectedFiles.has(file)) {
-      const destination = `${targetPrefix}${getBasename(file)}`;
-      if (destination !== file) {
-        proposedDestinationByOrigin.set(file, destination);
-      }
-      continue;
-    }
 
-    const selectedFolder = getSelectedFolderForFile(file, selectedFolders);
-    if (selectedFolder == null) {
-      continue;
+  for (let index = 0; index < selectedFiles.length; index += 1) {
+    const filePath = selectedFiles[index];
+    const destination = `${targetPrefix}${getBasename(filePath)}`;
+    if (destination !== filePath) {
+      proposedDestinationByOrigin.set(filePath, destination);
     }
+  }
 
+  for (const folderPath of selectedFolders) {
     if (
-      normalizedTarget === selectedFolder ||
-      isDescendantOf(normalizedTarget, selectedFolder)
+      normalizedTarget === folderPath ||
+      isDescendantOf(normalizedTarget, folderPath)
     ) {
       continue;
     }
 
-    const destination = `${targetPrefix}${getBasename(selectedFolder)}${file.slice(selectedFolder.length)}`;
-    if (destination !== file) {
-      proposedDestinationByOrigin.set(file, destination);
+    const movedFolderName = getBasename(folderPath);
+    const descendantFiles = pathTree.getDescendantFilePaths(folderPath);
+
+    for (let index = 0; index < descendantFiles.length; index += 1) {
+      const origin = descendantFiles[index];
+      const destination = `${targetPrefix}${movedFolderName}${origin.slice(folderPath.length)}`;
+      if (destination !== origin) {
+        proposedDestinationByOrigin.set(origin, destination);
+      }
     }
   }
 
   const finalPathByOrigin = new Map<string, string | null>();
   const occupantByDestination = new Map<string, string>();
-  for (const file of currentFiles) {
+
+  for (let index = 0; index < currentFiles.length; index += 1) {
+    const file = currentFiles[index];
     finalPathByOrigin.set(file, file);
     occupantByDestination.set(file, file);
   }
 
-  for (const origin of currentFiles) {
+  for (let index = 0; index < currentFiles.length; index += 1) {
+    const origin = currentFiles[index];
     const destination = proposedDestinationByOrigin.get(origin);
     if (destination == null) {
       continue;
@@ -177,10 +214,22 @@ export function computeNewFilesAfterDrop(
   }
 
   const result: string[] = [];
-  for (const file of currentFiles) {
+  for (let index = 0; index < currentFiles.length; index += 1) {
+    const file = currentFiles[index];
     const next = finalPathByOrigin.get(file);
     if (next != null) {
       result.push(next);
+    }
+  }
+
+  if (options.mutatePathTree === true && options.pathTree != null) {
+    const applied = applyMappedFilesToPathTree(
+      options.pathTree,
+      currentFiles,
+      finalPathByOrigin
+    );
+    if (!applied) {
+      options.pathTree.replaceAll(result);
     }
   }
 

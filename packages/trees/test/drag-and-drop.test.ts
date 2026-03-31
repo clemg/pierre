@@ -15,6 +15,7 @@ import type { FileTreeNode } from '../src/types';
 import { computeNewFilesAfterDrop } from '../src/utils/computeNewFilesAfterDrop';
 import { expandPathsWithAncestors } from '../src/utils/expandPaths';
 import { fileListToTree } from '../src/utils/fileListToTree';
+import { MutablePathTree } from '../src/utils/mutablePathTree';
 import { buildMapsFromLoader, TEST_CONFIGS } from './test-config';
 
 // ---------------------------------------------------------------------------
@@ -256,6 +257,52 @@ describe('computeNewFilesAfterDrop', () => {
     const files = ['src/index.ts', 'src/components/a.ts'];
     const result = computeNewFilesAfterDrop(files, ['src'], 'src/components');
     expect(result).toEqual(files);
+  });
+
+  test('can reuse and mutate a persistent path tree', () => {
+    const pathTree = MutablePathTree.fromFiles(baseFiles);
+
+    const firstResult = computeNewFilesAfterDrop(
+      baseFiles,
+      ['src/utils'],
+      'docs',
+      {
+        pathTree,
+        mutatePathTree: true,
+      }
+    );
+
+    expect(firstResult).toEqual([
+      'src/index.ts',
+      'docs/utils/helpers.ts',
+      'docs/utils/format.ts',
+      'src/components/Button.tsx',
+      'src/components/Input.tsx',
+      'docs/README.md',
+      '.gitignore',
+      'package.json',
+    ]);
+
+    const secondResult = computeNewFilesAfterDrop(
+      firstResult,
+      ['docs/utils/helpers.ts'],
+      'root',
+      {
+        pathTree,
+        mutatePathTree: true,
+      }
+    );
+
+    expect(secondResult).toEqual([
+      'src/index.ts',
+      'helpers.ts',
+      'docs/utils/format.ts',
+      'src/components/Button.tsx',
+      'src/components/Input.tsx',
+      'docs/README.md',
+      '.gitignore',
+      'package.json',
+    ]);
   });
 });
 

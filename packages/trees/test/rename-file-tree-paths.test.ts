@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { MutablePathTree } from '../src/utils/mutablePathTree';
 import {
   remapExpandedPathsForFolderRename,
   renameFileTreePaths,
@@ -157,6 +158,47 @@ describe('renameFileTreePaths', () => {
 
     expect(result).toEqual({
       error: 'Could not find the selected folder to rename.',
+    });
+  });
+
+  test('can mutate a persistent path tree in place', () => {
+    const files = ['src/index.ts', 'src/utils/helpers.ts'];
+    const pathTree = MutablePathTree.fromFiles(files);
+
+    const firstResult = renameFileTreePaths({
+      files,
+      path: 'src',
+      isFolder: true,
+      nextBasename: 'lib',
+      pathTree,
+      mutatePathTree: true,
+    });
+
+    expect(firstResult).toEqual({
+      nextFiles: ['lib/index.ts', 'lib/utils/helpers.ts'],
+      sourcePath: 'src',
+      destinationPath: 'lib',
+      isFolder: true,
+    });
+
+    if ('error' in firstResult) {
+      throw new Error(firstResult.error);
+    }
+
+    const secondResult = renameFileTreePaths({
+      files: firstResult.nextFiles,
+      path: 'lib/utils/helpers.ts',
+      isFolder: false,
+      nextBasename: 'format.ts',
+      pathTree,
+      mutatePathTree: true,
+    });
+
+    expect(secondResult).toEqual({
+      nextFiles: ['lib/index.ts', 'lib/utils/format.ts'],
+      sourcePath: 'lib/utils/helpers.ts',
+      destinationPath: 'lib/utils/format.ts',
+      isFolder: false,
     });
   });
 });
