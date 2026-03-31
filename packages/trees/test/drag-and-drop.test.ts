@@ -15,6 +15,7 @@ import type { FileTreeNode } from '../src/types';
 import { computeNewFilesAfterDrop } from '../src/utils/computeNewFilesAfterDrop';
 import { expandPathsWithAncestors } from '../src/utils/expandPaths';
 import { fileListToTree } from '../src/utils/fileListToTree';
+import { MutablePathTree } from '../src/utils/mutablePathTree';
 import { buildMapsFromLoader, TEST_CONFIGS } from './test-config';
 
 // ---------------------------------------------------------------------------
@@ -256,6 +257,23 @@ describe('computeNewFilesAfterDrop', () => {
     const files = ['src/index.ts', 'src/components/a.ts'];
     const result = computeNewFilesAfterDrop(files, ['src'], 'src/components');
     expect(result).toEqual(files);
+  });
+
+  test('can persist move results into a shared mutable path tree', () => {
+    const files = ['src/index.ts', 'src/utils/a.ts', 'docs/readme.md'];
+    const pathTree = MutablePathTree.fromFiles(files);
+
+    const result = computeNewFilesAfterDrop(files, ['src/utils'], 'docs', {
+      pathTree,
+      mutatePathTree: true,
+    });
+
+    expect(result).toEqual([
+      'src/index.ts',
+      'docs/utils/a.ts',
+      'docs/readme.md',
+    ]);
+    expect(pathTree.cloneFiles()).toEqual(result);
   });
 });
 

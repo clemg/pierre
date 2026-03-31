@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { MutablePathTree } from '../src/utils/mutablePathTree';
 import {
   remapExpandedPathsForFolderRename,
   renameFileTreePaths,
@@ -158,6 +159,30 @@ describe('renameFileTreePaths', () => {
     expect(result).toEqual({
       error: 'Could not find the selected folder to rename.',
     });
+  });
+
+  test('can persist rename results into a shared mutable path tree', () => {
+    const files = ['src/index.ts', 'src/utils/helpers.ts'];
+    const pathTree = MutablePathTree.fromFiles(files);
+
+    const result = renameFileTreePaths({
+      files,
+      path: 'src/utils',
+      isFolder: true,
+      nextBasename: 'lib',
+      pathTree,
+      mutatePathTree: true,
+    });
+
+    expect(result).toEqual({
+      nextFiles: ['src/index.ts', 'src/lib/helpers.ts'],
+      sourcePath: 'src/utils',
+      destinationPath: 'src/lib',
+      isFolder: true,
+    });
+    if (!('error' in result)) {
+      expect(pathTree.cloneFiles()).toEqual(result.nextFiles);
+    }
   });
 });
 

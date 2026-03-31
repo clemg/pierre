@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 // @ts-expect-error -- no @types/jsdom; only used in tests
 import { JSDOM } from 'jsdom';
 
+import { MutablePathTree } from '../src/utils/mutablePathTree';
 import {
   remapExpandedPathsForFolderRename,
   renameFileTreePaths,
@@ -478,6 +479,16 @@ describe('SSR + declarative shadow DOM', () => {
 
     ft.setFiles(['b.txt', 'c.txt']);
     expect(calls).toEqual([['b.txt', 'c.txt']]);
+  });
+
+  test('internal mutation callbacks can adopt a persistent path tree', () => {
+    const ft = new FileTree({ initialFiles: ['a.txt'], dragAndDrop: true });
+    const sharedPathTree = MutablePathTree.fromFiles(['b.txt']);
+
+    ft.callbacksRef.current._onDragMoveFiles?.(['b.txt'], sharedPathTree);
+
+    expect(ft.getFiles()).toEqual(['b.txt']);
+    expect(ft.options.__pathTree).toBe(sharedPathTree);
   });
 
   test('folder rename remaps expanded subtree paths', () => {

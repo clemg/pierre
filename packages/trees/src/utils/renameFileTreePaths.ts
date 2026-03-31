@@ -1,4 +1,5 @@
 import { getSelectionPath } from './getSelectionPath';
+import { MutablePathTree } from './mutablePathTree';
 
 export type RenameFileTreePathsResult =
   | {
@@ -14,6 +15,10 @@ type RenameFileTreePathsParams = {
   path: string;
   isFolder: boolean;
   nextBasename: string;
+  /** Optional persistent tree to reuse during rename computation. */
+  pathTree?: MutablePathTree;
+  /** Mutate the provided pathTree in place when true. */
+  mutatePathTree?: boolean;
 };
 
 function splitPath(path: string): { parentPath: string; baseName: string } {
@@ -79,6 +84,8 @@ export function renameFileTreePaths({
   path,
   isFolder,
   nextBasename,
+  pathTree,
+  mutatePathTree,
 }: RenameFileTreePathsParams): RenameFileTreePathsResult {
   const sourcePath = getSelectionPath(path);
   const trimmedBasename = nextBasename.trim();
@@ -100,72 +107,38 @@ export function renameFileTreePaths({
   }
 
   const destinationPath = joinPath(parentPath, trimmedBasename);
-  const nextFiles = new Array<string>(files.length);
-  const seenPaths = new Set<string>();
+  const workingPathTree =
+    pathTree != null && mutatePathTree === true
+      ? pathTree
+      : MutablePathTree.fromFiles(files);
 
-  if (!isFolder) {
-    const destinationPrefix = `${destinationPath}/`;
-    let renamed = false;
-    for (let index = 0; index < files.length; index++) {
-      const file = files[index];
-      if (file !== sourcePath && file.startsWith(destinationPrefix)) {
-        return { error: `"${destinationPath}" already exists.` };
-      }
-      const nextFile = file === sourcePath ? destinationPath : file;
-      if (seenPaths.has(nextFile)) {
-        return { error: `"${destinationPath}" already exists.` };
-      }
-      seenPaths.add(nextFile);
-      nextFiles[index] = nextFile;
-      if (file === sourcePath) {
-        renamed = true;
-      }
-    }
-    if (!renamed) {
-      return { error: 'Could not find the selected file to rename.' };
-    }
+  const renameKind = isFolder ? 'folder' : 'file';
+  const renameResult = workingPathTree.renamePath(
+    sourcePath,
+    destinationPath,
+    renameKind
+  );
+
+  if (renameResult === 'missing') {
     return {
-      nextFiles,
-      sourcePath,
-      destinationPath,
-      isFolder,
+      error: isFolder
+        ? 'Could not find the selected folder to rename.'
+        : 'Could not find the selected file to rename.',
     };
   }
 
-  const sourcePrefix = `${sourcePath}/`;
-  const destinationPrefix = `${destinationPath}/`;
-  let renamedPathCount = 0;
-
-  for (let index = 0; index < files.length; index++) {
-    const file = files[index];
-    const isWithinRenamedFolder =
-      file === sourcePath || file.startsWith(sourcePrefix);
-    if (
-      !isWithinRenamedFolder &&
-      (file === destinationPath || file.startsWith(destinationPrefix))
-    ) {
-      return { error: `"${destinationPath}" already exists.` };
-    }
-
-    const nextFile = isWithinRenamedFolder
-      ? `${destinationPath}${file.slice(sourcePath.length)}`
-      : file;
-    if (seenPaths.has(nextFile)) {
-      return { error: `"${destinationPath}" already exists.` };
-    }
-
-    seenPaths.add(nextFile);
-    nextFiles[index] = nextFile;
-    if (isWithinRenamedFolder) {
-      renamedPathCount++;
-    }
+  if (renameResult === 'collision') {
+    return { error: `"${destinationPath}" already exists.` };
   }
 
-  if (renamedPathCount === 0) {
-    return { error: 'Could not find the selected folder to rename.' };
+  if (renameResult === 'invalid') {
+    return {
+      error: 'Could not rename the selected path.',
+    };
   }
+
   return {
-    nextFiles,
+    nextFiles: workingPathTree.cloneFiles(),
     sourcePath,
     destinationPath,
     isFolder,

@@ -198,6 +198,7 @@ export function useFileTreeInstance({
         const sp = statePropsRef.current;
         if (sp.files === undefined) return;
         const controlledCallbacks: Partial<FileTreeCallbacks> = {
+          _canApplyPathTreeMutation: false,
           ...(options.dragAndDrop === true && {
             _onDragMoveFiles: (newFiles: string[]) => {
               sp.onFilesChange?.(newFiles);
@@ -302,6 +303,7 @@ export function useFileTreeInstance({
       onFilesChange,
       onContextMenuOpen,
       onContextMenuClose,
+      _canApplyPathTreeMutation: files === undefined,
       // In controlled DnD mode, override to only fire onFilesChange
       // without calling setFiles() directly, letting the parent decide.
       ...(files !== undefined &&

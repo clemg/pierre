@@ -57,6 +57,7 @@ import { computeNewFilesAfterDrop } from '../utils/computeNewFilesAfterDrop';
 import { buildFileListSyncIndex } from '../utils/fileListToTree';
 import { getGitStatusSignature } from '../utils/getGitStatusSignature';
 import { getSelectionPath } from '../utils/getSelectionPath';
+import { MutablePathTree } from '../utils/mutablePathTree';
 import type { IdToPathLookup } from '../utils/pathLookups';
 import { renameFileTreePaths } from '../utils/renameFileTreePaths';
 import type { ChildrenSortOption } from '../utils/sortChildren';
@@ -116,6 +117,7 @@ export function Root({
     useLazyDataLoader,
     virtualize,
   } = fileTreeOptions;
+  const persistentPathTree = fileTreeOptions.__pathTree;
   const benchmarkInstrumentation = getBenchmarkInstrumentation(fileTreeOptions);
   const renamingEnabled = isRenamingEnabled(renaming);
   const renamingConfig =
@@ -306,11 +308,24 @@ export function Root({
         flattenedDropSubfolderIdRef.current = null;
       }
 
+      const canPersistPathTreeMutation =
+        callbacksRef?.current._canApplyPathTreeMutation ?? true;
+      const workingPathTree =
+        canPersistPathTreeMutation === true
+          ? (persistentPathTree ?? MutablePathTree.fromFiles(filesRef.current))
+          : persistentPathTree;
+      const canMutatePathTree =
+        workingPathTree != null && canPersistPathTreeMutation;
+
       const newFiles = computeNewFilesAfterDrop(
         filesRef.current,
         draggedPaths,
         targetPath,
-        { onCollision }
+        {
+          onCollision,
+          pathTree: workingPathTree,
+          mutatePathTree: canMutatePathTree,
+        }
       );
 
       // Store the drop target path (stripped of f:: prefix) so the migration
@@ -327,9 +342,18 @@ export function Root({
         pendingDropTargetExpandRef.current = null;
       }
 
-      callbacksRef?.current._onDragMoveFiles?.(newFiles);
+      callbacksRef?.current._onDragMoveFiles?.(
+        newFiles,
+        canMutatePathTree ? workingPathTree : undefined
+      );
     },
-    [callbacksRef, onCollision, idToPath, flattenedDropSubfolderIdRef]
+    [
+      callbacksRef,
+      onCollision,
+      idToPath,
+      flattenedDropSubfolderIdRef,
+      persistentPathTree,
+    ]
   );
 
   // Track search state via ref so the canDrag callback (evaluated at event
@@ -407,11 +431,22 @@ export function Root({
         },
         onRename: (item: ItemInstance<FileTreeNode>, nextBasename: string) => {
           const data = item.getItemData();
+          const canPersistPathTreeMutation =
+            callbacksRef?.current._canApplyPathTreeMutation ?? true;
+          const workingPathTree =
+            canPersistPathTreeMutation === true
+              ? (persistentPathTree ??
+                MutablePathTree.fromFiles(filesRef.current))
+              : persistentPathTree;
+          const canMutatePathTree =
+            workingPathTree != null && canPersistPathTreeMutation;
           const result = renameFileTreePaths({
             files: filesRef.current,
             path: getSelectionPath(data.path),
             isFolder: data.children?.direct != null,
             nextBasename,
+            pathTree: workingPathTree,
+            mutatePathTree: canMutatePathTree,
           });
           if ('error' in result) {
             renamingConfig?.onError?.(result.error);
@@ -442,7 +477,10 @@ export function Root({
             isFolder: result.isFolder,
           });
           if (result.nextFiles !== filesRef.current) {
-            callbacksRef?.current._onRenameFiles?.(result.nextFiles);
+            callbacksRef?.current._onRenameFiles?.(
+              result.nextFiles,
+              canMutatePathTree ? workingPathTree : undefined
+            );
           }
         },
       }),
