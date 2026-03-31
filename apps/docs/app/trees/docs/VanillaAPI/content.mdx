@@ -32,7 +32,6 @@ tree state programmatically:
 
 | Method                              | Description                                               |
 | ----------------------------------- | --------------------------------------------------------- |
-| `setFiles(files)`                   | Replace the file list and re-render                       |
 | `getFiles()`                        | Return the current file list                              |
 | `setExpandedItems(items)`           | Set which folders are expanded                            |
 | `getExpandedItems()`                | Return the currently expanded folder paths                |
@@ -50,6 +49,7 @@ tree state programmatically:
 constructor's second argument. Use it for defaults (`initialExpandedItems`,
 `initialSelectedItems`, `initialSearchQuery`) and callbacks/controlled values
 (`onSelection`, `onExpandedItemsChange`, `onSelectedItemsChange`,
-`onFilesChange`, plus `expandedItems`/`selectedItems`/`files` when controlled).
+`onModelChange` (or legacy `onFilesChange`), plus `expandedItems`/
+`selectedItems` when controlled).
 
 <DocsCodeExample {...fileTreeStateConfigType} />

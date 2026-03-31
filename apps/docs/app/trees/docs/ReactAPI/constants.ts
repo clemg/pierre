@@ -11,7 +11,8 @@ const options = {
 export const REACT_API_FILE_TREE: PreloadFileOptions<undefined> = {
   file: {
     name: 'FileExplorer.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
+    contents: `import { FileTreeModel } from '@pierre/trees';
+import { FileTree } from '@pierre/trees/react';
 
 const files = [
   'src/index.ts',
@@ -20,8 +21,10 @@ const files = [
   'package.json',
 ];
 
+const model = FileTreeModel.fromFiles(files);
+
 export function FileExplorer() {
-  return <FileTree options={{}} initialFiles={files} />;
+  return <FileTree model={model} options={{}} />;
 }`,
   },
   options,
@@ -30,12 +33,15 @@ export function FileExplorer() {
 export const REACT_API_FILE_TREE_PROPS: PreloadFileOptions<undefined> = {
   file: {
     name: 'file_tree_props.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
+    contents: `import { FileTreeModel } from '@pierre/trees';
+import { FileTree } from '@pierre/trees/react';
 
 // FileTree accepts these props:
+const model = FileTreeModel.fromFiles(['src/index.ts', 'package.json']);
 
 <FileTree
-  // Required: options object + initialFiles (or controlled files)
+  // Required: model + options
+  model={model}
   options={{
     flattenEmptyDirectories: true,
     fileTreeSearchMode: 'expand-matches',
@@ -46,7 +52,6 @@ export const REACT_API_FILE_TREE_PROPS: PreloadFileOptions<undefined> = {
       }
     \`,
   }}
-  initialFiles={['src/index.ts', 'package.json']}
 
   // Optional: uncontrolled state defaults
   initialExpandedItems={['src']}
@@ -54,7 +59,6 @@ export const REACT_API_FILE_TREE_PROPS: PreloadFileOptions<undefined> = {
   initialSearchQuery="Button"
 
   // Optional: controlled state (overrides internal state each render)
-  // files={controlledFiles}
   // expandedItems={controlledExpanded}
   // selectedItems={controlledSelected}
 
@@ -62,7 +66,9 @@ export const REACT_API_FILE_TREE_PROPS: PreloadFileOptions<undefined> = {
   onSelection={(items) => console.log(items)}
   onExpandedItemsChange={(items) => console.log('expanded', items)}
   onSelectedItemsChange={(items) => console.log('selected', items)}
-  onFilesChange={(files) => console.log('files', files)}
+  onModelChange={(changeSet, { getFiles }) => {
+    console.log(changeSet.kind, getFiles());
+  }}
 
   // Optional: git status
   gitStatus={gitStatusEntries}
@@ -81,7 +87,14 @@ export const REACT_API_FILE_TREE_PROPS: PreloadFileOptions<undefined> = {
 export const REACT_API_CUSTOM_ICONS_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
     name: 'custom_icons_file_tree.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
+    contents: `import { FileTreeModel } from '@pierre/trees';
+import { FileTree } from '@pierre/trees/react';
+
+const model = FileTreeModel.fromFiles([
+  'src/index.ts',
+  'src/components/Button.tsx',
+  'package.json',
+]);
 
 const customSpriteSheet = \`
   <svg data-icon-sprite aria-hidden="true" width="0" height="0">
@@ -96,6 +109,7 @@ const customSpriteSheet = \`
 export function CustomIconsTree() {
   return (
     <FileTree
+      model={model}
       options={{
         id: 'custom-icons-tree',
         icons: {
@@ -105,11 +119,6 @@ export function CustomIconsTree() {
           },
         },
       }}
-      initialFiles={[
-        'src/index.ts',
-        'src/components/Button.tsx',
-        'package.json',
-      ]}
       initialExpandedItems={['src', 'src/components']}
     />
   );
@@ -122,7 +131,7 @@ export const REACT_API_GIT_STATUS_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
     name: 'git_status_file_tree.tsx',
     contents: `import { useEffect, useState } from 'react';
-import type { GitStatusEntry } from '@pierre/trees';
+import { FileTreeModel, type GitStatusEntry } from '@pierre/trees';
 import { FileTree } from '@pierre/trees/react';
 
 const files = [
@@ -132,6 +141,8 @@ const files = [
   'src/components/Button.tsx',
   'src/lib/utils.ts',
 ];
+
+const model = FileTreeModel.fromFiles(files);
 
 export function GitAwareTree() {
   const [gitStatus, setGitStatus] = useState<GitStatusEntry[] | undefined>();
@@ -147,8 +158,8 @@ export function GitAwareTree() {
 
   return (
     <FileTree
+      model={model}
       options={{ id: 'git-aware-tree' }}
-      initialFiles={files}
       initialExpandedItems={['src', 'src/components']}
       gitStatus={gitStatus}
     />

@@ -115,6 +115,15 @@ export interface FileTreeCallbacks {
   onExpandedItemsChange?: (items: string[]) => void;
   onSelectedItemsChange?: (items: string[]) => void;
   onSelection?: (items: FileTreeSelectionItem[]) => void;
+  /**
+   * Preferred model-mutation callback. Receives semantic changesets plus an
+   * on-demand snapshot accessor.
+   */
+  onModelChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
+  /** @deprecated Use onModelChange instead. */
   onFilesChange?: (
     changeSet: FileTreeChangeSet,
     context: FileTreeChangeContext
@@ -183,6 +192,15 @@ export interface FileTreeStateConfig {
   onExpandedItemsChange?: (items: string[]) => void;
   onSelectedItemsChange?: (items: string[]) => void;
   onSelection?: (items: FileTreeSelectionItem[]) => void;
+  /**
+   * Preferred model-mutation callback. Receives semantic changesets plus an
+   * on-demand snapshot accessor.
+   */
+  onModelChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
+  /** @deprecated Use onModelChange instead. */
   onFilesChange?: (
     changeSet: FileTreeChangeSet,
     context: FileTreeChangeContext
@@ -257,6 +275,7 @@ export class FileTree {
         onExpandedItemsChange: stateConfig.onExpandedItemsChange,
         onSelectedItemsChange: stateConfig.onSelectedItemsChange,
         onSelection: stateConfig.onSelection,
+        onModelChange: stateConfig.onModelChange,
         onFilesChange: stateConfig.onFilesChange,
         onContextMenuOpen: stateConfig.onContextMenuOpen,
         onContextMenuClose: stateConfig.onContextMenuClose,
@@ -480,10 +499,14 @@ export class FileTree {
 
   private handleModelMutation(mutation: FileTreeModelMutation): void {
     this.options.model = this.model;
-    this.callbacksRef.current.onFilesChange?.(mutation, {
+    const changeContext: FileTreeChangeContext = {
       model: this.model,
       getFiles: () => this.model.getFiles(),
-    });
+    };
+    const onModelMutationChange =
+      this.callbacksRef.current.onModelChange ??
+      this.callbacksRef.current.onFilesChange;
+    onModelMutationChange?.(mutation, changeContext);
 
     const handle = this.handleRef.current;
     if (handle == null) {
@@ -571,6 +594,9 @@ export class FileTree {
     }
     if (state?.onSelection !== undefined) {
       this.callbacksRef.current.onSelection = state.onSelection;
+    }
+    if (state?.onModelChange !== undefined) {
+      this.callbacksRef.current.onModelChange = state.onModelChange;
     }
     if (state?.onFilesChange !== undefined) {
       this.callbacksRef.current.onFilesChange = state.onFilesChange;

@@ -84,6 +84,11 @@ export interface FileTreeProps {
    */
   containerId?: string;
 
+  onModelChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
+  /** @deprecated Use onModelChange instead. */
   onFilesChange?: (
     changeSet: FileTreeChangeSet,
     context: FileTreeChangeContext
@@ -126,6 +131,7 @@ export function FileTree({
   style,
   prerenderedHTML,
   containerId,
+  onModelChange,
   onFilesChange,
   initialExpandedItems,
   initialSelectedItems,
@@ -183,6 +189,7 @@ export function FileTree({
   const { ref } = useFileTreeInstance({
     model,
     options,
+    onModelChange,
     onFilesChange,
     initialExpandedItems,
     initialSelectedItems,

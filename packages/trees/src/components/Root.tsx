@@ -175,26 +175,13 @@ export function Root({
       return syncIndex.pathToId;
     });
   }, [benchmarkInstrumentation, syncIndex]);
-  const idToPathSnapshot = useMemo(() => {
-    // Tie snapshot invalidation to modelVersion even though the syncIndex Map
-    // identity is stable across model mutations.
-    const snapshotVersion = modelVersion;
-    void snapshotVersion;
-
-    const snapshot = new Map<string, string>();
-    for (const [id, node] of syncIndex.tree) {
-      snapshot.set(id, node.path);
-    }
-    return snapshot;
-  }, [modelVersion, syncIndex]);
-
-  const idToPath = useMemo<IdToPathLookup>(
-    () => ({
-      get: (id: string) => idToPathSnapshot.get(id),
-      has: (id: string) => idToPathSnapshot.has(id),
-    }),
-    [idToPathSnapshot]
-  );
+  const idToPath = useMemo<IdToPathLookup>(() => {
+    // Keep lookup identity tied to model version so dependent caches can reset,
+    // while avoiding an O(N) id->path snapshot rebuild on every mutation.
+    const currentVersion = modelVersion;
+    void currentVersion;
+    return model.getIdToPathLookup();
+  }, [model, modelVersion]);
 
   const ancestorChainsCacheRef = useRef<Map<string, string[]>>(new Map());
   const prevIdToPathForCacheRef = useRef(idToPath);

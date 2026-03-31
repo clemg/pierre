@@ -8,7 +8,10 @@ import {
   buildFileListSyncIndex,
   type FileListSyncIndex,
 } from '../utils/fileListToTree';
-import { createMapPathToIdLookup } from '../utils/pathLookups';
+import {
+  createMapPathToIdLookup,
+  type IdToPathLookup,
+} from '../utils/pathLookups';
 import {
   type ChildrenSortOption,
   defaultChildrenComparator,
@@ -345,12 +348,17 @@ export class FileTreeModel {
   private readonly idToPathMap = new Map<string, string>();
   private readonly tree = new Map<string, FileTreeNode>();
   private readonly pathToIdLookup = createMapPathToIdLookup(this.pathToIdMap);
+  private readonly idToPathLookup: IdToPathLookup = {
+    get: (id: string) => this.idToPathMap.get(id),
+    has: (id: string) => this.idToPathMap.has(id),
+  };
   private readonly syncIndex: FileListSyncIndex = {
     pathToId: this.pathToIdLookup,
     tree: this.tree,
   };
 
   private files: string[] = [];
+  private readonly fileIndexByPath = new Map<string, number>();
   private version = 0;
   private nextNodeId = 1;
   private sortComparator: ChildrenSortOption;
@@ -391,6 +399,10 @@ export class FileTreeModel {
     }
 
     this.files = builtIndex.files;
+    this.fileIndexByPath.clear();
+    for (let index = 0; index < this.files.length; index += 1) {
+      this.fileIndexByPath.set(this.files[index], index);
+    }
     this.nextNodeId = builtIndex.nextNodeId;
   }
 
@@ -449,6 +461,14 @@ export class FileTreeModel {
 
   getPathForId(id: string): string | undefined {
     return this.idToPathMap.get(id);
+  }
+
+  hasId(id: string): boolean {
+    return this.idToPathMap.has(id);
+  }
+
+  getIdToPathLookup(): IdToPathLookup {
+    return this.idToPathLookup;
   }
 
   setSortComparator(sortComparator: ChildrenSortOption | undefined): void {
@@ -828,9 +848,11 @@ export class FileTreeModel {
       node.path = normalizedDestinationPath;
       node.name = getLeafName(normalizedDestinationPath);
 
-      const sourceIndex = this.files.indexOf(normalizedSourcePath);
-      if (sourceIndex >= 0) {
+      const sourceIndex = this.fileIndexByPath.get(normalizedSourcePath);
+      if (sourceIndex != null) {
         this.files[sourceIndex] = normalizedDestinationPath;
+        this.fileIndexByPath.delete(normalizedSourcePath);
+        this.fileIndexByPath.set(normalizedDestinationPath, sourceIndex);
       }
 
       this.sortChildren(parentId);
@@ -911,6 +933,10 @@ export class FileTreeModel {
           : filePath;
     }
     this.files = remappedFiles;
+    this.fileIndexByPath.clear();
+    for (let index = 0; index < remappedFiles.length; index += 1) {
+      this.fileIndexByPath.set(remappedFiles[index], index);
+    }
 
     this.sortChildren(parentId);
 

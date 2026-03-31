@@ -632,6 +632,29 @@ describe('SSR + declarative shadow DOM', () => {
     expect(snapshots).toEqual([['b.txt']]);
   });
 
+  test('renamePath invokes onModelChange callback with a changeset', () => {
+    const changes: import('../src/FileTree').FileTreeChangeSet[] = [];
+    const snapshots: string[][] = [];
+    const ft = createFileTree(
+      { initialFiles: ['a.txt'] },
+      {
+        onModelChange: (changeSet, context) => {
+          changes.push(changeSet);
+          snapshots.push(context.getFiles());
+        },
+      }
+    );
+
+    ft.renamePath({
+      sourcePath: 'a.txt',
+      destinationPath: 'b.txt',
+      isFolder: false,
+    });
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.kind).toBe('rename-path');
+    expect(snapshots).toEqual([['b.txt']]);
+  });
+
   test('render injects unsafeCSS into the shadow root and keeps it in sync', () => {
     const container = document.createElement('file-tree-container');
     const ft = createFileTree({

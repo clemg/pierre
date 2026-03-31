@@ -18,6 +18,10 @@ interface UseFileTreeInstanceProps {
   options: Omit<FileTreeOptions, 'model'>;
 
   // State callbacks
+  onModelChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
   onFilesChange?: (
     changeSet: FileTreeChangeSet,
     context: FileTreeChangeContext
@@ -53,6 +57,7 @@ interface UseFileTreeInstanceReturn {
 export function useFileTreeInstance({
   model,
   options,
+  onModelChange,
   onFilesChange,
   initialExpandedItems,
   initialSelectedItems,
@@ -81,6 +86,10 @@ export function useFileTreeInstance({
       ) => void;
       onContextMenuClose?: () => void;
       model: FileTreeModel;
+      onModelChange?: (
+        changeSet: FileTreeChangeSet,
+        context: FileTreeChangeContext
+      ) => void;
       onFilesChange?: (
         changeSet: FileTreeChangeSet,
         context: FileTreeChangeContext
@@ -88,6 +97,7 @@ export function useFileTreeInstance({
     }
   >({
     model,
+    onModelChange,
     onFilesChange,
     expandedItems,
     selectedItems,
@@ -103,6 +113,7 @@ export function useFileTreeInstance({
   });
   statePropsRef.current = {
     model,
+    onModelChange,
     onFilesChange,
     expandedItems,
     selectedItems,
@@ -180,6 +191,7 @@ export function useFileTreeInstance({
             onExpandedItemsChange: sp.onExpandedItemsChange,
             onSelectedItemsChange: sp.onSelectedItemsChange,
             onSelection: sp.onSelection,
+            onModelChange: sp.onModelChange,
             onFilesChange: sp.onFilesChange,
             onContextMenuOpen: sp.onContextMenuOpen,
             onContextMenuClose: sp.onContextMenuClose,
@@ -254,6 +266,7 @@ export function useFileTreeInstance({
       onExpandedItemsChange,
       onSelectedItemsChange,
       onSelection,
+      onModelChange,
       onFilesChange,
       onContextMenuOpen,
       onContextMenuClose,
@@ -262,6 +275,7 @@ export function useFileTreeInstance({
     onExpandedItemsChange,
     onSelectedItemsChange,
     onSelection,
+    onModelChange,
     onFilesChange,
     onContextMenuOpen,
     onContextMenuClose,
