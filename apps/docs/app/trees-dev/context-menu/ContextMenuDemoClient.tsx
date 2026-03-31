@@ -117,10 +117,11 @@ function VanillaSSRContextMenu({
         }),
         {
           ...stateConfig,
-          onFilesChange: (nextFiles) => {
+          onFilesChange: (changeSet, context) => {
+            const nextFiles = context.getFiles();
             filesRef.current = nextFiles;
             setFiles(nextFiles);
-            stateConfig?.onFilesChange?.(nextFiles);
+            stateConfig?.onFilesChange?.(changeSet, context);
           },
           onContextMenuOpen: (item, context) => {
             renderVanillaContextMenuSlot({
@@ -198,11 +199,21 @@ function ReactSSRContextMenu({
   );
   const { model, ...reactTreeOptions } = runtimeOptions;
 
+  const handleFilesChange = useCallback(
+    (
+      _changeSet: import('@pierre/trees').FileTreeChangeSet,
+      context: import('@pierre/trees').FileTreeChangeContext
+    ) => {
+      setFiles(context.getFiles());
+    },
+    []
+  );
+
   return (
     <FileTreeReact
       model={model}
       options={reactTreeOptions}
-      onFilesChange={setFiles}
+      onFilesChange={handleFilesChange}
       prerenderedHTML={prerenderedHTML}
       initialExpandedItems={stateConfig?.initialExpandedItems}
       onSelection={stateConfig?.onSelection}

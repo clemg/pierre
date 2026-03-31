@@ -59,7 +59,8 @@ function VanillaDnDUncontrolled({
   const mergedStateConfig = useMemo<FileTreeStateConfig>(
     () => ({
       ...stateConfig,
-      onFilesChange: (files) => {
+      onFilesChange: (_changeSet, context) => {
+        const files = context.getFiles();
         addLog(`files: [${files.join(', ')}]`);
       },
     }),
@@ -124,7 +125,11 @@ function ReactDnDControlled({
   const { log, addLog } = useStateLog();
 
   const handleFilesChange = useCallback(
-    (nextFiles: string[]) => {
+    (
+      _changeSet: import('@pierre/trees').FileTreeChangeSet,
+      context: import('@pierre/trees').FileTreeChangeContext
+    ) => {
+      const nextFiles = context.getFiles();
       if (lockGitignore) {
         const oldGitignore = files.find((f) => f.endsWith('.gitignore'));
         const newGitignore = nextFiles.find((f) => f.endsWith('.gitignore'));
@@ -203,7 +208,11 @@ function ReactDnDControlledSSR({
   const { log, addLog } = useStateLog();
 
   const handleFilesChange = useCallback(
-    (nextFiles: string[]) => {
+    (
+      _changeSet: import('@pierre/trees').FileTreeChangeSet,
+      context: import('@pierre/trees').FileTreeChangeContext
+    ) => {
+      const nextFiles = context.getFiles();
       if (lockGitignore) {
         const oldGitignore = files.find((f) => f.endsWith('.gitignore'));
         const newGitignore = nextFiles.find((f) => f.endsWith('.gitignore'));

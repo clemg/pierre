@@ -11,6 +11,8 @@ import {
   HEADER_SLOT_NAME,
 } from '../constants';
 import type {
+  FileTreeChangeContext,
+  FileTreeChangeSet,
   FileTreeOptions,
   FileTreeSelectionItem,
   GitStatusEntry,
@@ -82,7 +84,10 @@ export interface FileTreeProps {
    */
   containerId?: string;
 
-  onFilesChange?: (files: string[]) => void;
+  onFilesChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
 
   // Default (uncontrolled) state
   initialExpandedItems?: string[];

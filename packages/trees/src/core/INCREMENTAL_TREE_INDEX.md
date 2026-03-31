@@ -78,3 +78,36 @@ can refresh just the affected branch once data arrives.
    reindexing).
 3. Optional subtree size / descendant caches for even faster range operations.
 4. More aggressive dirty-root coalescing for complex batch moves.
+
+## v2 model direction (in progress)
+
+The next major step is to make the canonical model fully **ID/parent-pointer
+first**, while keeping path-based APIs as a projection layer.
+
+Planned properties:
+
+- Node identity is stable and path-independent.
+- After the initial model build, common edits (`add`, `delete`, `rename`,
+  `move`) should update local node links/child lists instead of rebuilding a
+  full file snapshot.
+- External mutation notifications should be **changesets**, not mandatory full
+  `files[]` snapshots.
+
+### SSR-stable IDs
+
+Initial IDs should be deterministic from server input so SSR hydration can match
+model identities. Path-derived hashing is acceptable as the bootstrap key
+source, while post-hydration mutations keep IDs stable even if paths change.
+
+### Why we are not introducing ropes/B+ trees yet
+
+The current block index already provides good locality with simpler
+implementation costs. A rope/B+ visible-order structure is a follow-on step for
+very large range edits (especially root-level subtree moves), once the model
+layer is fully local-mutation-first.
+
+Expected follow-on benefits when introduced:
+
+- lower-cost giant visible-range splices,
+- better asymptotic behavior for very large trees,
+- improved worst-case root-level structural edits.

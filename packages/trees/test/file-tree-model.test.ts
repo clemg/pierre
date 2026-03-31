@@ -3,6 +3,28 @@ import { describe, expect, test } from 'bun:test';
 import { FileTreeModel } from '../src/model/FileTreeModel';
 
 describe('FileTreeModel', () => {
+  test('assigns deterministic IDs across independent instances', () => {
+    const files = [
+      'README.md',
+      'src/index.ts',
+      'src/components/Button.tsx',
+      'docs/guide.md',
+    ];
+
+    const modelA = FileTreeModel.fromFiles(files, { sortComparator: false });
+    const modelB = FileTreeModel.fromFiles([...files].reverse(), {
+      sortComparator: false,
+    });
+
+    const indexA = modelA.getSyncIndex();
+    const indexB = modelB.getSyncIndex();
+
+    for (let index = 0; index < files.length; index += 1) {
+      const path = files[index];
+      expect(indexA.pathToId.get(path)).toBe(indexB.pathToId.get(path));
+    }
+  });
+
   test('keeps file IDs stable across same-parent rename', () => {
     const model = FileTreeModel.fromFiles(['src/a.ts', 'src/b.ts'], {
       sortComparator: false,

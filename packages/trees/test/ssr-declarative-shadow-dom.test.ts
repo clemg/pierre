@@ -565,15 +565,23 @@ describe('SSR + declarative shadow DOM', () => {
     ).not.toThrow();
   });
 
-  test('model.replaceAll invokes onFilesChange callback', () => {
-    const calls: string[][] = [];
+  test('model.replaceAll invokes onFilesChange callback with a changeset', () => {
+    const changes: import('../src/FileTree').FileTreeChangeSet[] = [];
+    const snapshots: string[][] = [];
     const ft = createFileTree(
       { initialFiles: ['a.txt'] },
-      { onFilesChange: (files) => calls.push(files) }
+      {
+        onFilesChange: (changeSet, context) => {
+          changes.push(changeSet);
+          snapshots.push(context.getFiles());
+        },
+      }
     );
 
     ft.model.replaceAll(['b.txt', 'c.txt']);
-    expect(calls).toEqual([['b.txt', 'c.txt']]);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.kind).toBe('replace-all');
+    expect(snapshots).toEqual([['b.txt', 'c.txt']]);
   });
 
   test('folder rename remaps expanded subtree paths', () => {
@@ -601,11 +609,17 @@ describe('SSR + declarative shadow DOM', () => {
     expect(nextExpanded).not.toContain('src');
   });
 
-  test('renamePath invokes onFilesChange callback', () => {
-    const calls: string[][] = [];
+  test('renamePath invokes onFilesChange callback with a changeset', () => {
+    const changes: import('../src/FileTree').FileTreeChangeSet[] = [];
+    const snapshots: string[][] = [];
     const ft = createFileTree(
       { initialFiles: ['a.txt'] },
-      { onFilesChange: (files) => calls.push(files) }
+      {
+        onFilesChange: (changeSet, context) => {
+          changes.push(changeSet);
+          snapshots.push(context.getFiles());
+        },
+      }
     );
 
     ft.renamePath({
@@ -613,7 +627,9 @@ describe('SSR + declarative shadow DOM', () => {
       destinationPath: 'b.txt',
       isFolder: false,
     });
-    expect(calls).toEqual([['b.txt']]);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.kind).toBe('rename-path');
+    expect(snapshots).toEqual([['b.txt']]);
   });
 
   test('render injects unsafeCSS into the shadow root and keeps it in sync', () => {

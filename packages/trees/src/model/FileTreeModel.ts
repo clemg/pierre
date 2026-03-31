@@ -17,6 +17,36 @@ import {
 const ROOT_ID = 'root';
 const FLATTENED_PREFIX_LENGTH = FLATTENED_PREFIX.length;
 
+function hashPathToStableSuffix(path: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < path.length; index += 1) {
+    hash ^= path.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function allocateDeterministicNodeId(
+  path: string,
+  usedIds: Set<string>
+): string {
+  const baseId = `p_${hashPathToStableSuffix(path)}`;
+  if (!usedIds.has(baseId)) {
+    usedIds.add(baseId);
+    return baseId;
+  }
+
+  let suffix = 2;
+  let candidate = `${baseId}_${suffix}`;
+  while (usedIds.has(candidate)) {
+    suffix += 1;
+    candidate = `${baseId}_${suffix}`;
+  }
+
+  usedIds.add(candidate);
+  return candidate;
+}
+
 function getParentPath(path: string): string {
   const separatorIndex = path.lastIndexOf('/');
   return separatorIndex < 0 ? ROOT_ID : path.slice(0, separatorIndex);
@@ -256,14 +286,8 @@ function buildStableIndexFromFiles(
       continue;
     }
 
-    let allocatedId: string;
-    do {
-      allocatedId = `n_${nextNodeId}`;
-      nextNodeId += 1;
-    } while (usedIds.has(allocatedId));
-
+    const allocatedId = allocateDeterministicNodeId(path, usedIds);
     pathToIdMap.set(path, allocatedId);
-    usedIds.add(allocatedId);
   }
 
   const idToPathMap = new Map<string, string>();

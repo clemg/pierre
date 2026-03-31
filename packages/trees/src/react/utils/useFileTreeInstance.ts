@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import {
   FileTree,
+  type FileTreeChangeContext,
+  type FileTreeChangeSet,
   type FileTreeOptions,
   type FileTreeSelectionItem,
   type FileTreeStateConfig,
@@ -16,7 +18,10 @@ interface UseFileTreeInstanceProps {
   options: Omit<FileTreeOptions, 'model'>;
 
   // State callbacks
-  onFilesChange?: (files: string[]) => void;
+  onFilesChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
 
   // Default (uncontrolled) state
   initialExpandedItems?: string[];
@@ -76,7 +81,10 @@ export function useFileTreeInstance({
       ) => void;
       onContextMenuClose?: () => void;
       model: FileTreeModel;
-      onFilesChange?: (files: string[]) => void;
+      onFilesChange?: (
+        changeSet: FileTreeChangeSet,
+        context: FileTreeChangeContext
+      ) => void;
     }
   >({
     model,

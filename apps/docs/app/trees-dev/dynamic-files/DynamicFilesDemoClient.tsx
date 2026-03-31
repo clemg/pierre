@@ -144,10 +144,16 @@ function ReactControlledFiles({
   );
   const [onFilesChangeCalls, setOnFilesChangeCalls] = useState(0);
 
-  const handleFilesChange = useCallback((nextFiles: string[]) => {
-    setOnFilesChangeCalls((count) => count + 1);
-    setFiles(nextFiles);
-  }, []);
+  const handleFilesChange = useCallback(
+    (
+      _changeSet: import('@pierre/trees').FileTreeChangeSet,
+      context: import('@pierre/trees').FileTreeChangeContext
+    ) => {
+      setOnFilesChangeCalls((count) => count + 1);
+      setFiles(context.getFiles());
+    },
+    []
+  );
 
   const runtimeOptions = useMemo(
     () =>
@@ -225,10 +231,16 @@ function ReactSSRControlledFiles({
   );
   const [onFilesChangeCalls, setOnFilesChangeCalls] = useState(0);
 
-  const handleFilesChange = useCallback((nextFiles: string[]) => {
-    setOnFilesChangeCalls((count) => count + 1);
-    setFiles(nextFiles);
-  }, []);
+  const handleFilesChange = useCallback(
+    (
+      _changeSet: import('@pierre/trees').FileTreeChangeSet,
+      context: import('@pierre/trees').FileTreeChangeContext
+    ) => {
+      setOnFilesChangeCalls((count) => count + 1);
+      setFiles(context.getFiles());
+    },
+    []
+  );
 
   const runtimeOptions = useMemo(
     () =>

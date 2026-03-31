@@ -104,11 +104,21 @@ export interface FileTreeHandle {
   closeContextMenu?: () => void;
 }
 
+export type FileTreeChangeSet = FileTreeModelMutation;
+
+export interface FileTreeChangeContext {
+  model: FileTreeModel;
+  getFiles: () => string[];
+}
+
 export interface FileTreeCallbacks {
   onExpandedItemsChange?: (items: string[]) => void;
   onSelectedItemsChange?: (items: string[]) => void;
   onSelection?: (items: FileTreeSelectionItem[]) => void;
-  onFilesChange?: (files: string[]) => void;
+  onFilesChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
   onContextMenuOpen?: (
     item: ContextMenuItem,
     context: ContextMenuOpenContext
@@ -173,7 +183,10 @@ export interface FileTreeStateConfig {
   onExpandedItemsChange?: (items: string[]) => void;
   onSelectedItemsChange?: (items: string[]) => void;
   onSelection?: (items: FileTreeSelectionItem[]) => void;
-  onFilesChange?: (files: string[]) => void;
+  onFilesChange?: (
+    changeSet: FileTreeChangeSet,
+    context: FileTreeChangeContext
+  ) => void;
   onContextMenuOpen?: (
     item: ContextMenuItem,
     context: ContextMenuOpenContext
@@ -466,9 +479,11 @@ export class FileTree {
   // --- Heavier updates (re-render) ---
 
   private handleModelMutation(mutation: FileTreeModelMutation): void {
-    const files = this.model.getFiles();
     this.options.model = this.model;
-    this.callbacksRef.current.onFilesChange?.(files);
+    this.callbacksRef.current.onFilesChange?.(mutation, {
+      model: this.model,
+      getFiles: () => this.model.getFiles(),
+    });
 
     const handle = this.handleRef.current;
     if (handle == null) {

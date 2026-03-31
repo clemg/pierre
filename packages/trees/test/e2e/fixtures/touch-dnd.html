@@ -43,8 +43,8 @@
         },
         {
           initialExpandedItems: ['src', 'src/components', 'lib'],
-          onFilesChange: (files) => {
-            window.__lastFilesChange = files;
+          onFilesChange: (_changeSet, context) => {
+            window.__lastFilesChange = context.getFiles();
           },
         }
       );
