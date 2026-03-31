@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { FileTreeOptions, FileTreeStateConfig } from '../src/FileTree';
+import { FileTreeModel } from '../src/model/FileTreeModel';
 import {
   type BenchmarkEnvironment,
   calculateDeltaPercent,
@@ -415,7 +416,9 @@ function createFileTreeOptions(
 ): FileTreeOptions {
   return {
     id: `benchmark-render-${caseConfig.name.replace(/[^A-Za-z0-9_-]/g, '-')}`,
-    initialFiles: caseConfig.files,
+    model: FileTreeModel.fromFiles(caseConfig.files, {
+      sortComparator: false,
+    }),
     flattenEmptyDirectories: true,
     sort: false,
     virtualize: { threshold: 0 },

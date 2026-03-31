@@ -13,6 +13,7 @@ import { selectionFeature } from '../src/features/selection/feature';
 import { syncDataLoaderFeature } from '../src/features/sync-data-loader/feature';
 import type { FileTreeSearchConfig } from '../src/FileTree';
 import { generateSyncDataLoader } from '../src/loader/sync';
+import { FileTreeModel } from '../src/model/FileTreeModel';
 import type { FileTreeNode } from '../src/types';
 
 let FileTree: typeof import('../src/FileTree').FileTree;
@@ -127,7 +128,7 @@ describe('Root memoization regressions', () => {
 
   test('folder rows update aria-expanded when expansion state changes', async () => {
     const ft = new FileTree({
-      initialFiles: ['README.md', 'src/index.ts'],
+      model: FileTreeModel.fromFiles(['README.md', 'src/index.ts']),
     });
     const containerWrapper = document.createElement('div');
 

@@ -10,7 +10,11 @@ import { cleanupFileTreeInstance } from '../_components/cleanupFileTreeInstance'
 import { ExampleCard } from '../_components/ExampleCard';
 import { StateLog, useStateLog } from '../_components/StateLog';
 import { useTreesDevSettings } from '../_components/TreesDevSettingsProvider';
-import { sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 interface StateDemoClientProps {
   preloadedFileTreeHtml: string;
@@ -59,7 +63,7 @@ function VanillaSSRState({
   stateConfig,
   containerHtml,
 }: {
-  options: import('@pierre/trees').FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
   containerHtml: string;
 }) {
@@ -91,7 +95,10 @@ function VanillaSSRState({
 
       cleanupFileTreeInstance(fileTreeContainer, instanceRef);
 
-      const fileTree = new FileTree(options, mergedStateConfig);
+      const fileTree = new FileTree(
+        toRuntimeFileTreeOptions(options),
+        mergedStateConfig
+      );
 
       if (!hasHydratedRef.current) {
         fileTree.hydrate({
@@ -174,12 +181,21 @@ function ReactSSRUncontrolled({
   stateConfig,
   prerenderedHTML,
 }: {
-  options: Omit<import('@pierre/trees').FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
   prerenderedHTML: string;
 }) {
   const { log, addLog } = useStateLog();
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: initialFiles ?? [],
+      }),
+    [initialFiles, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
 
   return (
     <ExampleCard
@@ -194,8 +210,8 @@ function ReactSSRUncontrolled({
       }
     >
       <FileTreeReact
-        options={options}
-        initialFiles={initialFiles}
+        model={model}
+        options={reactTreeOptions}
         prerenderedHTML={prerenderedHTML}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         initialSelectedItems={stateConfig?.initialSelectedItems}
@@ -217,7 +233,7 @@ function ReactSSRControlled({
   stateConfig,
   prerenderedHTML,
 }: {
-  options: Omit<import('@pierre/trees').FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
   prerenderedHTML: string;
@@ -245,6 +261,16 @@ function ReactSSRControlled({
     },
     [addLog]
   );
+
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: initialFiles ?? [],
+      }),
+    [initialFiles, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
 
   return (
     <ExampleCard
@@ -301,8 +327,8 @@ function ReactSSRControlled({
       }
     >
       <FileTreeReact
-        options={options}
-        initialFiles={initialFiles}
+        model={model}
+        options={reactTreeOptions}
         prerenderedHTML={prerenderedHTML}
         onSelection={stateConfig?.onSelection}
         expandedItems={expandedItems}

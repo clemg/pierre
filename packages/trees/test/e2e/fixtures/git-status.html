@@ -9,13 +9,13 @@
 
     <script type="module">
       import '/dist/web-components.js';
-      import { FileTree } from '/dist/index.js';
+      import { FileTree, FileTreeModel } from '/dist/index.js';
 
       const host = document.getElementById('git-status-host');
 
       const fileTree = new FileTree(
         {
-          initialFiles: [
+          model: FileTreeModel.fromFiles([
             'README.md',
             'package.json',
             'src/index.ts',
@@ -24,7 +24,7 @@
             'src/utils/worker.ts',
             'src/utils/stream.ts',
             'test/index.test.ts',
-          ],
+          ]),
           gitStatus: [
             { path: 'src/index.ts', status: 'modified' },
             { path: 'src/components/Button.tsx', status: 'added' },

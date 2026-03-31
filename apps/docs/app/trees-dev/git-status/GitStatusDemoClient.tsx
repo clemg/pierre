@@ -1,14 +1,18 @@
 'use client';
 
 import { FileTree } from '@pierre/trees';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import { FileTree as FileTreeReact } from '@pierre/trees/react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { ExampleCard } from '../_components/ExampleCard';
 import { useTreesDevSettings } from '../_components/TreesDevSettingsProvider';
 import { useGitStatusControls } from '../_components/useGitStatusControls';
-import { sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 interface GitStatusDemoClientProps {
   preloadedGitStatusFileTreeHtml: string;
@@ -47,7 +51,7 @@ function VanillaGitStatus({
   options,
   stateConfig,
 }: {
-  options: FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
 }) {
   const instanceRef = useRef<FileTree | null>(null);
@@ -64,7 +68,10 @@ function VanillaGitStatus({
         node.innerHTML = '';
       }
 
-      const fileTree = new FileTree({ ...options, gitStatus }, stateConfig);
+      const fileTree = new FileTree(
+        toRuntimeFileTreeOptions({ ...options, gitStatus }),
+        stateConfig
+      );
       fileTree.render({ containerWrapper: node });
       instanceRef.current = fileTree;
 
@@ -92,11 +99,21 @@ function GitStatusDemo({
   initialFiles,
   stateConfig,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
 }) {
   const { gitStatus, controls } = useGitStatusControls('react');
+
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: initialFiles ?? [],
+      }),
+    [initialFiles, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
 
   return (
     <ExampleCard
@@ -105,8 +122,8 @@ function GitStatusDemo({
       controls={controls}
     >
       <FileTreeReact
-        options={options}
-        initialFiles={initialFiles}
+        model={model}
+        options={reactTreeOptions}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         onSelection={stateConfig?.onSelection}
         gitStatus={gitStatus}
@@ -121,12 +138,22 @@ function ReactSSRGitStatus({
   stateConfig,
   prerenderedHTML,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
   prerenderedHTML: string;
 }) {
   const { gitStatus, controls } = useGitStatusControls('react-ssr');
+
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: initialFiles ?? [],
+      }),
+    [initialFiles, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
 
   return (
     <ExampleCard
@@ -135,8 +162,8 @@ function ReactSSRGitStatus({
       controls={controls}
     >
       <FileTreeReact
-        options={options}
-        initialFiles={initialFiles}
+        model={model}
+        options={reactTreeOptions}
         prerenderedHTML={prerenderedHTML}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         onSelection={stateConfig?.onSelection}

@@ -9,6 +9,7 @@ import {
   baseTreeOptions,
   DEFAULT_FILE_TREE_PANEL_CLASS,
   DEFAULT_FILE_TREE_PANEL_STYLE,
+  toReactTreeProps,
 } from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 
@@ -31,19 +32,24 @@ const panelStyle = {
   '--trees-search-bg-override': 'light-dark(#fff, oklch(14.5% 0 0))',
 } as CSSProperties;
 
+const { model: defaultModel, options: defaultReactOptions } = toReactTreeProps({
+  ...baseTreeOptions,
+  id: 'custom-icons-default',
+  lockedPaths: ['package.json'],
+});
+
 const defaultPrerenderedHTML = preloadFileTree(
   {
-    ...baseTreeOptions,
-    id: 'custom-icons-default',
-    lockedPaths: ['package.json'],
+    model: defaultModel,
+    ...defaultReactOptions,
   },
   {
     initialExpandedItems: ['src', 'src/components'],
   }
 ).shadowHtml;
 
-const remappedPrerenderedHTML = preloadFileTree(
-  {
+const { model: remappedModel, options: remappedReactOptions } =
+  toReactTreeProps({
     ...baseTreeOptions,
     id: 'custom-icons-remapped',
     lockedPaths: ['package.json'],
@@ -67,6 +73,12 @@ const remappedPrerenderedHTML = preloadFileTree(
         },
       },
     },
+  });
+
+const remappedPrerenderedHTML = preloadFileTree(
+  {
+    model: remappedModel,
+    ...remappedReactOptions,
   },
   {
     initialExpandedItems: ['src', 'src/components'],
@@ -103,13 +115,10 @@ export function CustomIconsSection() {
             Default
           </TreeExampleHeading>
           <FileTree
+            model={defaultModel}
             className={DEFAULT_FILE_TREE_PANEL_CLASS}
             prerenderedHTML={defaultPrerenderedHTML}
-            options={{
-              ...baseTreeOptions,
-              id: 'custom-icons-default',
-              lockedPaths: ['package.json'],
-            }}
+            options={defaultReactOptions}
             initialExpandedItems={['src', 'src/components']}
             style={panelStyle}
           />
@@ -127,33 +136,10 @@ export function CustomIconsSection() {
             Remapped
           </TreeExampleHeading>
           <FileTree
+            model={remappedModel}
             className={DEFAULT_FILE_TREE_PANEL_CLASS}
             prerenderedHTML={remappedPrerenderedHTML}
-            options={{
-              ...baseTreeOptions,
-              id: 'custom-icons-remapped',
-              lockedPaths: ['package.json'],
-              icons: {
-                spriteSheet: customSpriteSheet,
-                remap: {
-                  'file-tree-icon-file': {
-                    name: 'custom-file-icon',
-                    width: 12,
-                    height: 12,
-                  },
-                  'file-tree-icon-chevron': {
-                    name: 'custom-folder-icon',
-                    width: 12,
-                    height: 12,
-                  },
-                  'file-tree-icon-lock': {
-                    name: 'custom-lock-icon',
-                    width: 12,
-                    height: 12,
-                  },
-                },
-              },
-            }}
+            options={remappedReactOptions}
             initialExpandedItems={['src', 'src/components']}
             style={panelStyle}
           />

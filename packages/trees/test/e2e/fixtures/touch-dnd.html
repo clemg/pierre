@@ -23,13 +23,13 @@
 
     <script type="module">
       import '/dist/web-components.js';
-      import { FileTree } from '/dist/index.js';
+      import { FileTree, FileTreeModel } from '/dist/index.js';
 
       const host = document.getElementById('touch-dnd-host');
 
       const fileTree = new FileTree(
         {
-          initialFiles: [
+          model: FileTreeModel.fromFiles([
             'README.md',
             'package.json',
             'src/index.ts',
@@ -38,7 +38,7 @@
             'src/components/Card.tsx',
             'lib/helper.ts',
             'lib/constants.ts',
-          ],
+          ]),
           dragAndDrop: true,
         },
         {

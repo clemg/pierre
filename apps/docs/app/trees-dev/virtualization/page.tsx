@@ -1,6 +1,6 @@
 'use client';
 
-import { CONTEXT_MENU_SLOT_NAME, FileTree } from '@pierre/trees';
+import { CONTEXT_MENU_SLOT_NAME, FileTree, FileTreeModel } from '@pierre/trees';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Root as ReactDomRoot } from 'react-dom/client';
 
@@ -55,7 +55,9 @@ function VirtualizedLinuxKernelCard() {
           // TODO: this shouldnt be in a different place than
           // initialExpandedItems (this should probably move to
           // the state config)
-          initialFiles: linuxKernelFiles,
+          model: FileTreeModel.fromFiles(linuxKernelFiles, {
+            sortComparator: false,
+          }),
           virtualize: { threshold: 0 },
           flattenEmptyDirectories: true,
           sort: false,
@@ -138,7 +140,7 @@ function UnvirtualizedLinuxKernelCard() {
     if (node == null) return;
     const fileTree = new FileTree(
       {
-        initialFiles: linuxKernelFiles,
+        model: FileTreeModel.fromFiles(linuxKernelFiles),
         virtualize: false,
         flattenEmptyDirectories: true,
       },

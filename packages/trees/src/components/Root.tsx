@@ -1,12 +1,6 @@
 /** @jsxImportSource preact */
 import type { JSX } from 'preact';
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from 'preact/hooks';
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
 import {
   CONTEXT_MENU_SLOT_NAME,
@@ -53,16 +47,13 @@ import { generateLazyDataLoader } from '../loader/lazy';
 import { generateSyncDataLoaderFromIndex } from '../loader/sync';
 import type { SVGSpriteNames } from '../sprite';
 import type { FileTreeNode } from '../types';
-import { computeNewFilesAfterDrop } from '../utils/computeNewFilesAfterDrop';
-import { buildFileListSyncIndex } from '../utils/fileListToTree';
+import type { FileListSyncIndex } from '../utils/fileListToTree';
 import { getGitStatusSignature } from '../utils/getGitStatusSignature';
 import { getSelectionPath } from '../utils/getSelectionPath';
 import type { IdToPathLookup } from '../utils/pathLookups';
-import { renameFileTreePaths } from '../utils/renameFileTreePaths';
 import type { ChildrenSortOption } from '../utils/sortChildren';
 import { useContextMenuController } from './hooks/useContextMenuController';
 import {
-  getFilesSignature,
   type PendingDropTarget,
   type PendingRenameExpandedRemap,
   type PendingRenameFocusRestore,
@@ -104,7 +95,7 @@ export function Root({
 }: FileTreeRootProps): JSX.Element {
   'use no memo';
   const {
-    initialFiles: files,
+    model,
     flattenEmptyDirectories,
     fileTreeSearchMode,
     gitStatus,
@@ -170,19 +161,9 @@ export function Root({
     [sortOption]
   );
 
-  const syncIndex = useMemo(
-    () =>
-      withBenchmarkPhase(benchmarkInstrumentation, 'root.fileListToTree', () =>
-        buildFileListSyncIndex(
-          files,
-          attachBenchmarkInstrumentation(
-            { sortComparator },
-            benchmarkInstrumentation
-          )
-        )
-      ),
-    [benchmarkInstrumentation, files, sortComparator]
-  );
+  const files = model.getFiles();
+  const modelVersion = model.getVersion();
+  const syncIndex: FileListSyncIndex = model.getSyncIndex();
 
   const pathToId = useMemo(() => {
     return withBenchmarkPhase(benchmarkInstrumentation, 'root.pathToId', () => {
@@ -194,12 +175,25 @@ export function Root({
       return syncIndex.pathToId;
     });
   }, [benchmarkInstrumentation, syncIndex]);
+  const idToPathSnapshot = useMemo(() => {
+    // Tie snapshot invalidation to modelVersion even though the syncIndex Map
+    // identity is stable across model mutations.
+    const snapshotVersion = modelVersion;
+    void snapshotVersion;
+
+    const snapshot = new Map<string, string>();
+    for (const [id, node] of syncIndex.tree) {
+      snapshot.set(id, node.path);
+    }
+    return snapshot;
+  }, [modelVersion, syncIndex]);
+
   const idToPath = useMemo<IdToPathLookup>(
     () => ({
-      get: (id: string) => syncIndex.tree.get(id)?.path,
-      has: (id: string) => syncIndex.tree.has(id),
+      get: (id: string) => idToPathSnapshot.get(id),
+      has: (id: string) => idToPathSnapshot.has(id),
     }),
-    [syncIndex]
+    [idToPathSnapshot]
   );
 
   const ancestorChainsCacheRef = useRef<Map<string, string[]>>(new Map());
@@ -216,11 +210,12 @@ export function Root({
     benchmarkInstrumentation,
   });
 
+  const lazyFileInput = useLazyDataLoader === true ? files : null;
   const dataLoader = useMemo(
     () =>
       withBenchmarkPhase(benchmarkInstrumentation, 'root.dataLoader', () =>
         useLazyDataLoader === true
-          ? generateLazyDataLoader(files, {
+          ? generateLazyDataLoader(lazyFileInput ?? [], {
               flattenEmptyDirectories,
               sortComparator,
             })
@@ -230,8 +225,8 @@ export function Root({
       ),
     [
       benchmarkInstrumentation,
-      files,
       flattenEmptyDirectories,
+      lazyFileInput,
       sortComparator,
       syncIndex,
       useLazyDataLoader,
@@ -263,10 +258,6 @@ export function Root({
     base.push(propMemoizationFeature);
     return base;
   }, [isDnD, renamingEnabled]);
-
-  // Keep a ref to current files so onDrop doesn't capture stale values
-  const filesRef = useRef(files);
-  filesRef.current = files;
 
   // Ref populated after useTree — allows hooks called before useTree to
   // access the tree instance at event-handler time (not render time).
@@ -306,30 +297,28 @@ export function Root({
         flattenedDropSubfolderIdRef.current = null;
       }
 
-      const newFiles = computeNewFilesAfterDrop(
-        filesRef.current,
+      const result = model.movePaths({
         draggedPaths,
         targetPath,
-        { onCollision }
-      );
+        onCollision,
+      });
+      if (!result.ok) {
+        pendingDropTargetExpandRef.current = null;
+        return;
+      }
 
-      // Store the drop target path (stripped of f:: prefix) so the migration
-      // effect can expand it alongside the preserved expansion state, but only
-      // if this exact file result is later applied.
-      if (targetPath !== 'root') {
+      if (targetPath !== 'root' && result.mutation != null) {
         pendingDropTargetExpandRef.current = {
           path: targetPath.startsWith(FLATTENED_PREFIX)
             ? targetPath.slice(FLATTENED_PREFIX.length)
             : targetPath,
-          expectedFilesSignature: getFilesSignature(newFiles),
+          expectedVersion: result.mutation.version,
         };
       } else {
         pendingDropTargetExpandRef.current = null;
       }
-
-      callbacksRef?.current._onDragMoveFiles?.(newFiles);
     },
-    [callbacksRef, onCollision, idToPath, flattenedDropSubfolderIdRef]
+    [model, onCollision, idToPath, flattenedDropSubfolderIdRef]
   );
 
   // Track search state via ref so the canDrag callback (evaluated at event
@@ -407,43 +396,78 @@ export function Root({
         },
         onRename: (item: ItemInstance<FileTreeNode>, nextBasename: string) => {
           const data = item.getItemData();
-          const result = renameFileTreePaths({
-            files: filesRef.current,
-            path: getSelectionPath(data.path),
+          const sourcePath = getSelectionPath(data.path);
+          const trimmedBasename = nextBasename.trim();
+
+          if (trimmedBasename.length === 0) {
+            renamingConfig?.onError?.('Name cannot be empty.');
+            return;
+          }
+          if (trimmedBasename.includes('/')) {
+            renamingConfig?.onError?.('Name cannot include "/".');
+            return;
+          }
+
+          const separatorIndex = sourcePath.lastIndexOf('/');
+          const parentPath =
+            separatorIndex < 0 ? '' : sourcePath.slice(0, separatorIndex);
+          const currentBasename =
+            separatorIndex < 0
+              ? sourcePath
+              : sourcePath.slice(separatorIndex + 1);
+          if (currentBasename === trimmedBasename) {
+            pendingRenameExpandedRemapRef.current = null;
+            pendingRenameFocusRestoreRef.current = null;
+            return;
+          }
+
+          const destinationPath =
+            parentPath.length > 0
+              ? `${parentPath}/${trimmedBasename}`
+              : trimmedBasename;
+          const result = model.renamePath({
+            sourcePath,
+            destinationPath,
             isFolder: data.children?.direct != null,
-            nextBasename,
           });
-          if ('error' in result) {
+          if (!result.ok) {
+            pendingRenameExpandedRemapRef.current = null;
+            pendingRenameFocusRestoreRef.current = null;
             renamingConfig?.onError?.(result.error);
             return;
           }
-          if (result.isFolder && result.sourcePath !== result.destinationPath) {
+
+          const mutation = result.mutation;
+          if (mutation == null) {
+            pendingRenameExpandedRemapRef.current = null;
+            pendingRenameFocusRestoreRef.current = null;
+            return;
+          }
+
+          if (mutation.isFolder) {
             pendingRenameExpandedRemapRef.current = {
-              sourcePath: result.sourcePath,
-              destinationPath: result.destinationPath,
+              sourcePath: mutation.sourcePath,
+              destinationPath: mutation.destinationPath,
             };
           } else {
             pendingRenameExpandedRemapRef.current = null;
           }
-          if (result.sourcePath !== result.destinationPath) {
-            pendingRenameFocusRestoreRef.current = {
-              destinationPath: result.destinationPath,
-              expectedFilesSignature: getFilesSignature(result.nextFiles),
-            };
-          } else {
-            pendingRenameFocusRestoreRef.current = null;
-          }
-          if (result.sourcePath === result.destinationPath) {
-            return;
-          }
+          pendingRenameFocusRestoreRef.current = {
+            destinationPath: mutation.destinationPath,
+            expectedVersion: mutation.version,
+          };
+
           renamingConfig?.onRename?.({
-            sourcePath: result.sourcePath,
-            destinationPath: result.destinationPath,
-            isFolder: result.isFolder,
+            sourcePath: mutation.sourcePath,
+            destinationPath: mutation.destinationPath,
+            isFolder: mutation.isFolder,
           });
-          if (result.nextFiles !== filesRef.current) {
-            callbacksRef?.current._onRenameFiles?.(result.nextFiles);
-          }
+
+          // Stable model IDs keep the renamed item identity unchanged.
+          // Pin focus back to that ID so rename flows don't depend on
+          // path-based remap bookkeeping.
+          tree.applySubStateUpdate('focusedItem', () => item.getId());
+          tree.updateDomFocus();
         },
       }),
       ...(isDnD && {
@@ -477,7 +501,7 @@ export function Root({
   // --- Expansion migration ---
   useExpansionMigration({
     tree,
-    files,
+    structureVersion: modelVersion,
     pathToId,
     idToPath,
     flattenEmptyDirectories,
@@ -528,7 +552,7 @@ export function Root({
     tree,
     isContextMenuEnabled,
     callbacksRef,
-    files,
+    structureVersion: modelVersion,
     idToPath,
   });
   contextMenuRequestHandlerRef.current = (request: ContextMenuRequest) => {
@@ -538,8 +562,9 @@ export function Root({
   const focusedItemId = tree.getState().focusedItem ?? null;
   const hasFocusedItem = focusedItemId != null;
 
-  // Populate handleRef so the FileTree class can call tree methods directly
-  useEffect(() => {
+  // Populate handleRef so the FileTree class can call tree methods directly.
+  // useLayoutEffect makes the imperative handle available before paint.
+  useLayoutEffect(() => {
     if (handleRef == null) return;
     handleRef.current = {
       tree,

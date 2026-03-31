@@ -1,7 +1,11 @@
 import { preloadFileTree } from '@pierre/trees/ssr';
 
 import { readSettingsCookies } from '../_components/readSettingsCookies';
-import { sharedDemoFileTreeOptions, sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoFileTreeOptions,
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+} from '../demo-data';
 import { HeaderSlotDemoClient } from './HeaderSlotDemoClient';
 
 export default async function HeaderSlotPage() {
@@ -13,7 +17,10 @@ export default async function HeaderSlotPage() {
     useLazyDataLoader,
   };
 
-  const mainSsr = preloadFileTree(fileTreeOptions, sharedDemoStateConfig);
+  const mainSsr = preloadFileTree(
+    toRuntimeFileTreeOptions(fileTreeOptions),
+    sharedDemoStateConfig
+  );
 
   return (
     <HeaderSlotDemoClient

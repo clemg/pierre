@@ -18,7 +18,11 @@ import {
   FILE_TREE_COOKIE_VERSION,
   FILE_TREE_COOKIE_VERSION_NAME,
 } from '../cookies';
-import { sharedDemoFileTreeOptions } from '../demo-data';
+import {
+  sharedDemoFileTreeOptions,
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 interface TreesDevSettingsContextValue {
   flattenEmptyDirectories: boolean;
@@ -26,8 +30,8 @@ interface TreesDevSettingsContextValue {
   setFlattenEmptyDirectories: (val: boolean) => void;
   setUseLazyDataLoader: (val: boolean) => void;
   handleResetControls: () => void;
-  fileTreeOptions: FileTreeOptions;
-  reactOptions: Omit<FileTreeOptions, 'initialFiles'>;
+  fileTreeOptions: TreesDevFileTreeOptions;
+  reactOptions: Omit<FileTreeOptions, 'model'>;
   reactFiles: string[] | undefined;
 }
 
@@ -102,7 +106,7 @@ export function TreesDevSettingsProvider({
     }${cookieSuffix}`;
   }, [cookieMaxAge, flattenEmptyDirectories, useLazyDataLoader]);
 
-  const fileTreeOptions = useMemo<FileTreeOptions>(
+  const fileTreeOptions = useMemo<TreesDevFileTreeOptions>(
     () => ({
       ...sharedDemoFileTreeOptions,
       flattenEmptyDirectories,
@@ -111,7 +115,9 @@ export function TreesDevSettingsProvider({
     [flattenEmptyDirectories, useLazyDataLoader]
   );
 
-  const { initialFiles: reactFiles, ...reactOptions } = fileTreeOptions;
+  const reactFiles = fileTreeOptions.initialFiles;
+  const runtimeReactOptions = toRuntimeFileTreeOptions(fileTreeOptions);
+  const { model: _reactModel, ...reactOptions } = runtimeReactOptions;
 
   const value = useMemo<TreesDevSettingsContextValue>(
     () => ({

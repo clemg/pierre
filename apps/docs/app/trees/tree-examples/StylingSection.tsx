@@ -7,7 +7,7 @@ import type { CSSProperties } from 'react';
 import { IconFootnote } from '../../components/IconFootnote';
 import { TreeExampleHeading } from '../../components/TreeExampleHeading';
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
-import { baseTreeOptions } from './demo-data';
+import { baseTreeOptions, toReactTreeProps } from './demo-data';
 import { styleObjectToCss } from './styleToCss';
 import { TreeCssViewer } from './TreeCssViewer';
 import { TreeExampleSection } from './TreeExampleSection';
@@ -68,30 +68,46 @@ function synthwaveTheme(): CSSProperties {
   };
 }
 
+const { model: lightModel, options: lightReactOptions } = toReactTreeProps({
+  ...baseTreeOptions,
+  id: 'theming-demo-light',
+});
+
 const lightPrerenderedHTML = preloadFileTree(
   {
-    ...baseTreeOptions,
-    id: 'theming-demo-light',
+    model: lightModel,
+    ...lightReactOptions,
   },
   {
     initialSelectedItems: ['package.json'],
   }
 ).shadowHtml;
+
+const { model: darkModel, options: darkReactOptions } = toReactTreeProps({
+  ...baseTreeOptions,
+  id: 'theming-demo-dark',
+});
 
 const darkPrerenderedHTML = preloadFileTree(
   {
-    ...baseTreeOptions,
-    id: 'theming-demo-dark',
+    model: darkModel,
+    ...darkReactOptions,
   },
   {
     initialSelectedItems: ['package.json'],
   }
 ).shadowHtml;
 
-const synthwavePrerenderedHTML = preloadFileTree(
-  {
+const { model: synthwaveModel, options: synthwaveReactOptions } =
+  toReactTreeProps({
     ...baseTreeOptions,
     id: 'theming-demo-synthwave',
+  });
+
+const synthwavePrerenderedHTML = preloadFileTree(
+  {
+    model: synthwaveModel,
+    ...synthwaveReactOptions,
   },
   {
     initialSelectedItems: ['package.json'],
@@ -121,12 +137,10 @@ export function StylingSection() {
         <div>
           <TreeExampleHeading>Light mode</TreeExampleHeading>
           <FileTree
+            model={lightModel}
             className="min-h-[320px] rounded-lg border border-neutral-200 bg-neutral-50 p-2"
             prerenderedHTML={lightPrerenderedHTML}
-            options={{
-              ...baseTreeOptions,
-              id: 'theming-demo-light',
-            }}
+            options={lightReactOptions}
             initialSelectedItems={['package.json']}
             style={lightTheme()}
           />
@@ -138,12 +152,10 @@ export function StylingSection() {
         <div>
           <TreeExampleHeading>Dark mode</TreeExampleHeading>
           <FileTree
+            model={darkModel}
             className="min-h-[320px] rounded-lg border border-neutral-700 bg-neutral-900 p-2"
             prerenderedHTML={darkPrerenderedHTML}
-            options={{
-              ...baseTreeOptions,
-              id: 'theming-demo-dark',
-            }}
+            options={darkReactOptions}
             initialSelectedItems={['package.json']}
             style={darkTheme()}
           />
@@ -155,12 +167,10 @@ export function StylingSection() {
         <div>
           <TreeExampleHeading>Synthwave &apos;84</TreeExampleHeading>
           <FileTree
+            model={synthwaveModel}
             className="min-h-[320px] rounded-lg border border-[#f92aad]/40 bg-[#1e1b2b] p-2 shadow-[inset_0_0_60px_rgba(249,42,173,0.08)]"
             prerenderedHTML={synthwavePrerenderedHTML}
-            options={{
-              ...baseTreeOptions,
-              id: 'theming-demo-synthwave',
-            }}
+            options={synthwaveReactOptions}
             initialSelectedItems={['package.json']}
             style={synthwaveTheme()}
           />

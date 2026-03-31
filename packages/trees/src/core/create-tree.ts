@@ -1,7 +1,6 @@
 import type { TreeDataRef } from '../features/main/types';
 import { treeFeature } from '../features/tree/feature';
 import type { ItemMeta } from '../features/tree/types';
-import { buildPackedVisibleItemMeta } from '../features/tree/visibleItemMeta';
 import {
   getBenchmarkInstrumentation,
   setBenchmarkCounter,
@@ -9,6 +8,10 @@ import {
 } from '../internal/benchmarkInstrumentation';
 /* oxlint-disable typescript-eslint/no-unsafe-return, typescript-eslint/strict-boolean-expressions */
 import { buildStaticInstance } from './build-static-instance';
+import {
+  IncrementalTreeIndex,
+  type IncrementalTreeRebuildResult,
+} from './incremental-tree-index';
 import {
   type FeatureImplementation,
   type HotkeysConfig,
@@ -66,29 +69,20 @@ const compareFeatures =
 const sortFeatures = (features: FeatureImplementation[] = []) =>
   exhaustiveSort(features, compareFeatures(features));
 
-interface PackedItemMetaStore {
-  cache: Array<ItemMeta | undefined>;
-  indexById: Record<string, number | undefined>;
-  levels: number[];
-  parentIds: string[];
-  posInSet: number[];
-  setSizes: number[];
-}
-
-function createPackedItemMetaStore(): PackedItemMetaStore {
-  return {
-    cache: [],
-    indexById: Object.create(null) as Record<string, number | undefined>,
-    levels: [],
-    parentIds: [],
-    posInSet: [],
-    setSizes: [],
-  };
-}
-
 function createFallbackItemMeta(itemId: string): ItemMeta {
   return {
     itemId,
+    parentId: null,
+    level: -1,
+    index: -1,
+    posInSet: 0,
+    setSize: 1,
+  };
+}
+
+function createRootItemMeta(rootItemId: string): ItemMeta {
+  return {
+    itemId: rootItemId,
     parentId: null,
     level: -1,
     index: -1,
@@ -140,10 +134,15 @@ export const createTree = <T>(
   const itemElementsMap: Record<string, HTMLElement | undefined | null> = {};
   // oxlint-disable-next-line typescript-eslint/no-explicit-any
   const itemDataRefs: Record<string, { current: any }> = {};
-  let itemMetaStore = createPackedItemMetaStore();
-  let rootItemMeta: ItemMeta = createFallbackItemMeta(initialConfig.rootItemId);
+  const itemMetaCache = new Map<string, ItemMeta>();
+  let rootItemMeta: ItemMeta = createRootItemMeta(initialConfig.rootItemId);
 
   const hotkeyPresets = {} as HotkeysConfig<T>;
+
+  const treeIndex = new IncrementalTreeIndex({
+    retrieveChildrenIds: (itemId) => treeInstance.retrieveChildrenIds(itemId),
+    getLoadingChildrenIds: () => state.loadingItemChildrens,
+  });
 
   // Builds and caches a single item instance the first time a caller actually
   // needs it. This lets virtualized renders size/slice the visible tree using
@@ -185,41 +184,55 @@ export const createTree = <T>(
     itemInstancesMap[config.rootItemId] = rootInstance;
   };
 
-  const rebuildItemMeta = () => {
-    withBenchmarkPhase(benchmarkInstrumentation, 'core.rebuildItemMeta', () => {
-      itemInstances = null;
-      itemMetaStore = createPackedItemMetaStore();
-      rootItemMeta = {
-        itemId: config.rootItemId,
-        index: -1,
-        parentId: null!,
-        level: -1,
-        posInSet: 0,
-        setSize: 1,
-      };
+  const invalidateVisibleCaches = () => {
+    itemInstances = null;
+    itemMetaCache.clear();
+  };
 
+  const syncVisibleIdsToDataRef = () => {
+    visibleItemIds = treeIndex.getVisibleItemIds();
+    const ref = treeDataRef.current as TreeDataRef;
+    ref.visibleItemIds = visibleItemIds;
+    setBenchmarkCounter(
+      benchmarkInstrumentation,
+      'workload.visibleItemMeta',
+      visibleItemIds.length
+    );
+  };
+
+  const rebuildItemMeta = (forceFull = false) => {
+    withBenchmarkPhase(benchmarkInstrumentation, 'core.rebuildItemMeta', () => {
+      let rebuildResult: IncrementalTreeRebuildResult;
+
+      try {
+        rebuildResult = treeIndex.rebuild({
+          rootId: config.rootItemId,
+          expandedItems: state.expandedItems,
+          dataLoaderIdentity: config.dataLoader,
+          forceFull,
+        });
+      } catch {
+        rebuildResult = treeIndex.rebuild({
+          rootId: config.rootItemId,
+          expandedItems: state.expandedItems,
+          dataLoaderIdentity: config.dataLoader,
+          forceFull: true,
+        });
+      }
+
+      rootItemMeta = createRootItemMeta(config.rootItemId);
       rebuildRootItemInstance();
 
-      // FileTree does not expose generic core feature overrides, so the hot
-      // rebuild path intentionally bypasses `tree.getItemsMeta()` and uses the
-      // packed traversal directly. If FileTree needs alternate visible-item
-      // derivation later, add a dedicated fast path here instead of routing
-      // every rebuild through the generic feature hook.
-      const packedVisibleMeta = buildPackedVisibleItemMeta(treeInstance);
-      itemMetaStore.indexById = packedVisibleMeta.indexById;
-      itemMetaStore.parentIds = packedVisibleMeta.parentIds;
-      itemMetaStore.levels = packedVisibleMeta.levels;
-      itemMetaStore.setSizes = packedVisibleMeta.setSizes;
-      itemMetaStore.posInSet = packedVisibleMeta.posInSet;
-      itemMetaStore.cache = new Array(packedVisibleMeta.visibleItemIds.length);
+      if (rebuildResult.visibleChanged) {
+        invalidateVisibleCaches();
+      }
 
-      visibleItemIds = packedVisibleMeta.visibleItemIds;
-      (treeDataRef.current as TreeDataRef).visibleItemIds = visibleItemIds;
-      setBenchmarkCounter(
-        benchmarkInstrumentation,
-        'workload.visibleItemMeta',
-        visibleItemIds.length
-      );
+      const ref = treeDataRef.current as TreeDataRef;
+      ref.lastRebuildMode = rebuildResult.mode;
+      ref.rebuildModeCounts ??= { full: 0, incremental: 0, noop: 0 };
+      ref.rebuildModeCounts[rebuildResult.mode] += 1;
+
+      syncVisibleIdsToDataRef();
       rebuildScheduled = false;
     });
   };
@@ -229,6 +242,22 @@ export const createTree = <T>(
     for (const feature of additionalFeatures) {
       fn(feature);
     }
+  };
+
+  const runRebuild = (forceFull = false) => {
+    const ref = treeDataRef.current as TreeDataRef;
+    const run = () => {
+      rebuildItemMeta(forceFull);
+      config.setState?.(state);
+    };
+
+    if (ref.isMounted === true) {
+      run();
+      return;
+    }
+
+    ref.waitingForMount ??= [];
+    ref.waitingForMount.push(run);
   };
 
   const mainFeature: FeatureImplementation<T> = {
@@ -269,21 +298,15 @@ export const createTree = <T>(
           ref.waitingForMount.push(apply);
         }
       },
-      rebuildTree: () => {
-        const ref = treeDataRef.current as TreeDataRef;
-        if (ref.isMounted === true) {
-          rebuildItemMeta();
-          config.setState?.(state);
-        } else {
-          ref.waitingForMount ??= [];
-          ref.waitingForMount.push(() => {
-            rebuildItemMeta();
-            config.setState?.(state);
-          });
-        }
+      rebuildTree: () => runRebuild(false),
+      rebuildTreeFromScratch: () => runRebuild(true),
+      markBranchDirty: (_opts, itemId, reason = 'children') => {
+        treeIndex.markBranchDirty(itemId, reason);
       },
       scheduleRebuildTree: () => {
         rebuildScheduled = true;
+        const ref = treeDataRef.current as TreeDataRef;
+        ref.visibleItemIds = undefined;
       },
       getConfig: () => config,
       setConfig: (_, updater) => {
@@ -297,8 +320,8 @@ export const createTree = <T>(
         if (newConfig.state != null) {
           state = { ...state, ...newConfig.state };
         }
+
         if (hasChangedExpandedItems === true) {
-          // if expanded items where changed from the outside
           rebuildItemMeta();
           config.setState?.(state);
         }
@@ -352,30 +375,36 @@ export const createTree = <T>(
       getElement: ({ itemId }) => itemElementsMap[itemId],
       getDataRef: ({ itemId }) => (itemDataRefs[itemId] ??= { current: {} }),
       getItemMeta: ({ itemId }) => {
+        if (rebuildScheduled) {
+          rebuildItemMeta();
+        }
+
         if (itemId === rootItemMeta.itemId) {
           return rootItemMeta;
         }
 
-        const index = itemMetaStore.indexById[itemId];
-        if (index === undefined) {
+        const visibleIndex = treeIndex.getVisibleIndex(itemId);
+        const visibleMeta = treeIndex.getVisibleMeta(itemId);
+        if (visibleIndex == null || visibleMeta == null) {
           return createFallbackItemMeta(itemId);
         }
 
-        const cached = itemMetaStore.cache[index];
-        if (cached != null) {
-          return cached;
+        const cachedMeta = itemMetaCache.get(itemId);
+        if (cachedMeta != null && cachedMeta.index === visibleIndex) {
+          return cachedMeta;
         }
 
-        const meta: ItemMeta = {
+        const itemMeta: ItemMeta = {
           itemId,
-          parentId: itemMetaStore.parentIds[index] ?? null,
-          level: itemMetaStore.levels[index] ?? -1,
-          index,
-          posInSet: itemMetaStore.posInSet[index] ?? 0,
-          setSize: itemMetaStore.setSizes[index] ?? 1,
+          parentId: visibleMeta.parentId,
+          level: visibleMeta.level,
+          index: visibleIndex,
+          posInSet: visibleMeta.posInSet,
+          setSize: visibleMeta.setSize,
         };
-        itemMetaStore.cache[index] = meta;
-        return meta;
+
+        itemMetaCache.set(itemId, itemMeta);
+        return itemMeta;
       },
     },
   };

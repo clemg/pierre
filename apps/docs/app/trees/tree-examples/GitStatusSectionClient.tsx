@@ -11,11 +11,13 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
+import { sampleFileList } from '../../trees/demo-data';
 import {
   baseTreeOptions,
   DEFAULT_FILE_TREE_PANEL_CLASS,
   GIT_STATUSES_A,
   GIT_STATUSES_B,
+  toReactTreeProps,
 } from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 import { Button } from '@/components/ui/button';
@@ -46,13 +48,21 @@ export function GitStatusSectionClient({
 
   const visibleFiles = useMemo(() => {
     if (!enabled || showUnmodified) {
-      return baseTreeOptions.initialFiles;
+      return sampleFileList;
     }
     const changedPaths = new Set(activeGitStatus.map((entry) => entry.path));
-    return baseTreeOptions.initialFiles.filter((path) =>
-      changedPaths.has(path)
-    );
+    return sampleFileList.filter((path) => changedPaths.has(path));
   }, [activeGitStatus, enabled, showUnmodified]);
+  const treeProps = useMemo(
+    () =>
+      toReactTreeProps({
+        ...baseTreeOptions,
+        id: 'path-colors-git-status-demo',
+        initialFiles: visibleFiles,
+      }),
+    [visibleFiles]
+  );
+
   const panelStyle = {
     colorScheme: colorMode,
     '--trees-search-bg-override': isDark ? 'oklch(14.5% 0 0)' : '#fff',
@@ -136,13 +146,10 @@ export function GitStatusSectionClient({
 
         <div className={isDark ? 'dark' : ''}>
           <FileTree
+            model={treeProps.model}
             className={DEFAULT_FILE_TREE_PANEL_CLASS}
             prerenderedHTML={prerenderedHTML}
-            options={{
-              ...baseTreeOptions,
-              id: 'path-colors-git-status-demo',
-            }}
-            files={visibleFiles}
+            options={treeProps.options}
             initialExpandedItems={['src', 'src/components']}
             gitStatus={gitStatus}
             style={panelStyle}

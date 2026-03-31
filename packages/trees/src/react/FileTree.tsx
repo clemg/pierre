@@ -15,6 +15,7 @@ import type {
   FileTreeSelectionItem,
   GitStatusEntry,
 } from '../FileTree';
+import type { FileTreeModel } from '../model/FileTreeModel';
 import type { ContextMenuItem, ContextMenuOpenContext } from '../types';
 import { useFileTreeInstance } from './utils/useFileTreeInstance';
 
@@ -69,7 +70,8 @@ export function templateRender(
 }
 
 export interface FileTreeProps {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  model: FileTreeModel;
+  options: Omit<FileTreeOptions, 'model'>;
   className?: string;
   style?: React.CSSProperties;
   prerenderedHTML?: string;
@@ -80,11 +82,6 @@ export interface FileTreeProps {
    */
   containerId?: string;
 
-  // Default (uncontrolled) files
-  initialFiles?: string[];
-
-  // Controlled files
-  files?: string[];
   onFilesChange?: (files: string[]) => void;
 
   // Default (uncontrolled) state
@@ -118,13 +115,12 @@ export interface FileTreeProps {
 }
 
 export function FileTree({
+  model,
   options,
   className,
   style,
   prerenderedHTML,
   containerId,
-  initialFiles,
-  files,
   onFilesChange,
   initialExpandedItems,
   initialSelectedItems,
@@ -180,9 +176,8 @@ export function FileTree({
     activeContextMenuContext
   );
   const { ref } = useFileTreeInstance({
+    model,
     options,
-    initialFiles,
-    files,
     onFilesChange,
     initialExpandedItems,
     initialSelectedItems,

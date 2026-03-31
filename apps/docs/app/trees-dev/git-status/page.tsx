@@ -5,6 +5,7 @@ import {
   GIT_STATUSES_A,
   sharedDemoFileTreeOptions,
   sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
 } from '../demo-data';
 import { GitStatusDemoClient } from './GitStatusDemoClient';
 
@@ -18,7 +19,10 @@ export default async function GitStatusPage() {
   };
 
   const gitStatusSsr = preloadFileTree(
-    { ...fileTreeOptions, gitStatus: GIT_STATUSES_A },
+    toRuntimeFileTreeOptions({
+      ...fileTreeOptions,
+      gitStatus: GIT_STATUSES_A,
+    }),
     sharedDemoStateConfig
   );
 

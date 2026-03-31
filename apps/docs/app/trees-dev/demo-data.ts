@@ -1,8 +1,9 @@
-import type {
-  FileTreeOptions,
-  FileTreeSelectionItem,
-  FileTreeStateConfig,
-  GitStatusEntry,
+import {
+  FileTreeModel,
+  type FileTreeOptions,
+  type FileTreeSelectionItem,
+  type FileTreeStateConfig,
+  type GitStatusEntry,
 } from '@pierre/trees';
 
 import linuxData from './linux-files.json';
@@ -76,10 +77,32 @@ const sampleFileList: string[] = [
   '.gitignore',
 ];
 
-export const sharedDemoFileTreeOptions: FileTreeOptions = {
+export type TreesDevFileTreeOptions = Omit<FileTreeOptions, 'model'> & {
+  initialFiles: string[];
+};
+
+export const sharedDemoFileTreeOptions: TreesDevFileTreeOptions = {
   flattenEmptyDirectories: true,
   initialFiles: sampleFileList,
 };
+
+export function toRuntimeFileTreeOptions(
+  options: TreesDevFileTreeOptions
+): FileTreeOptions {
+  const { initialFiles, sort, ...rest } = options;
+  const sortComparator =
+    sort === false
+      ? false
+      : sort != null && typeof sort === 'object'
+        ? sort.comparator
+        : undefined;
+
+  return {
+    ...rest,
+    sort,
+    model: FileTreeModel.fromFiles(initialFiles, { sortComparator }),
+  };
+}
 
 export const GIT_STATUSES_A: GitStatusEntry[] = [
   { path: 'src/index.ts', status: 'modified' },

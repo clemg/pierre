@@ -13,6 +13,8 @@ export const removeItemsFromParents = async <T>(
     ...new Set(movedItems.map((item) => item.getParent())),
   ];
 
+  let handledRebuildViaItemUpdater = false;
+
   for (const parent of uniqueParents) {
     const siblings = parent?.getChildren();
     if (siblings != null && parent != null) {
@@ -20,11 +22,20 @@ export const removeItemsFromParents = async <T>(
         .filter((sibling) => !movedItemsIds.includes(sibling.getId()))
         .map((i) => i.getId());
       await onChangeChildren(parent, newChildren);
-      if ('updateCachedChildrenIds' in parent) {
-        parent.updateCachedChildrenIds(newChildren);
+
+      const maybeAsyncParent = parent as ItemInstance<T> & {
+        updateCachedChildrenIds?: (childrenIds: string[]) => void;
+      };
+      if (typeof maybeAsyncParent.updateCachedChildrenIds === 'function') {
+        maybeAsyncParent.updateCachedChildrenIds(newChildren);
+        handledRebuildViaItemUpdater = true;
+      } else {
+        movedItems[0].getTree().markBranchDirty(parent.getId(), 'children');
       }
     }
   }
 
-  movedItems[0].getTree().rebuildTree();
+  if (!handledRebuildViaItemUpdater) {
+    movedItems[0].getTree().rebuildTree();
+  }
 };

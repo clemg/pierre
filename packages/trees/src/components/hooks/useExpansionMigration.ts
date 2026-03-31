@@ -31,7 +31,7 @@ function resolvePathToRenderedId(
 
 export interface PendingDropTarget {
   path: string;
-  expectedFilesSignature: string;
+  expectedVersion: number;
 }
 
 export interface PendingRenameExpandedRemap {
@@ -41,12 +41,12 @@ export interface PendingRenameExpandedRemap {
 
 export interface PendingRenameFocusRestore {
   destinationPath: string;
-  expectedFilesSignature: string;
+  expectedVersion: number;
 }
 
 export interface UseExpansionMigrationArgs {
   tree: TreeInstance<FileTreeNode>;
-  files: string[];
+  structureVersion: number;
   pathToId: PathToIdLookup;
   idToPath: IdToPathLookup;
   flattenEmptyDirectories: boolean | undefined;
@@ -73,7 +73,7 @@ export interface UseExpansionMigrationArgs {
  */
 export function useExpansionMigration({
   tree,
-  files,
+  structureVersion,
   pathToId,
   idToPath,
   flattenEmptyDirectories,
@@ -85,13 +85,17 @@ export function useExpansionMigration({
   // Keep the previous idToPath so we can translate stale expanded IDs -> paths
   // when files change (DnD or controlled update).
   const prevIdToPathRef = useRef<IdToPathLookup>(idToPath);
+  const prevStructureVersionRef = useRef(structureVersion);
 
   // Detect stale expanded IDs when the file list changes. Flattened chains
   // may break or form, causing node IDs to change. We snapshot the expanded
   // paths using the OLD idToPath so the effect can re-map them to new IDs.
   // This covers both DnD drops and controlled file updates.
   const pendingExpandMigrationRef = useRef<string[] | null>(null);
-  if (prevIdToPathRef.current !== idToPath) {
+  if (
+    prevIdToPathRef.current !== idToPath ||
+    prevStructureVersionRef.current !== structureVersion
+  ) {
     const currentExpandedIds = tree.getState().expandedItems ?? [];
     const hasStaleIds = currentExpandedIds.some(
       (id: string) => !idToPath.has(id)
@@ -115,6 +119,7 @@ export function useExpansionMigration({
     }
   }
   prevIdToPathRef.current = idToPath;
+  prevStructureVersionRef.current = structureVersion;
 
   // Migrate expanded state after file list changes.
   // When the file list changes (DnD drop or controlled update), flattened
@@ -122,18 +127,17 @@ export function useExpansionMigration({
   // previously-expanded paths to new IDs and optionally expands a drop target
   // when the applied files match a pending drop result.
   useEffect(() => {
-    const filesSignature = getFilesSignature(files);
     const previousPaths = pendingExpandMigrationRef.current;
     const pendingDropTarget = pendingDropTargetExpandRef.current;
     const pendingRenameFocus = pendingRenameFocusRestoreRef.current;
     const dropTarget =
       pendingDropTarget != null &&
-      pendingDropTarget.expectedFilesSignature === filesSignature
+      pendingDropTarget.expectedVersion === structureVersion
         ? pendingDropTarget.path
         : null;
     const renameFocusPath =
       pendingRenameFocus != null &&
-      pendingRenameFocus.expectedFilesSignature === filesSignature
+      pendingRenameFocus.expectedVersion === structureVersion
         ? pendingRenameFocus.destinationPath
         : null;
     pendingExpandMigrationRef.current = null;
@@ -191,7 +195,7 @@ export function useExpansionMigration({
       }
     }
   }, [
-    files,
+    structureVersion,
     pathToId,
     tree,
     flattenEmptyDirectories,

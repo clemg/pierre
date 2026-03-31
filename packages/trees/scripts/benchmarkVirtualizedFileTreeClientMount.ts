@@ -2,6 +2,7 @@
 import { JSDOM } from 'jsdom';
 import { fileURLToPath } from 'node:url';
 
+import { FileTreeModel } from '../src/model/FileTreeModel';
 import {
   type BenchmarkEnvironment,
   formatMs,
@@ -338,7 +339,9 @@ function createFileTreeOptions(
 ): import('../src/FileTree').FileTreeOptions {
   return {
     id: `benchmark-client-render-${caseConfig.name.replace(/[^A-Za-z0-9_-]/g, '-')}`,
-    initialFiles: caseConfig.files,
+    model: FileTreeModel.fromFiles(caseConfig.files, {
+      sortComparator: false,
+    }),
     flattenEmptyDirectories: true,
     sort: false,
     virtualize: { threshold: 0 },

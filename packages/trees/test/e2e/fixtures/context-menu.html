@@ -33,7 +33,11 @@
 
     <script type="module">
       import '/dist/web-components.js';
-      import { CONTEXT_MENU_SLOT_NAME, FileTree } from '/dist/index.js';
+      import {
+        CONTEXT_MENU_SLOT_NAME,
+        FileTree,
+        FileTreeModel,
+      } from '/dist/index.js';
 
       const host = document.getElementById('context-menu-host');
       const slotElement = document.createElement('div');
@@ -70,13 +74,13 @@
 
       const fileTree = new FileTree(
         {
-          initialFiles: [
+          model: FileTreeModel.fromFiles([
             'README.md',
             'package.json',
             'src/index.ts',
             'src/components/Button.tsx',
             'src/components/Card.tsx',
-          ],
+          ]),
         },
         {
           initialExpandedItems: ['src', 'src/components'],

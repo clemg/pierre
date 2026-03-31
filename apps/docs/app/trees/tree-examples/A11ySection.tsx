@@ -3,15 +3,27 @@ import { preloadFileTree } from '@pierre/trees/ssr';
 import type { CSSProperties } from 'react';
 
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
-import { baseTreeOptions, DEFAULT_FILE_TREE_PANEL_CLASS } from './demo-data';
+import {
+  baseTreeOptions,
+  DEFAULT_FILE_TREE_PANEL_CLASS,
+  toReactTreeProps,
+} from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 
 const a11yStyle: CSSProperties = {
   colorScheme: 'dark',
 };
 
+const { model: a11yModel, options: a11yReactOptions } = toReactTreeProps({
+  ...baseTreeOptions,
+  id: 'a11y-demo',
+});
+
 const a11yPrerenderedHTML = preloadFileTree(
-  { ...baseTreeOptions, id: 'a11y-demo' },
+  {
+    model: a11yModel,
+    ...a11yReactOptions,
+  },
   {
     initialSelectedItems: ['package.json'],
     initialExpandedItems: ['src', 'src/components'],
@@ -41,9 +53,10 @@ export function A11ySection() {
       />
       <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
         <FileTree
+          model={a11yModel}
           className={DEFAULT_FILE_TREE_PANEL_CLASS}
           prerenderedHTML={a11yPrerenderedHTML}
-          options={{ ...baseTreeOptions, id: 'a11y-demo' }}
+          options={a11yReactOptions}
           initialSelectedItems={['package.json']}
           initialExpandedItems={['src', 'src/components']}
           style={a11yStyle}

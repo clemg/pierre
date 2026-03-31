@@ -1,7 +1,7 @@
 'use client';
 
 import { FileTree } from '@pierre/trees';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import { FileTree as FileTreeReact } from '@pierre/trees/react';
 import '@pierre/trees/web-components';
 import { useCallback, useMemo, useRef } from 'react';
@@ -15,7 +15,11 @@ import {
 import { ExampleCard } from '../_components/ExampleCard';
 import { StateLog, useStateLog } from '../_components/StateLog';
 import { useTreesDevSettings } from '../_components/TreesDevSettingsProvider';
-import { sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 interface HeaderSlotDemoClientProps {
   preloadedFileTreeHtml: string;
@@ -53,7 +57,7 @@ function VanillaSSRHeaderSlot({
   stateConfig,
   containerHtml,
 }: {
-  options: FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
   containerHtml: string;
 }) {
@@ -88,7 +92,10 @@ function VanillaSSRHeaderSlot({
       };
       headerButton?.addEventListener('click', handleHeaderClick);
 
-      const fileTree = new FileTree(options, stateConfig);
+      const fileTree = new FileTree(
+        toRuntimeFileTreeOptions(options),
+        stateConfig
+      );
 
       if (!hasHydratedRef.current) {
         fileTree.hydrate({
@@ -136,12 +143,22 @@ function ReactSSRHeaderSlot({
   stateConfig,
   prerenderedHTML,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
   prerenderedHTML: string;
 }) {
   const { log, addLog } = useStateLog();
+
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: initialFiles ?? [],
+      }),
+    [initialFiles, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
 
   return (
     <ExampleCard
@@ -155,8 +172,8 @@ function ReactSSRHeaderSlot({
       }
     >
       <FileTreeReact
-        options={options}
-        initialFiles={initialFiles}
+        model={model}
+        options={reactTreeOptions}
         prerenderedHTML={prerenderedHTML}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         onSelection={stateConfig?.onSelection}

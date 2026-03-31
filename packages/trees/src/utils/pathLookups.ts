@@ -30,3 +30,20 @@ export function createIdentityPathToIdLookup(
     keys: () => tree.keys(),
   };
 }
+
+/**
+ * Wraps a mutable path->id Map with the lightweight PathToIdLookup contract.
+ * The returned lookup stays up-to-date as the backing Map mutates.
+ */
+export function createMapPathToIdLookup(
+  pathToId: ReadonlyMap<string, string>
+): PathToIdLookup {
+  return {
+    get size() {
+      return pathToId.size;
+    },
+    get: (path: string) => pathToId.get(path),
+    has: (path: string) => pathToId.has(path),
+    keys: () => pathToId.keys(),
+  };
+}

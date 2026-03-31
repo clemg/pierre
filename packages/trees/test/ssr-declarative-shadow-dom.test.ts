@@ -8,6 +8,7 @@ import {
 } from '../src/utils/renameFileTreePaths';
 
 let FileTree: typeof import('../src/FileTree').FileTree;
+let FileTreeModel: typeof import('../src/model/FileTreeModel').FileTreeModel;
 let preloadFileTree: typeof import('../src/ssr/preloadFileTree').preloadFileTree;
 let ensureFileTreeStyles: typeof import('../src/components/web-components').ensureFileTreeStyles;
 let adoptDeclarativeShadowDom: typeof import('../src/components/web-components').adoptDeclarativeShadowDom;
@@ -41,6 +42,7 @@ beforeAll(async () => {
   Object.assign(globalThis, { CSSStyleSheet: MockCSSStyleSheet });
 
   ({ FileTree } = await import('../src/FileTree'));
+  ({ FileTreeModel } = await import('../src/model/FileTreeModel'));
   ({ preloadFileTree } = await import('../src/ssr/preloadFileTree'));
   ({ ensureFileTreeStyles, adoptDeclarativeShadowDom } =
     await import('../src/components/web-components'));
@@ -63,9 +65,60 @@ const CUSTOM_SPRITE_B = `
 </svg>
 `;
 
+const flushRenderWork = async () => {
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+};
+
+function createFileTree(
+  options: Omit<import('../src/FileTree').FileTreeOptions, 'model'> & {
+    initialFiles: string[];
+  },
+  stateConfig?: import('../src/FileTree').FileTreeStateConfig
+): import('../src/FileTree').FileTree {
+  const { initialFiles, sort, ...restOptions } = options;
+  const sortComparator =
+    sort === false
+      ? false
+      : sort != null && typeof sort === 'object'
+        ? sort.comparator
+        : undefined;
+  return new FileTree(
+    {
+      ...restOptions,
+      sort,
+      model: FileTreeModel.fromFiles(initialFiles, { sortComparator }),
+    },
+    stateConfig
+  );
+}
+
+function preloadFileTreeWithFiles(
+  options: Omit<import('../src/FileTree').FileTreeOptions, 'model'> & {
+    initialFiles: string[];
+  },
+  stateConfig?: import('../src/FileTree').FileTreeStateConfig
+): ReturnType<typeof preloadFileTree> {
+  const { initialFiles, sort, ...restOptions } = options;
+  const sortComparator =
+    sort === false
+      ? false
+      : sort != null && typeof sort === 'object'
+        ? sort.comparator
+        : undefined;
+  return preloadFileTree(
+    {
+      ...restOptions,
+      sort,
+      model: FileTreeModel.fromFiles(initialFiles, { sortComparator }),
+    },
+    stateConfig
+  );
+}
+
 describe('SSR + declarative shadow DOM', () => {
   test('preloadFileTree returns an id and shadow HTML containing the expected wrapper', () => {
-    const payload = preloadFileTree({
+    const payload = preloadFileTreeWithFiles({
       initialFiles: ['README.md', 'src/index.ts'],
     });
 
@@ -78,7 +131,7 @@ describe('SSR + declarative shadow DOM', () => {
   });
 
   test('preloadFileTree omits the built-in search input by default', () => {
-    const payload = preloadFileTree({
+    const payload = preloadFileTreeWithFiles({
       initialFiles: ['README.md', 'src/index.ts'],
     });
 
@@ -87,7 +140,7 @@ describe('SSR + declarative shadow DOM', () => {
   });
 
   test('preloadFileTree includes the built-in search input when enabled', () => {
-    const payload = preloadFileTree({
+    const payload = preloadFileTreeWithFiles({
       initialFiles: ['README.md', 'src/index.ts'],
       search: true,
     });
@@ -97,7 +150,7 @@ describe('SSR + declarative shadow DOM', () => {
   });
 
   test('preloadFileTree includes unsafeCSS when provided', () => {
-    const payload = preloadFileTree({
+    const payload = preloadFileTreeWithFiles({
       initialFiles: ['README.md', 'src/index.ts'],
       unsafeCSS: `[data-item-section="content"] { color: hotpink; }`,
     });
@@ -144,7 +197,7 @@ describe('SSR + declarative shadow DOM', () => {
   });
 
   test('FileTree.hydrate uses existing SSR wrapper and calls hydrateRoot (not renderRoot)', () => {
-    const payload = preloadFileTree({
+    const payload = preloadFileTreeWithFiles({
       initialFiles: ['README.md', 'src/index.ts', 'src/components/Button.tsx'],
     });
 
@@ -165,7 +218,9 @@ describe('SSR + declarative shadow DOM', () => {
     };
 
     try {
-      const ft = new FileTree({ initialFiles: ['README.md', 'src/index.ts'] });
+      const ft = createFileTree({
+        initialFiles: ['README.md', 'src/index.ts'],
+      });
       ft.hydrate({ fileTreeContainer: container });
       expect(ft.__id).toBe(payload.id);
       expect(hydrated).toBe(1);
@@ -211,7 +266,7 @@ describe('SSR + declarative shadow DOM', () => {
 
     try {
       // Client creates FileTree WITH dragAndDrop and hydrates
-      const ft = new FileTree({
+      const ft = createFileTree({
         initialFiles: ['README.md', 'src/index.ts'],
         dragAndDrop: true,
         id: ssrId,
@@ -232,31 +287,72 @@ describe('SSR + declarative shadow DOM', () => {
 
   test('getFiles returns initialFiles from constructor', () => {
     const files = ['README.md', 'src/index.ts'];
-    const ft = new FileTree({ initialFiles: files });
+    const ft = createFileTree({ initialFiles: files });
     expect(ft.getFiles()).toEqual(files);
   });
 
-  test('setFiles updates getFiles return value', () => {
-    const ft = new FileTree({ initialFiles: ['a.txt'] });
+  test('model.replaceAll updates getFiles return value', () => {
+    const ft = createFileTree({ initialFiles: ['a.txt'] });
     const newFiles = ['b.txt', 'c.txt'];
-    ft.setFiles(newFiles);
+    ft.model.replaceAll(newFiles);
     expect(ft.getFiles()).toEqual(newFiles);
   });
 
-  test('setOptions with state.files delegates to setFiles', () => {
-    const ft = new FileTree({ initialFiles: ['a.txt'] });
-    ft.setOptions({}, { files: ['b.txt'] });
-    expect(ft.getFiles()).toEqual(['b.txt']);
+  test('renamePath same-parent leaf rename avoids an extra full rebuild', async () => {
+    const ft = createFileTree({
+      initialFiles: ['src/a.ts', 'src/b.ts'],
+      flattenEmptyDirectories: true,
+      sort: false,
+    });
+    const containerWrapper = document.createElement('div');
+    ft.render({ containerWrapper });
+    await flushRenderWork();
+
+    const tree = ft.handleRef.current?.tree;
+    expect(tree).toBeDefined();
+    if (tree == null) {
+      throw new Error('Expected tree handle after render.');
+    }
+
+    const before = {
+      ...(tree.getDataRef<{
+        rebuildModeCounts?: Record<'full' | 'incremental' | 'noop', number>;
+      }>().current.rebuildModeCounts ?? { full: 0, incremental: 0, noop: 0 }),
+    };
+
+    ft.renamePath({
+      sourcePath: 'src/a.ts',
+      destinationPath: 'src/a-renamed.ts',
+      isFolder: false,
+    });
+    await flushRenderWork();
+
+    const after = tree.getDataRef<{
+      rebuildModeCounts?: Record<'full' | 'incremental' | 'noop', number>;
+    }>().current.rebuildModeCounts ?? { full: 0, incremental: 0, noop: 0 };
+
+    expect(after.full - before.full).toBe(0);
+    expect(
+      after.incremental - before.incremental + (after.noop - before.noop)
+    ).toBeGreaterThan(0);
+    expect(ft.getFiles()).toEqual(['src/a-renamed.ts', 'src/b.ts']);
   });
 
-  test('setOptions applies state.files when structural options also change', () => {
-    const ft = new FileTree({ initialFiles: ['a.txt'] });
-    ft.setOptions({ flattenEmptyDirectories: true }, { files: ['b.txt'] });
-    expect(ft.getFiles()).toEqual(['b.txt']);
+  test('setOptions cannot swap model instances', () => {
+    const ft = createFileTree({ initialFiles: ['a.txt'] });
+    expect(() => {
+      ft.setOptions({ model: FileTreeModel.fromFiles(['b.txt']) });
+    }).toThrow('cannot swap model instances');
+  });
+
+  test('setOptions preserves model-owned files when structural options change', () => {
+    const ft = createFileTree({ initialFiles: ['a.txt'] });
+    ft.setOptions({ flattenEmptyDirectories: true });
+    expect(ft.getFiles()).toEqual(['a.txt']);
   });
 
   test('setOptions applies fileTreeSearchMode changes at runtime', () => {
-    const ft = new FileTree({
+    const ft = createFileTree({
       initialFiles: ['a.txt'],
       fileTreeSearchMode: 'expand-matches',
     });
@@ -275,7 +371,7 @@ describe('SSR + declarative shadow DOM', () => {
   });
 
   test('setOptions applies icons changes at runtime', () => {
-    const ft = new FileTree({ initialFiles: ['a.txt'] });
+    const ft = createFileTree({ initialFiles: ['a.txt'] });
 
     let rerenders = 0;
     (
@@ -299,7 +395,7 @@ describe('SSR + declarative shadow DOM', () => {
 
   test('render + setOptions keep virtualized layout attributes in sync', () => {
     const container = document.createElement('file-tree-container');
-    const ft = new FileTree({
+    const ft = createFileTree({
       initialFiles: ['README.md'],
       virtualize: { threshold: 0 },
     });
@@ -328,7 +424,7 @@ describe('SSR + declarative shadow DOM', () => {
   });
 
   test('hydrate applies virtualized layout attributes when enabled client-side', () => {
-    const payload = preloadFileTree({
+    const payload = preloadFileTreeWithFiles({
       initialFiles: ['README.md'],
     });
     const container = document.createElement('file-tree-container');
@@ -339,7 +435,7 @@ describe('SSR + declarative shadow DOM', () => {
     const origHydrate = preactRenderer.hydrateRoot;
     preactRenderer.hydrateRoot = () => {};
     try {
-      const ft = new FileTree({
+      const ft = createFileTree({
         id: payload.id,
         initialFiles: ['README.md'],
         virtualize: { threshold: 0 },
@@ -362,7 +458,7 @@ describe('SSR + declarative shadow DOM', () => {
 
   test('setOptions swaps custom sprite sheets at runtime', () => {
     const container = document.createElement('file-tree-container');
-    const ft = new FileTree({
+    const ft = createFileTree({
       initialFiles: ['README.md'],
       icons: {
         spriteSheet: CUSTOM_SPRITE_A,
@@ -405,7 +501,7 @@ describe('SSR + declarative shadow DOM', () => {
 
   test('setOptions removes custom sprite sheet when icons are unset', () => {
     const container = document.createElement('file-tree-container');
-    const ft = new FileTree({
+    const ft = createFileTree({
       initialFiles: ['README.md'],
       icons: {
         spriteSheet: CUSTOM_SPRITE_A,
@@ -438,7 +534,7 @@ describe('SSR + declarative shadow DOM', () => {
   });
 
   test('preloadFileTree includes custom sprite sheets without requiring marker attrs', () => {
-    const payload = preloadFileTree({
+    const payload = preloadFileTreeWithFiles({
       initialFiles: ['README.md'],
       icons: {
         spriteSheet: CUSTOM_SPRITE_A,
@@ -462,21 +558,21 @@ describe('SSR + declarative shadow DOM', () => {
 
   test('preloadFileTree supports virtualized empty trees', () => {
     expect(() =>
-      preloadFileTree({
+      preloadFileTreeWithFiles({
         initialFiles: [],
         virtualize: { threshold: 0 },
       })
     ).not.toThrow();
   });
 
-  test('setFiles invokes onFilesChange callback', () => {
+  test('model.replaceAll invokes onFilesChange callback', () => {
     const calls: string[][] = [];
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['a.txt'] },
       { onFilesChange: (files) => calls.push(files) }
     );
 
-    ft.setFiles(['b.txt', 'c.txt']);
+    ft.model.replaceAll(['b.txt', 'c.txt']);
     expect(calls).toEqual([['b.txt', 'c.txt']]);
   });
 
@@ -505,20 +601,24 @@ describe('SSR + declarative shadow DOM', () => {
     expect(nextExpanded).not.toContain('src');
   });
 
-  test('setOptions with state.files invokes onFilesChange callback', () => {
+  test('renamePath invokes onFilesChange callback', () => {
     const calls: string[][] = [];
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['a.txt'] },
       { onFilesChange: (files) => calls.push(files) }
     );
 
-    ft.setOptions({ flattenEmptyDirectories: true }, { files: ['b.txt'] });
+    ft.renamePath({
+      sourcePath: 'a.txt',
+      destinationPath: 'b.txt',
+      isFolder: false,
+    });
     expect(calls).toEqual([['b.txt']]);
   });
 
   test('render injects unsafeCSS into the shadow root and keeps it in sync', () => {
     const container = document.createElement('file-tree-container');
-    const ft = new FileTree({
+    const ft = createFileTree({
       initialFiles: ['README.md', 'src/index.ts'],
       unsafeCSS: `[data-item-section="content"] { color: hotpink; }`,
     });
@@ -570,7 +670,9 @@ describe('SSR + declarative shadow DOM', () => {
     };
 
     try {
-      const ft = new FileTree({ initialFiles: ['README.md', 'src/index.ts'] });
+      const ft = createFileTree({
+        initialFiles: ['README.md', 'src/index.ts'],
+      });
       ft.hydrate({ fileTreeContainer: container });
       expect(hydrated).toBe(0);
       expect(rendered).toBe(1);

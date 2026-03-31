@@ -1,14 +1,19 @@
 'use client';
 
 import { FileTree } from '@pierre/trees';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import { FileTree as FileTreeReact } from '@pierre/trees/react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { ExampleCard } from '../_components/ExampleCard';
 import { StateLog, useStateLog } from '../_components/StateLog';
 import { useTreesDevSettings } from '../_components/TreesDevSettingsProvider';
-import { sharedDemoFileTreeOptions, sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoFileTreeOptions,
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 interface DragAndDropDemoClientProps {
   preloadedFileTreeHtml: string;
@@ -45,7 +50,7 @@ function VanillaDnDUncontrolled({
   options,
   stateConfig,
 }: {
-  options: FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
 }) {
   const instanceRef = useRef<FileTree | null>(null);
@@ -73,11 +78,11 @@ function VanillaDnDUncontrolled({
       }
 
       const fileTree = new FileTree(
-        {
+        toRuntimeFileTreeOptions({
           ...options,
           dragAndDrop: true,
           initialFiles: sharedDemoFileTreeOptions.initialFiles,
-        },
+        }),
         mergedStateConfig
       );
       fileTree.render({ containerWrapper: node });
@@ -111,7 +116,7 @@ function ReactDnDControlled({
   options,
   stateConfig,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   stateConfig?: FileTreeStateConfig;
 }) {
   const [files, setFiles] = useState(sharedDemoFileTreeOptions.initialFiles);
@@ -133,6 +138,17 @@ function ReactDnDControlled({
     },
     [lockGitignore, files, addLog]
   );
+
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: files,
+        dragAndDrop: true,
+      }),
+    [files, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
 
   return (
     <ExampleCard
@@ -163,8 +179,8 @@ function ReactDnDControlled({
       }
     >
       <FileTreeReact
-        options={{ ...options, dragAndDrop: true }}
-        files={files}
+        model={model}
+        options={reactTreeOptions}
         onFilesChange={handleFilesChange}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         onSelection={stateConfig?.onSelection}
@@ -178,7 +194,7 @@ function ReactDnDControlledSSR({
   stateConfig,
   prerenderedHTML,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   stateConfig?: FileTreeStateConfig;
   prerenderedHTML: string;
 }) {
@@ -201,6 +217,17 @@ function ReactDnDControlledSSR({
     },
     [lockGitignore, files, addLog]
   );
+
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: files,
+        dragAndDrop: true,
+      }),
+    [files, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
 
   return (
     <ExampleCard
@@ -231,9 +258,9 @@ function ReactDnDControlledSSR({
       }
     >
       <FileTreeReact
-        options={{ ...options, dragAndDrop: true }}
+        model={model}
+        options={reactTreeOptions}
         prerenderedHTML={prerenderedHTML}
-        files={files}
         onFilesChange={handleFilesChange}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         onSelection={stateConfig?.onSelection}

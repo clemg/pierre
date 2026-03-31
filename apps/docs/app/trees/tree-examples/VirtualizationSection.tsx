@@ -4,7 +4,7 @@ import Link from 'next/link';
 import type { CSSProperties } from 'react';
 
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
-import { DEFAULT_FILE_TREE_PANEL_CLASS } from './demo-data';
+import { DEFAULT_FILE_TREE_PANEL_CLASS, toReactTreeProps } from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 
 const EXTENSIONS = ['.ts', '.tsx', '.css', '.json', '.md', '.test.ts'];
@@ -193,12 +193,18 @@ const panelStyle: CSSProperties = {
 };
 
 const virtualizationDemoData = generateLargeTree();
-const virtualizationPrerenderedHTML = preloadFileTree(
-  {
+const { model: virtualizationModel, options: virtualizationReactOptions } =
+  toReactTreeProps({
     virtualize: { threshold: 0 },
     flattenEmptyDirectories: true,
     id: 'virtualization-demo',
     initialFiles: virtualizationDemoData.files,
+  });
+
+const virtualizationPrerenderedHTML = preloadFileTree(
+  {
+    model: virtualizationModel,
+    ...virtualizationReactOptions,
   },
   {
     initialExpandedItems: virtualizationDemoData.expandedItems,
@@ -232,14 +238,10 @@ export function VirtualizationSection() {
       />
 
       <FileTree
+        model={virtualizationModel}
         className={DEFAULT_FILE_TREE_PANEL_CLASS}
         prerenderedHTML={virtualizationPrerenderedHTML}
-        options={{
-          virtualize: { threshold: 0 },
-          flattenEmptyDirectories: true,
-          id: 'virtualization-demo',
-        }}
-        initialFiles={files}
+        options={virtualizationReactOptions}
         initialExpandedItems={expandedItems}
         style={panelStyle}
       />

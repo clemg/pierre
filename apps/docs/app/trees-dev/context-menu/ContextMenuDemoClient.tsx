@@ -1,7 +1,7 @@
 'use client';
 
 import { CONTEXT_MENU_SLOT_NAME, FileTree } from '@pierre/trees';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import { FileTree as FileTreeReact } from '@pierre/trees/react';
 import '@pierre/trees/web-components';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -16,7 +16,11 @@ import {
   TreeDemoContextMenu,
 } from '../_components/TreeDemoContextMenu';
 import { useTreesDevSettings } from '../_components/TreesDevSettingsProvider';
-import { sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 interface ContextMenuDemoClientProps {
   preloadedContextMenuFileTreeHtml: string;
@@ -64,7 +68,7 @@ function VanillaSSRContextMenu({
   stateConfig,
   containerHtml,
 }: {
-  options: FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
   containerHtml: string;
 }) {
@@ -106,11 +110,11 @@ function VanillaSSRContextMenu({
       };
 
       const fileTree = new FileTree(
-        {
+        toRuntimeFileTreeOptions({
           ...options,
           initialFiles: filesRef.current,
           renaming: renamingOptions,
-        },
+        }),
         {
           ...stateConfig,
           onFilesChange: (nextFiles) => {
@@ -172,7 +176,7 @@ function ReactSSRContextMenu({
   stateConfig,
   prerenderedHTML,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
   prerenderedHTML: string;
@@ -183,10 +187,21 @@ function ReactSSRContextMenu({
     []
   );
 
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: files,
+        renaming: renamingOptions,
+      }),
+    [files, options, renamingOptions]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
+
   return (
     <FileTreeReact
-      options={{ ...options, renaming: renamingOptions }}
-      files={files}
+      model={model}
+      options={reactTreeOptions}
       onFilesChange={setFiles}
       prerenderedHTML={prerenderedHTML}
       initialExpandedItems={stateConfig?.initialExpandedItems}

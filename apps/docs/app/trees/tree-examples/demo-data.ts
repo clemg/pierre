@@ -1,11 +1,11 @@
-import type {
-  FileTreeOptions,
-  FileTreeSearchMode,
-  GitStatusEntry,
-} from '@pierre/trees';
+import type { FileTreeSearchMode, GitStatusEntry } from '@pierre/trees';
 import type { CSSProperties } from 'react';
 
-import { sharedDemoFileTreeOptions } from '../../trees/demo-data';
+import {
+  sharedDemoFileTreeOptions,
+  toRuntimeFileTreeOptions,
+  type TreesDocsFileTreeOptions,
+} from '../../trees/demo-data';
 
 /** Default panel look for FileTree in docs examples. Apply via className + style on FileTree. */
 export const DEFAULT_FILE_TREE_PANEL_CLASS =
@@ -28,7 +28,7 @@ export const GIT_STATUSES_B: GitStatusEntry[] = [
 ];
 
 /** Options with flatten empty directories enabled (nested folders collapsed). Pass initialExpandedItems on the component for initial open folders (e.g. ['build']). */
-export function flatteningOptions(flatten: boolean): FileTreeOptions {
+export function flatteningOptions(flatten: boolean): TreesDocsFileTreeOptions {
   return {
     ...sharedDemoFileTreeOptions,
     flattenEmptyDirectories: flatten,
@@ -39,7 +39,9 @@ export function flatteningOptions(flatten: boolean): FileTreeOptions {
 export const baseTreeOptions = sharedDemoFileTreeOptions;
 
 /** Options for drag-and-drop examples. Optional lockedPaths prevents those paths from being dragged. */
-export function dragDropOptions(lockedPaths?: string[]): FileTreeOptions {
+export function dragDropOptions(
+  lockedPaths?: string[]
+): TreesDocsFileTreeOptions {
   return {
     ...baseTreeOptions,
     dragAndDrop: true,
@@ -48,10 +50,22 @@ export function dragDropOptions(lockedPaths?: string[]): FileTreeOptions {
 }
 
 /** Options with search mode for the search example. Pass fileTreeSearchMode at top level so the tree applies it. Use stateConfig.initialSearchQuery in the component for prepopulated search. */
-export function searchOptions(mode: FileTreeSearchMode): FileTreeOptions {
+export function searchOptions(
+  mode: FileTreeSearchMode
+): TreesDocsFileTreeOptions {
   return {
     ...sharedDemoFileTreeOptions,
     fileTreeSearchMode: mode,
     search: true,
   };
+}
+
+// Converts demo-friendly options (with initialFiles) into React FileTree props.
+export function toReactTreeProps(options: TreesDocsFileTreeOptions): {
+  model: ReturnType<typeof toRuntimeFileTreeOptions>['model'];
+  options: Omit<ReturnType<typeof toRuntimeFileTreeOptions>, 'model'>;
+} {
+  const runtimeOptions = toRuntimeFileTreeOptions(options);
+  const { model, ...reactOptions } = runtimeOptions;
+  return { model, options: reactOptions };
 }

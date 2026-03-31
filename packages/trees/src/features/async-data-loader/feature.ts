@@ -77,6 +77,7 @@ const loadChildrenIds = async <T>(tree: TreeInstance<T>, itemId: string) => {
     });
 
     config.onLoadedChildren?.(itemId, childrenIds);
+    tree.markBranchDirty(itemId, 'children');
     tree.rebuildTree();
     tree.applySubStateUpdate('loadingItemData', (loadingItemData) =>
       loadingItemData.filter((id) => !childrenIds.includes(id))
@@ -85,6 +86,7 @@ const loadChildrenIds = async <T>(tree: TreeInstance<T>, itemId: string) => {
     childrenIds = await config.dataLoader.getChildren(itemId);
     dataRef.current.childrenIds[itemId] = childrenIds;
     config.onLoadedChildren?.(itemId, childrenIds);
+    tree.markBranchDirty(itemId, 'children');
     tree.rebuildTree();
   }
 
@@ -193,12 +195,13 @@ export const asyncDataLoaderFeature: FeatureImplementation = {
     updateCachedChildrenIds: ({ tree, itemId }, childrenIds) => {
       const dataRef = tree.getDataRef<AsyncDataLoaderDataRef>();
       dataRef.current.childrenIds[itemId] = childrenIds;
+      tree.markBranchDirty(itemId, 'children');
       tree.rebuildTree();
     },
     updateCachedData: ({ tree, itemId }, data) => {
       const dataRef = tree.getDataRef<AsyncDataLoaderDataRef>();
       dataRef.current.itemData[itemId] = data;
-      tree.rebuildTree();
+      tree.setState((previousState) => previousState);
     },
     hasLoadedData: ({ tree, itemId }) => {
       const dataRef = tree.getDataRef<AsyncDataLoaderDataRef>();

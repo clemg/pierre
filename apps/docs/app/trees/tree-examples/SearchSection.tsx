@@ -6,7 +6,11 @@ import type { CSSProperties } from 'react';
 
 import { TreeExampleHeading } from '../../components/TreeExampleHeading';
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
-import { DEFAULT_FILE_TREE_PANEL_CLASS, searchOptions } from './demo-data';
+import {
+  DEFAULT_FILE_TREE_PANEL_CLASS,
+  searchOptions,
+  toReactTreeProps,
+} from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 
 const PREPOPULATED_SEARCH = 'tsx';
@@ -17,31 +21,38 @@ const searchModeStyle = {
   '--trees-search-bg-override': 'light-dark(#fff, oklch(14.5% 0 0))',
 } as CSSProperties;
 
-function createSearchPrerenderedHTML(
+function createSearchTreeProps(
   mode: 'hide-non-matches' | 'collapse-non-matches' | 'expand-matches',
   id: string
-): string {
-  return preloadFileTree(
+) {
+  const { model, options } = toReactTreeProps({
+    ...searchOptions(mode),
+    id,
+  });
+
+  const prerenderedHTML = preloadFileTree(
     {
-      ...searchOptions(mode),
-      id,
+      model,
+      ...options,
     },
     {
       initialSearchQuery: PREPOPULATED_SEARCH,
       initialSelectedItems: [PRESELECTED_FILE],
     }
   ).shadowHtml;
+
+  return { model, options, prerenderedHTML };
 }
 
-const hideNonMatchesPrerenderedHTML = createSearchPrerenderedHTML(
+const hideNonMatchesTree = createSearchTreeProps(
   'hide-non-matches',
   'search-demo-hide-non-matches'
 );
-const collapseNonMatchesPrerenderedHTML = createSearchPrerenderedHTML(
+const collapseNonMatchesTree = createSearchTreeProps(
   'collapse-non-matches',
   'search-demo-collapse-non-matches'
 );
-const expandMatchesPrerenderedHTML = createSearchPrerenderedHTML(
+const expandMatchesTree = createSearchTreeProps(
   'expand-matches',
   'search-demo-expand-matches'
 );
@@ -77,12 +88,10 @@ export function SearchSection() {
               <code>hide-non-matches</code>
             </TreeExampleHeading>
             <FileTree
+              model={hideNonMatchesTree.model}
               className={DEFAULT_FILE_TREE_PANEL_CLASS}
-              prerenderedHTML={hideNonMatchesPrerenderedHTML}
-              options={{
-                ...searchOptions('hide-non-matches'),
-                id: 'search-demo-hide-non-matches',
-              }}
+              prerenderedHTML={hideNonMatchesTree.prerenderedHTML}
+              options={hideNonMatchesTree.options}
               initialSearchQuery={PREPOPULATED_SEARCH}
               initialSelectedItems={[PRESELECTED_FILE]}
               style={searchModeStyle}
@@ -96,12 +105,10 @@ export function SearchSection() {
               <code>collapse-non-matches</code>
             </TreeExampleHeading>
             <FileTree
+              model={collapseNonMatchesTree.model}
               className={DEFAULT_FILE_TREE_PANEL_CLASS}
-              prerenderedHTML={collapseNonMatchesPrerenderedHTML}
-              options={{
-                ...searchOptions('collapse-non-matches'),
-                id: 'search-demo-collapse-non-matches',
-              }}
+              prerenderedHTML={collapseNonMatchesTree.prerenderedHTML}
+              options={collapseNonMatchesTree.options}
               initialSearchQuery={PREPOPULATED_SEARCH}
               initialSelectedItems={[PRESELECTED_FILE]}
               style={searchModeStyle}
@@ -115,12 +122,10 @@ export function SearchSection() {
               <code>expand-matches</code>
             </TreeExampleHeading>
             <FileTree
+              model={expandMatchesTree.model}
               className={DEFAULT_FILE_TREE_PANEL_CLASS}
-              prerenderedHTML={expandMatchesPrerenderedHTML}
-              options={{
-                ...searchOptions('expand-matches'),
-                id: 'search-demo-expand-matches',
-              }}
+              prerenderedHTML={expandMatchesTree.prerenderedHTML}
+              options={expandMatchesTree.options}
               initialSearchQuery={PREPOPULATED_SEARCH}
               initialSelectedItems={[PRESELECTED_FILE]}
               style={searchModeStyle}

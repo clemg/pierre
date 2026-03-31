@@ -24,7 +24,7 @@ export interface UseContextMenuControllerArgs {
   tree: TreeInstance<FileTreeNode>;
   isContextMenuEnabled: boolean;
   callbacksRef?: { current: FileTreeCallbacks };
-  files: string[];
+  structureVersion: number;
   idToPath: Pick<Map<string, string>, 'get' | 'has'>;
 }
 
@@ -53,7 +53,7 @@ export function useContextMenuController({
   tree,
   isContextMenuEnabled,
   callbacksRef,
-  files,
+  structureVersion,
   idToPath,
 }: UseContextMenuControllerArgs): UseContextMenuControllerResult {
   'use no memo';
@@ -530,12 +530,19 @@ export function useContextMenuController({
     closeContextMenu();
   }, [closeContextMenu, contextMenuItemId, isContextMenuEnabled]);
 
-  const prevContextMenuStructureRef = useRef({ files, idToPath });
+  const prevContextMenuStructureRef = useRef({
+    structureVersion,
+    idToPath,
+  });
   useEffect(() => {
     const previous = prevContextMenuStructureRef.current;
-    prevContextMenuStructureRef.current = { files, idToPath };
+    prevContextMenuStructureRef.current = {
+      structureVersion,
+      idToPath,
+    };
     const structureChanged =
-      previous.files !== files || previous.idToPath !== idToPath;
+      previous.structureVersion !== structureVersion ||
+      previous.idToPath !== idToPath;
     if (
       !isContextMenuEnabled ||
       contextMenuItemId == null ||
@@ -547,7 +554,7 @@ export function useContextMenuController({
   }, [
     closeContextMenu,
     contextMenuItemId,
-    files,
+    structureVersion,
     idToPath,
     isContextMenuEnabled,
   ]);

@@ -6,7 +6,11 @@ import type { CSSProperties } from 'react';
 
 import { TreeExampleHeading } from '../../components/TreeExampleHeading';
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
-import { DEFAULT_FILE_TREE_PANEL_CLASS, flatteningOptions } from './demo-data';
+import {
+  DEFAULT_FILE_TREE_PANEL_CLASS,
+  flatteningOptions,
+  toReactTreeProps,
+} from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 
 const flattenStyle = {
@@ -14,10 +18,16 @@ const flattenStyle = {
   '--trees-search-bg-override': 'light-dark(#fff, oklch(14.5% 0 0))',
 } as CSSProperties;
 
-const hierarchicalPrerenderedHTML = preloadFileTree(
-  {
+const { model: hierarchicalModel, options: hierarchicalReactOptions } =
+  toReactTreeProps({
     ...flatteningOptions(false),
     id: 'flatten-demo-hierarchical',
+  });
+
+const hierarchicalPrerenderedHTML = preloadFileTree(
+  {
+    model: hierarchicalModel,
+    ...hierarchicalReactOptions,
   },
   {
     initialExpandedItems: [
@@ -29,10 +39,16 @@ const hierarchicalPrerenderedHTML = preloadFileTree(
   }
 ).shadowHtml;
 
-const flattenedPrerenderedHTML = preloadFileTree(
-  {
+const { model: flattenedModel, options: flattenedReactOptions } =
+  toReactTreeProps({
     ...flatteningOptions(true),
     id: 'flatten-demo-flattened',
+  });
+
+const flattenedPrerenderedHTML = preloadFileTree(
+  {
+    model: flattenedModel,
+    ...flattenedReactOptions,
   },
   {
     initialExpandedItems: ['build', 'f::build/assets/images/social'],
@@ -66,12 +82,10 @@ export function FlatteningSection() {
             Hierarchical
           </TreeExampleHeading>
           <FileTree
+            model={hierarchicalModel}
             className={DEFAULT_FILE_TREE_PANEL_CLASS}
             prerenderedHTML={hierarchicalPrerenderedHTML}
-            options={{
-              ...flatteningOptions(false),
-              id: 'flatten-demo-hierarchical',
-            }}
+            options={hierarchicalReactOptions}
             initialExpandedItems={[
               'build',
               'build/assets',
@@ -86,12 +100,10 @@ export function FlatteningSection() {
             Flattened
           </TreeExampleHeading>
           <FileTree
+            model={flattenedModel}
             className={DEFAULT_FILE_TREE_PANEL_CLASS}
             prerenderedHTML={flattenedPrerenderedHTML}
-            options={{
-              ...flatteningOptions(true),
-              id: 'flatten-demo-flattened',
-            }}
+            options={flattenedReactOptions}
             initialExpandedItems={['build', 'f::build/assets/images/social']}
             style={flattenStyle}
           />

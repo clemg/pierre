@@ -219,7 +219,7 @@ function createBenchmarkVirtualizedRoot(
   }: BenchmarkVirtualizedRootProps): JSX.Element {
     'use no memo';
     const {
-      initialFiles: files,
+      model,
       flattenEmptyDirectories,
       fileTreeSearchMode,
       gitStatus,
@@ -228,6 +228,9 @@ function createBenchmarkVirtualizedRoot(
       useLazyDataLoader,
       virtualize,
     } = fileTreeOptions;
+    const files = model.getFiles();
+    const modelVersion = model.getVersion();
+    const syncIndex = model.getSyncIndex();
     const iconRemap = fileTreeOptions.icons?.remap;
 
     const remapIcon = useCallback(
@@ -266,10 +269,13 @@ function createBenchmarkVirtualizedRoot(
       [sortOption]
     );
 
-    const treeData = useMemo(
-      () => runtime.fileListToTree(files, { sortComparator }),
-      [files, sortComparator]
-    );
+    const treeData = useMemo(() => {
+      // Tie recomputation to modelVersion even though the syncIndex Map
+      // identity is stable across model mutations.
+      const snapshotVersion = modelVersion;
+      void snapshotVersion;
+      return Object.fromEntries(syncIndex.tree);
+    }, [modelVersion, syncIndex]);
 
     const { pathToId, idToPath } = useMemo(() => {
       const p2i = new Map<string, string>();

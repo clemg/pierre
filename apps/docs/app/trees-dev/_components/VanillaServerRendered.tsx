@@ -1,9 +1,14 @@
 'use client';
 
 import { FileTree } from '@pierre/trees';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import '@pierre/trees/web-components';
 import { useCallback, useRef } from 'react';
+
+import {
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 /**
  * Vanilla FileTree - Server-Side Rendered
@@ -16,7 +21,7 @@ export function VanillaServerRendered({
   stateConfig,
   containerHtml,
 }: {
-  options: FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
   containerHtml: string;
 }) {
@@ -46,7 +51,10 @@ export function VanillaServerRendered({
         }
       }
 
-      const fileTree = new FileTree(options, stateConfig);
+      const fileTree = new FileTree(
+        toRuntimeFileTreeOptions(options),
+        stateConfig
+      );
 
       if (!hasHydratedRef.current) {
         // Initial mount - hydrate the prerendered HTML

@@ -11,6 +11,10 @@ import {
   inheritBenchmarkInstrumentation,
   withBenchmarkPhase,
 } from './internal/benchmarkInstrumentation';
+import {
+  FileTreeModel,
+  type FileTreeModelMutation,
+} from './model/FileTreeModel';
 import { SVGSpriteSheet } from './sprite';
 import type {
   ContextMenuItem,
@@ -32,7 +36,10 @@ import {
   preactRenderRoot,
   preactUnmountRoot,
 } from './utils/preactRenderer';
-import type { ChildrenComparator } from './utils/sortChildren';
+import type {
+  ChildrenComparator,
+  ChildrenSortOption,
+} from './utils/sortChildren';
 
 export type { GitStatusEntry } from './types';
 
@@ -66,6 +73,11 @@ export type FileTreeRenameEvent = {
   sourcePath: string;
   destinationPath: string;
   isFolder: boolean;
+};
+
+export type FileTreeMovePathsRequest = {
+  draggedPaths: string[];
+  targetPath: string;
 };
 
 export interface FileTreeRenamingConfig {
@@ -102,10 +114,6 @@ export interface FileTreeCallbacks {
     context: ContextMenuOpenContext
   ) => void;
   onContextMenuClose?: () => void;
-  /** Internal: called when a DnD move produces a new file list. */
-  _onDragMoveFiles?: (newFiles: string[]) => void;
-  /** Internal: called when a rename produces a new file list. */
-  _onRenameFiles?: (newFiles: string[]) => void;
 }
 
 type RemappedIcon =
@@ -127,7 +135,7 @@ export interface FileTreeOptions {
   flattenEmptyDirectories?: boolean;
   gitStatus?: GitStatusEntry[];
   id?: string;
-  initialFiles: string[];
+  model: FileTreeModel;
   /** Paths that cannot be dragged (e.g. ['package.json']). Uses same path form as the tree (no f:: prefix). */
   lockedPaths?: string[];
   /** Return true to overwrite the destination file when a DnD move collides. */
@@ -160,7 +168,6 @@ export interface FileTreeStateConfig {
   // Controlled state (applied every render, overrides internal state)
   expandedItems?: string[];
   selectedItems?: string[];
-  files?: string[];
 
   // State change callbacks
   onExpandedItemsChange?: (items: string[]) => void;
@@ -180,6 +187,18 @@ export const isRenamingEnabled = (
   renaming: FileTreeOptions['renaming'] | undefined
 ): boolean => renaming != null && renaming !== false;
 
+function resolveSortComparator(
+  sortOption: FileTreeOptions['sort']
+): ChildrenSortOption | undefined {
+  if (sortOption === false) {
+    return false;
+  }
+  if (sortOption != null && typeof sortOption === 'object') {
+    return sortOption.comparator;
+  }
+  return undefined;
+}
+
 export class FileTree {
   static LoadedCustomComponent: boolean = FileTreeContainerLoaded;
 
@@ -194,6 +213,7 @@ export class FileTree {
 
   /** Populated by FileTree, read by the Preact Root for callbacks. */
   readonly callbacksRef: { current: FileTreeCallbacks };
+  readonly model: FileTreeModel;
 
   private expandPathsCache: Map<string, string[]> = new Map();
   private expandPathsCacheFor: PathToIdLookup | null = null;
@@ -208,6 +228,17 @@ export class FileTree {
       this.fileTreeContainer = document.createElement(FILE_TREE_TAG_NAME);
     }
     this.__id = options.id ?? `ft_${isBrowser ? 'brw' : 'srv'}_${++instanceId}`;
+
+    const modelSortComparator = resolveSortComparator(options.sort);
+
+    this.model = options.model;
+    this.model.setSortComparator(modelSortComparator);
+
+    this.options = inheritBenchmarkInstrumentation(options, {
+      ...options,
+      model: this.model,
+    });
+
     this.callbacksRef = {
       current: {
         onExpandedItemsChange: stateConfig.onExpandedItemsChange,
@@ -216,15 +247,12 @@ export class FileTree {
         onFilesChange: stateConfig.onFilesChange,
         onContextMenuOpen: stateConfig.onContextMenuOpen,
         onContextMenuClose: stateConfig.onContextMenuClose,
-        _onDragMoveFiles:
-          options.dragAndDrop === true
-            ? (newFiles) => this.setFiles(newFiles)
-            : undefined,
-        _onRenameFiles: isRenamingEnabled(options.renaming)
-          ? (newFiles) => this.setFiles(newFiles)
-          : undefined,
       },
     };
+
+    this.model.subscribe((mutation) => {
+      this.handleModelMutation(mutation);
+    });
   }
 
   // --- State setters (imperative) ---
@@ -437,20 +465,78 @@ export class FileTree {
 
   // --- Heavier updates (re-render) ---
 
-  setFiles(files: string[]): void {
-    if (this.options.initialFiles === files) {
+  private handleModelMutation(mutation: FileTreeModelMutation): void {
+    const files = this.model.getFiles();
+    this.options.model = this.model;
+    this.callbacksRef.current.onFilesChange?.(files);
+
+    const handle = this.handleRef.current;
+    if (handle == null) {
+      if (this.divWrapper != null) {
+        this.rerender();
+      }
       return;
     }
-    this.options = inheritBenchmarkInstrumentation(this.options, {
-      ...this.options,
-      initialFiles: files,
+
+    if (mutation.kind === 'rename-path') {
+      handle.tree.markBranchDirty(mutation.parentId, 'children');
+      handle.tree.rebuildTree();
+      return;
+    }
+
+    if (mutation.kind === 'move-paths') {
+      if (mutation.affectedParentIds.length === 0) {
+        handle.tree.markBranchDirty(
+          handle.tree.getConfig().rootItemId,
+          'children'
+        );
+      } else {
+        for (
+          let index = 0;
+          index < mutation.affectedParentIds.length;
+          index += 1
+        ) {
+          handle.tree.markBranchDirty(
+            mutation.affectedParentIds[index],
+            'children'
+          );
+        }
+      }
+      handle.tree.rebuildTree();
+      return;
+    }
+
+    handle.tree.rebuildTreeFromScratch();
+  }
+
+  renamePath(event: FileTreeRenameEvent): void {
+    const result = this.model.renamePath({
+      sourcePath: event.sourcePath,
+      destinationPath: event.destinationPath,
+      isFolder: event.isFolder,
     });
-    this.callbacksRef.current.onFilesChange?.(files);
-    this.rerender();
+
+    if (!result.ok) {
+      const renamingConfig =
+        this.options.renaming != null &&
+        this.options.renaming !== true &&
+        this.options.renaming !== false
+          ? this.options.renaming
+          : undefined;
+      renamingConfig?.onError?.(result.error);
+    }
+  }
+
+  movePaths(request: FileTreeMovePathsRequest): void {
+    this.model.movePaths({
+      draggedPaths: request.draggedPaths,
+      targetPath: request.targetPath,
+      onCollision: this.options.onCollision,
+    });
   }
 
   getFiles(): string[] {
-    return this.options.initialFiles;
+    return this.model.getFiles();
   }
 
   setOptions(
@@ -458,24 +544,6 @@ export class FileTree {
     state?: Partial<FileTreeStateConfig>
   ): void {
     const hadContextMenu = this.callbacksRef.current.onContextMenuOpen != null;
-
-    if (options.dragAndDrop === false) {
-      this.callbacksRef.current._onDragMoveFiles = undefined;
-    } else if (
-      options.dragAndDrop === true &&
-      this.callbacksRef.current._onDragMoveFiles == null
-    ) {
-      this.callbacksRef.current._onDragMoveFiles = (newFiles) =>
-        this.setFiles(newFiles);
-    }
-    if ('renaming' in options) {
-      if (!isRenamingEnabled(options.renaming)) {
-        this.callbacksRef.current._onRenameFiles = undefined;
-      } else {
-        this.callbacksRef.current._onRenameFiles ??= (newFiles) =>
-          this.setFiles(newFiles);
-      }
-    }
 
     // Update callbacks without re-rendering
     if (state?.onExpandedItemsChange !== undefined) {
@@ -499,12 +567,23 @@ export class FileTree {
       this.callbacksRef.current.onContextMenuClose = state.onContextMenuClose;
     }
 
+    const { model: nextModel, ...restOptions } = options;
+
+    if (nextModel != null && nextModel !== this.model) {
+      throw new Error(
+        'FileTree.setOptions cannot swap model instances. Create a new FileTree instead.'
+      );
+    }
+
+    if ('sort' in options) {
+      this.model.setSortComparator(resolveSortComparator(options.sort));
+    }
+
     // Check if structural props changed (require re-render)
     const structuralKeys = [
       'dragAndDrop',
       'fileTreeSearchMode',
       'gitStatus',
-      'initialFiles',
       'icons',
       'flattenEmptyDirectories',
       'lockedPaths',
@@ -517,19 +596,16 @@ export class FileTree {
     ] as const;
     let needsRerender = false;
     for (const key of structuralKeys) {
-      if (key in options) {
+      if (key in restOptions) {
         needsRerender = true;
         break;
       }
     }
 
-    const nextFiles = state?.files;
-    const stateFilesChanged =
-      nextFiles !== undefined && this.options.initialFiles !== nextFiles;
     this.options = inheritBenchmarkInstrumentation(this.options, {
       ...this.options,
-      ...options,
-      ...(nextFiles !== undefined && { initialFiles: nextFiles }),
+      ...restOptions,
+      model: this.model,
     });
     if (state != null) {
       this.stateConfig = inheritBenchmarkInstrumentation(this.options, {
@@ -543,10 +619,7 @@ export class FileTree {
       needsRerender = true;
     }
 
-    if (needsRerender || stateFilesChanged) {
-      if (stateFilesChanged && nextFiles !== undefined) {
-        this.callbacksRef.current.onFilesChange?.(nextFiles);
-      }
+    if (needsRerender) {
       this.rerender();
     } else {
       // State-only changes - use imperative methods

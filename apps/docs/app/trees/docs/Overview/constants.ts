@@ -1,10 +1,10 @@
 import type { PreloadFileOptions } from '@pierre/diffs/ssr';
-import type { FileTreeOptions } from '@pierre/trees';
 
+import type { TreesDocsFileTreeOptions } from '../../demo-data';
 import { CustomScrollbarCSS } from '@/components/CustomScrollbarCSS';
 
 /** File list and options for the live FileTree in the Overview section */
-export const OVERVIEW_FILE_TREE_OPTIONS: FileTreeOptions = {
+export const OVERVIEW_FILE_TREE_OPTIONS: TreesDocsFileTreeOptions = {
   initialFiles: [
     'README.md',
     'package.json',

@@ -3,6 +3,7 @@ import { h } from 'preact';
 import { renderToString } from 'preact-render-to-string';
 
 import { Root } from '../src/components/Root';
+import { FileTreeModel } from '../src/model/FileTreeModel';
 import type { FileTreeData } from '../src/types';
 import { fileListToTree } from '../src/utils/fileListToTree';
 import {
@@ -255,7 +256,7 @@ describe('SSR guide-line style output', () => {
     return renderToString(
       h(Root, {
         fileTreeOptions: {
-          initialFiles: files,
+          model: FileTreeModel.fromFiles(files),
           flattenEmptyDirectories: opts.flattenEmptyDirectories ?? false,
           id: 'ssr-test',
         },

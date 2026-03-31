@@ -1,7 +1,11 @@
 import { preloadFileTree } from '@pierre/trees/ssr';
 
 import { readSettingsCookies } from '../_components/readSettingsCookies';
-import { sharedDemoFileTreeOptions, sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoFileTreeOptions,
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+} from '../demo-data';
 import { StateDemoClient } from './StateDemoClient';
 
 export default async function StatePage() {
@@ -13,8 +17,9 @@ export default async function StatePage() {
     useLazyDataLoader,
   };
 
-  const mainSsr = preloadFileTree(fileTreeOptions, sharedDemoStateConfig);
-  const controlledSsr = preloadFileTree(fileTreeOptions, {
+  const runtimeOptions = toRuntimeFileTreeOptions(fileTreeOptions);
+  const mainSsr = preloadFileTree(runtimeOptions, sharedDemoStateConfig);
+  const controlledSsr = preloadFileTree(runtimeOptions, {
     ...sharedDemoStateConfig,
     initialSelectedItems: ['Build/assets/images/social/logo.png'],
   });

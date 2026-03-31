@@ -25,7 +25,7 @@
 
     <script type="module">
       import '/dist/web-components.js';
-      import { FileTree } from '/dist/index.js';
+      import { FileTree, FileTreeModel } from '/dist/index.js';
 
       const host = document.getElementById('test-tree-host');
       host.style.setProperty('--trees-selected-bg-override', 'rgb(1, 2, 3)');
@@ -33,7 +33,7 @@
 
       const fileTree = new FileTree(
         {
-          initialFiles: ['README.md', 'src/index.ts'],
+          model: FileTreeModel.fromFiles(['README.md', 'src/index.ts']),
           flattenEmptyDirectories: false,
         },
         {

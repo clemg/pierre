@@ -1,15 +1,20 @@
 import { preloadFileTree } from '@pierre/trees/ssr';
 
-import { baseTreeOptions, GIT_STATUSES_A } from './demo-data';
+import { sampleFileList } from '../../trees/demo-data';
+import { baseTreeOptions, GIT_STATUSES_A, toReactTreeProps } from './demo-data';
 import { GitStatusSectionClient } from './GitStatusSectionClient';
 
-const initialVisibleFiles = baseTreeOptions.initialFiles ?? [];
+const { model: gitStatusModel, options: gitStatusOptions } = toReactTreeProps({
+  ...baseTreeOptions,
+  id: 'path-colors-git-status-demo',
+  initialFiles: sampleFileList,
+  gitStatus: GIT_STATUSES_A,
+});
+
 const prerenderedHTML = preloadFileTree(
   {
-    ...baseTreeOptions,
-    id: 'path-colors-git-status-demo',
-    initialFiles: initialVisibleFiles,
-    gitStatus: GIT_STATUSES_A,
+    model: gitStatusModel,
+    ...gitStatusOptions,
   },
   {
     initialExpandedItems: ['src', 'src/components'],

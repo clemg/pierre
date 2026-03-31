@@ -7,7 +7,11 @@ import type { CSSProperties } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
-import { DEFAULT_FILE_TREE_PANEL_CLASS, dragDropOptions } from './demo-data';
+import {
+  DEFAULT_FILE_TREE_PANEL_CLASS,
+  dragDropOptions,
+  toReactTreeProps,
+} from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -26,11 +30,12 @@ export function DragDropSectionClient({
   const [hasDragged, setHasDragged] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
-  const options = useMemo(
-    () => ({
-      ...dragDropOptions(lockPackageJson ? ['package.json'] : undefined),
-      id: 'drag-drop-demo-locked',
-    }),
+  const treeProps = useMemo(
+    () =>
+      toReactTreeProps({
+        ...dragDropOptions(lockPackageJson ? ['package.json'] : undefined),
+        id: 'drag-drop-demo-locked',
+      }),
     [lockPackageJson]
   );
 
@@ -98,9 +103,10 @@ export function DragDropSectionClient({
 
         <FileTree
           key={resetKey}
+          model={treeProps.model}
           className={DEFAULT_FILE_TREE_PANEL_CLASS}
           prerenderedHTML={prerenderedHTML}
-          options={options}
+          options={treeProps.options}
           onFilesChange={handleFilesChange}
           style={dragDropStyle}
         />

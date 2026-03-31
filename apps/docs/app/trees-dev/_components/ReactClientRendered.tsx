@@ -1,7 +1,12 @@
 'use client';
 
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import { FileTree as FileTreeReact } from '@pierre/trees/react';
+
+import {
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 /**
  * React FileTree - Client-Side Rendered
@@ -12,14 +17,20 @@ export function ReactClientRendered({
   initialFiles,
   stateConfig,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
 }) {
+  const runtimeOptions = toRuntimeFileTreeOptions({
+    ...options,
+    initialFiles: initialFiles ?? [],
+  });
+  const { model, ...reactOptions } = runtimeOptions;
+
   return (
     <FileTreeReact
-      options={options}
-      initialFiles={initialFiles}
+      model={model}
+      options={reactOptions}
       initialExpandedItems={stateConfig?.initialExpandedItems}
       initialSelectedItems={stateConfig?.initialSelectedItems}
       onSelection={stateConfig?.onSelection}

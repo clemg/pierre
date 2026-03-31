@@ -19,6 +19,9 @@ export interface TreeDataRef {
    * item instance up front.
    */
   visibleItemIds?: string[];
+  /** Internal rebuild telemetry for profiling/debugging incremental behavior. */
+  lastRebuildMode?: 'full' | 'incremental' | 'noop';
+  rebuildModeCounts?: Record<'full' | 'incremental' | 'noop', number>;
 }
 
 export type InstanceTypeMap = {
@@ -66,6 +69,20 @@ export type MainFeatureDef<T = any> = {
     /* @internal */
     getHotkeyPresets: () => HotkeysConfig<T>;
     rebuildTree: () => void;
+    /**
+     * Forces a full rebuild of internal tree indexes.
+     * @internal Recovery/benchmark hook. Prefer `rebuildTree()` for normal use.
+     */
+    rebuildTreeFromScratch: () => void;
+    /**
+     * Marks a branch as structurally dirty so the next rebuild can refresh only
+     * the affected subtree instead of re-walking the full visible tree.
+     * @internal
+     */
+    markBranchDirty: (
+      itemId: string,
+      reason?: 'children' | 'invalidated'
+    ) => void;
     /** @deprecated Experimental feature, might get removed or changed in the future. */
     scheduleRebuildTree: () => void;
     /** @internal */

@@ -1,8 +1,13 @@
 'use client';
 
 import { FileTree } from '@pierre/trees';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import { useCallback, useRef } from 'react';
+
+import {
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 /**
  * Vanilla FileTree - Client-Side Rendered
@@ -12,7 +17,7 @@ export function VanillaClientRendered({
   options,
   stateConfig,
 }: {
-  options: FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
 }) {
   const instanceRef = useRef<FileTree | null>(null);
@@ -29,7 +34,10 @@ export function VanillaClientRendered({
         node.innerHTML = '';
       }
 
-      const fileTree = new FileTree(options, stateConfig);
+      const fileTree = new FileTree(
+        toRuntimeFileTreeOptions(options),
+        stateConfig
+      );
       fileTree.render({ containerWrapper: node });
       instanceRef.current = fileTree;
 

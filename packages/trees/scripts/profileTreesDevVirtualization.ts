@@ -4,10 +4,13 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+type ProfileActionName = 'initial-render' | 'rename-file';
+
 interface ProfileConfig {
   browserUrl: string;
   url: string;
   workloads: string[];
+  actions: ProfileActionName[];
   timeoutMs: number;
   runs: number;
   warmupRuns: number;
@@ -151,6 +154,8 @@ interface HeapSummary {
 
 interface ProfileResult {
   runNumber: number;
+  actionName: ProfileActionName;
+  actionLabel: string;
   browserUrl: string;
   url: string;
   workload: PageWorkloadSummary;
@@ -204,6 +209,7 @@ interface ProfileConfigSummary {
   browserUrl: string;
   url: string;
   workloads: string[];
+  actions: ProfileActionName[];
   timeoutMs: number;
   runs: number;
   warmupRuns: number;
@@ -333,10 +339,19 @@ interface CdpMessage {
   };
 }
 
+interface VirtualizationFixtureApi {
+  runInitialRender: () => Promise<PageRenderSummary>;
+  runRenameFile: () => Promise<PageRenderSummary>;
+}
+
 declare global {
   interface Window {
     __treesDevVirtualizationFixtureReady?: boolean;
-    __treesDevVirtualizationProfile?: PageRenderSummary;
+    __treesDevVirtualizationFixtureApi?: VirtualizationFixtureApi;
+    __treesDevVirtualizationProfile?: {
+      workload?: PageWorkloadSummary;
+      operations?: Partial<Record<ProfileActionName, PageRenderSummary>>;
+    };
   }
 }
 
@@ -345,6 +360,8 @@ const DEFAULT_BROWSER_URL = 'http://127.0.0.1:9222';
 const DEFAULT_URL =
   'http://127.0.0.1:9221/test/e2e/fixtures/virtualization.html';
 const DEFAULT_WORKLOAD_NAME = 'linux-5x';
+const DEFAULT_ACTIONS: ProfileActionName[] = ['initial-render', 'rename-file'];
+const KNOWN_ACTION_NAMES = new Set<ProfileActionName>(DEFAULT_ACTIONS);
 const KNOWN_WORKLOAD_NAMES = new Set([
   'pierre-snapshot',
   'half-linux',
@@ -443,12 +460,12 @@ const AGGREGATE_METRIC_DEFINITIONS: Array<{
 }> = [
   {
     key: 'visibleRowsReadyMs',
-    label: 'Visible rows ready',
+    label: 'Action visible rows ready',
     select: (result) => result.visibleRowsReadyMs,
   },
   {
     key: 'postPaintReadyMs',
-    label: 'Post-paint ready',
+    label: 'Action post-paint ready',
     select: (result) => result.renderDurationMs,
   },
   {
@@ -500,6 +517,9 @@ function printHelpAndExit(): never {
   );
   console.log(
     `  --workload <name>      Fixture workload to run (repeatable, default: ${DEFAULT_WORKLOAD_NAME})`
+  );
+  console.log(
+    `  --action <name>        Profile action to run (repeatable, default: ${DEFAULT_ACTIONS.join(', ')})`
   );
   console.log(
     `  --timeout <ms>         Navigation/render timeout in milliseconds (default: ${DEFAULT_TIMEOUT_MS})`
@@ -573,6 +593,18 @@ function parseWorkloadName(value: string): string {
   );
 }
 
+function parseActionName(value: string): ProfileActionName {
+  if (KNOWN_ACTION_NAMES.has(value as ProfileActionName)) {
+    return value as ProfileActionName;
+  }
+
+  throw new Error(
+    `Invalid --action value '${value}'. Expected one of: ${[
+      ...KNOWN_ACTION_NAMES,
+    ].join(', ')}.`
+  );
+}
+
 function createTraceRunId(): string {
   return `${new Date()
     .toISOString()
@@ -590,7 +622,9 @@ function createDefaultTraceOutputPath(): string {
 function createRunTraceOutputPath(
   traceOutputPath: string,
   workloadName: string,
+  actionName: ProfileActionName,
   workloadCount: number,
+  actionCount: number,
   runNumber: number,
   totalRuns: number
 ): string {
@@ -602,6 +636,15 @@ function createRunTraceOutputPath(
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     suffixParts.push(workloadSlug.length > 0 ? workloadSlug : 'workload');
+  }
+
+  if (actionCount > 1 || workloadCount > 1 || totalRuns > 1) {
+    const actionSlug = actionName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    suffixParts.push(actionSlug.length > 0 ? actionSlug : 'action');
   }
 
   if (totalRuns > 1) {
@@ -658,6 +701,7 @@ function parseArgs(argv: string[]): ProfileConfig {
     browserUrl: DEFAULT_BROWSER_URL,
     url: DEFAULT_URL,
     workloads: [DEFAULT_WORKLOAD_NAME],
+    actions: [...DEFAULT_ACTIONS],
     timeoutMs: DEFAULT_TIMEOUT_MS,
     runs: DEFAULT_RUN_COUNT,
     warmupRuns: DEFAULT_WARMUP_RUN_COUNT,
@@ -706,6 +750,7 @@ function parseArgs(argv: string[]): ProfileConfig {
       flag === '--browser-url' ||
       flag === '--url' ||
       flag === '--workload' ||
+      flag === '--action' ||
       flag === '--timeout' ||
       flag === '--runs' ||
       flag === '--warmup-runs' ||
@@ -733,6 +778,16 @@ function parseArgs(argv: string[]): ProfileConfig {
           config.workloads = [];
         }
         config.workloads.push(parseWorkloadName(value));
+      } else if (flag === '--action') {
+        if (
+          config.actions.length === DEFAULT_ACTIONS.length &&
+          DEFAULT_ACTIONS.every((action, actionIndex) => {
+            return config.actions[actionIndex] === action;
+          })
+        ) {
+          config.actions = [];
+        }
+        config.actions.push(parseActionName(value));
       } else if (flag === '--timeout') {
         config.timeoutMs = parsePositiveInteger(value, '--timeout');
       } else if (flag === '--runs') {
@@ -753,6 +808,7 @@ function parseArgs(argv: string[]): ProfileConfig {
   }
 
   config.workloads = [...new Set(config.workloads)];
+  config.actions = [...new Set(config.actions)] as ProfileActionName[];
   return config;
 }
 
@@ -896,6 +952,7 @@ function createProfileConfigSummary(
     browserUrl: config.browserUrl,
     url: config.url,
     workloads: [...config.workloads],
+    actions: [...config.actions],
     timeoutMs: config.timeoutMs,
     runs: config.runs,
     warmupRuns: config.warmupRuns,
@@ -2181,11 +2238,28 @@ function formatPhaseWorkload(
       })();
     }
     case 'core.rebuildItemMeta': {
-      return formatWorkloadPair(
-        counters,
-        'workload.visibleItemMeta',
-        'visible items'
-      );
+      return joinWorkloadParts([
+        formatWorkloadPair(
+          counters,
+          'workload.visibleItemMeta',
+          'visible items'
+        ),
+        formatWorkloadPair(
+          counters,
+          'workload.rebuild.fullCount',
+          'full rebuilds'
+        ),
+        formatWorkloadPair(
+          counters,
+          'workload.rebuild.incrementalCount',
+          'incremental rebuilds'
+        ),
+        formatWorkloadPair(
+          counters,
+          'workload.rebuild.noopCount',
+          'noop rebuilds'
+        ),
+      ]);
     }
     case 'fileTree.render.mount': {
       return `${formatCount(renderedItemCount)} visible rows`;
@@ -2493,89 +2567,76 @@ async function closePageTarget(
   ).catch(() => {});
 }
 
-async function waitForProfileSummary(
+function getActionMethodName(actionName: ProfileActionName): string {
+  return actionName === 'rename-file' ? 'runRenameFile' : 'runInitialRender';
+}
+
+function getActionLabel(actionName: ProfileActionName): string {
+  return actionName === 'rename-file' ? 'Rename file' : 'Initial render';
+}
+
+async function runFixtureAction(
   cdp: CdpClient,
-  timeoutMs: number
+  actionName: ProfileActionName
 ): Promise<PageRenderSummary> {
+  const methodName = getActionMethodName(actionName);
   const summary = await evaluateJson<{
     done: boolean;
     profile: PageRenderSummary | null;
+    reason?: string;
   }>(
     cdp,
     `(async () => {
-      const started = performance.now();
-      while (performance.now() - started < ${timeoutMs}) {
-        if (window.__treesDevVirtualizationProfile != null) {
-          return { done: true, profile: window.__treesDevVirtualizationProfile };
-        }
-        await new Promise((resolve) => setTimeout(resolve, 50));
+      const fixtureApi = window.__treesDevVirtualizationFixtureApi;
+      if (fixtureApi == null) {
+        return {
+          done: false,
+          profile: null,
+          reason: 'Missing window.__treesDevVirtualizationFixtureApi',
+        };
       }
-      return {
-        done: false,
-        profile: window.__treesDevVirtualizationProfile ?? null,
-      };
+
+      const operation = fixtureApi['${methodName}'];
+      if (typeof operation !== 'function') {
+        return {
+          done: false,
+          profile: null,
+          reason: 'Missing fixture API method ${methodName}',
+        };
+      }
+
+      try {
+        const profile = await operation();
+        return { done: true, profile };
+      } catch (error) {
+        return {
+          done: false,
+          profile: null,
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
     })()`
   );
 
   if (!summary.done || summary.profile == null) {
-    throw new Error('Timed out waiting for the virtualization render summary.');
+    throw new Error(
+      summary.reason ??
+        `Timed out waiting for fixture action ${actionName} summary.`
+    );
   }
 
   return summary.profile;
 }
 
-async function clickRenderButton(cdp: CdpClient): Promise<void> {
-  const result = await evaluateJson<{
-    ok: boolean;
-    reason?: string;
-    x?: number;
-    y?: number;
-  }>(
-    cdp,
-    `(() => {
-      const button = document.querySelector('[data-profile-render-button]');
-      if (!(button instanceof HTMLButtonElement)) {
-        return { ok: false, reason: 'Missing [data-profile-render-button]' };
-      }
-      const rect = button.getBoundingClientRect();
-      return {
-        ok: true,
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-      };
-    })()`
-  );
-
-  if (!result.ok || result.x == null || result.y == null) {
-    throw new Error(result.reason ?? 'Failed to click the render button.');
+async function prepareFixtureForAction(
+  cdp: CdpClient,
+  actionName: ProfileActionName
+): Promise<void> {
+  if (actionName === 'initial-render') {
+    return;
   }
 
-  await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mouseMoved',
-    x: result.x,
-    y: result.y,
-    button: 'none',
-    pointerType: 'mouse',
-  });
-  await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mousePressed',
-    x: result.x,
-    y: result.y,
-    button: 'left',
-    buttons: 1,
-    clickCount: 1,
-    pointerType: 'mouse',
-  });
-  await Bun.sleep(16);
-  await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mouseReleased',
-    x: result.x,
-    y: result.y,
-    button: 'left',
-    buttons: 0,
-    clickCount: 1,
-    pointerType: 'mouse',
-  });
+  await runFixtureAction(cdp, 'initial-render');
 }
 
 async function collectProfilingArtifacts(
@@ -2644,13 +2705,16 @@ async function collectProfilingArtifacts(
 async function collectFunctionCallCounts(
   cdp: CdpClient,
   url: string,
+  actionName: ProfileActionName,
   timeoutMs: number
 ): Promise<Map<string, number | null> | null> {
   try {
     await navigateToFixture(cdp, url, timeoutMs);
+    if (actionName !== 'initial-render') {
+      await prepareFixtureForAction(cdp, actionName);
+    }
     await startPreciseCoverage(cdp);
-    await clickRenderButton(cdp);
-    await waitForProfileSummary(cdp, timeoutMs);
+    await runFixtureAction(cdp, actionName);
     const coverage = await stopPreciseCoverage(cdp);
     if (coverage == null) {
       return null;
@@ -2679,6 +2743,7 @@ function writeTraceIfAvailable(
 async function profileVirtualizedRender(
   config: ProfileConfig,
   workloadName: string,
+  actionName: ProfileActionName,
   runNumber: number,
   traceOutputPath: string | null
 ): Promise<ProfileResult> {
@@ -2712,21 +2777,28 @@ async function profileVirtualizedRender(
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
     await navigateToFixture(cdp, profileUrl, config.timeoutMs);
+    await prepareFixtureForAction(cdp, actionName);
 
     const { pageSummary, trace, cpuProfile } = await collectProfilingArtifacts(
       cdp,
       config.timeoutMs,
       async () => {
-        await clickRenderButton(cdp);
-        return await waitForProfileSummary(cdp, config.timeoutMs);
+        return await runFixtureAction(cdp, actionName);
       }
     );
     const callCountsByFunction = config.includeCallCounts
-      ? await collectFunctionCallCounts(cdp, profileUrl, config.timeoutMs)
+      ? await collectFunctionCallCounts(
+          cdp,
+          profileUrl,
+          actionName,
+          config.timeoutMs
+        )
       : null;
 
     return {
       runNumber,
+      actionName,
+      actionLabel: getActionLabel(actionName),
       browserUrl: config.browserUrl,
       url: profileUrl,
       workload: getPageWorkloadSummary(pageSummary, profileUrl),
@@ -2761,15 +2833,20 @@ function printRunHumanSummary(
   totalRuns: number,
   showDominantTraceEvents: boolean
 ): void {
-  const summaryRows = [['Visible rows', String(result.renderedItemCount)]];
+  const actionTimingReadyLabel = `${result.actionLabel} ready`;
+  const actionTimingDoneLabel = `${result.actionLabel} post-paint`;
+  const summaryRows = [
+    ['Action', result.actionLabel],
+    ['Visible rows', String(result.renderedItemCount)],
+  ];
 
   if (result.visibleRowsReadyMs != null) {
     summaryRows.push([
-      'Visible rows ready',
+      actionTimingReadyLabel,
       formatMs(result.visibleRowsReadyMs),
     ]);
   }
-  summaryRows.push(['Post-paint ready', formatMs(result.renderDurationMs)]);
+  summaryRows.push([actionTimingDoneLabel, formatMs(result.renderDurationMs)]);
 
   if (result.trace.available) {
     if (result.trace.clickDispatchMs != null) {
@@ -3011,6 +3088,57 @@ function printAggregateHumanSummary(
   );
 }
 
+function printActionTimingHumanSummary(
+  workloadOutputs: ProfileWorkloadOutput[]
+): void {
+  const rows = workloadOutputs.map((workloadOutput) => {
+    const firstRun = workloadOutput.runs[0];
+    const readyMetric = workloadOutput.summary.metrics.visibleRowsReadyMs;
+    const postPaintMetric = workloadOutput.summary.metrics.postPaintReadyMs;
+    return [
+      firstRun?.workload.label ?? workloadOutput.workload.label,
+      firstRun?.actionLabel ?? 'Unknown action',
+      formatMs(readyMetric.medianMs),
+      formatMs(readyMetric.p95Ms),
+      formatMs(postPaintMetric.medianMs),
+      formatMs(postPaintMetric.p95Ms),
+      `${workloadOutput.runs.length}`,
+    ];
+  });
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  console.log('Action Timing Summary');
+  console.log(
+    createTable(
+      [
+        'Workload',
+        'Action',
+        'Ready median',
+        'Ready P95',
+        'Post-paint median',
+        'Post-paint P95',
+        'Runs',
+      ],
+      rows,
+      {
+        alignments: [
+          'left',
+          'left',
+          'right',
+          'right',
+          'right',
+          'right',
+          'right',
+        ],
+        maxWidths: [28, 18, 14, 14, 18, 14, 8],
+      }
+    )
+  );
+}
+
 function formatSignedNumber(
   value: number | null,
   digits: number,
@@ -3126,6 +3254,13 @@ function createLegacyConfigSummaryFromRuns(
 ): ProfileConfigSummary {
   const firstRun = runs[0];
   const workloadNames = [...new Set(runs.map((run) => run.workload.name))];
+  const actionNames = [
+    ...new Set(
+      runs
+        .map((run) => run.actionName)
+        .filter((action): action is ProfileActionName => action != null)
+    ),
+  ];
   const includeCallCounts = runs.some((run) => {
     return run.cpuProfile.bottomUpFunctions.some((fn) => fn.callCount != null);
   });
@@ -3135,6 +3270,7 @@ function createLegacyConfigSummaryFromRuns(
     url: normalizeComparableUrl(firstRun?.url ?? DEFAULT_URL),
     workloads:
       workloadNames.length > 0 ? workloadNames : [DEFAULT_WORKLOAD_NAME],
+    actions: actionNames.length > 0 ? actionNames : ['initial-render'],
     timeoutMs: DEFAULT_TIMEOUT_MS,
     runs: runs.length,
     warmupRuns: 0,
@@ -3186,6 +3322,14 @@ function normalizeProfileBenchmarkOutput(
       ? (rawValue.config as Partial<ProfileConfigSummary>)
       : {};
 
+    const normalizedActions = Array.isArray(rawConfig.actions)
+      ? rawConfig.actions
+          .map((action) =>
+            typeof action === 'string' ? parseActionName(action) : null
+          )
+          .filter((action): action is ProfileActionName => action != null)
+      : fallbackConfig.actions;
+
     return {
       benchmark: 'virtualizationProfile',
       config: {
@@ -3195,6 +3339,10 @@ function normalizeProfileBenchmarkOutput(
         workloads: workloads.map(
           (workloadOutput) => workloadOutput.workload.name
         ),
+        actions:
+          normalizedActions.length > 0
+            ? normalizedActions
+            : fallbackConfig.actions,
         runs: rawConfig.runs ?? workloads[0].runs.length,
         warmupRuns: rawConfig.warmupRuns ?? fallbackConfig.warmupRuns,
         instrumentationMode:
@@ -3261,6 +3409,18 @@ function assertComparableBenchmarkOutputs(
         'Cannot compare benchmark outputs with different instrumentation modes.',
         `Baseline: ${baseline.config.instrumentationMode}`,
         `Current: ${current.config.instrumentationMode}`,
+      ].join('\n')
+    );
+  }
+
+  const baselineActions = [...baseline.config.actions].sort();
+  const currentActions = [...current.config.actions].sort();
+  if (baselineActions.join(',') !== currentActions.join(',')) {
+    throw new Error(
+      [
+        'Cannot compare benchmark outputs with different action sets.',
+        `Baseline: ${baselineActions.join(', ')}`,
+        `Current: ${currentActions.join(', ')}`,
       ].join('\n')
     );
   }
@@ -3486,6 +3646,7 @@ function printRunsHumanSummary(output: ProfileBenchmarkOutput): void {
     ['Browser', output.config.browserUrl],
     ['URL', output.config.url],
     ['Workloads', output.config.workloads.join(', ')],
+    ['Actions', output.config.actions.join(', ')],
     ['Measured runs/workload', String(output.config.runs)],
     ['Warmup runs/workload', String(output.config.warmupRuns)],
     ['Instrumentation', output.config.instrumentationMode],
@@ -3511,6 +3672,9 @@ function printRunsHumanSummary(output: ProfileBenchmarkOutput): void {
     }
   }
 
+  console.log('');
+  printActionTimingHumanSummary(output.workloads);
+
   if (output.comparison != null) {
     console.log('');
     printComparisonHumanSummary(output.comparison);
@@ -3519,7 +3683,8 @@ function printRunsHumanSummary(output: ProfileBenchmarkOutput): void {
 
 async function runWorkloadProfile(
   config: ProfileConfig,
-  workloadName: string
+  workloadName: string,
+  actionName: ProfileActionName
 ): Promise<ProfileWorkloadOutput> {
   const results: ProfileResult[] = [];
 
@@ -3534,6 +3699,7 @@ async function runWorkloadProfile(
         includeCallCounts: false,
       },
       workloadName,
+      actionName,
       warmupRunNumber,
       null
     );
@@ -3543,20 +3709,31 @@ async function runWorkloadProfile(
     const traceOutputPath = createRunTraceOutputPath(
       config.traceOutputPath,
       workloadName,
+      actionName,
       config.workloads.length,
+      config.actions.length,
       runNumber,
       config.runs
     );
     const result = await profileVirtualizedRender(
       config,
       workloadName,
+      actionName,
       runNumber,
       traceOutputPath
     );
     results.push(result);
   }
 
-  return createWorkloadOutput(results);
+  const workloadOutput = createWorkloadOutput(results);
+  return {
+    ...workloadOutput,
+    workload: {
+      ...workloadOutput.workload,
+      name: `${workloadOutput.workload.name}:${actionName}`,
+      label: `${workloadOutput.workload.label} [${getActionLabel(actionName)}]`,
+    },
+  };
 }
 
 async function main(): Promise<void> {
@@ -3568,7 +3745,11 @@ async function main(): Promise<void> {
 
     const workloads: ProfileWorkloadOutput[] = [];
     for (const workloadName of config.workloads) {
-      workloads.push(await runWorkloadProfile(config, workloadName));
+      for (const actionName of config.actions) {
+        workloads.push(
+          await runWorkloadProfile(config, workloadName, actionName)
+        );
+      }
     }
 
     const output: ProfileBenchmarkOutput = {

@@ -71,6 +71,7 @@ import {
   FileTree as FileTreeClass,
   type FileTreeStateConfig,
 } from '../src/FileTree';
+import { FileTreeModel } from '../src/model/FileTreeModel';
 import { FileTree as FileTreeReact } from '../src/react/FileTree';
 
 // ---------------------------------------------------------------------------
@@ -97,10 +98,6 @@ const setCallbacksSpy = spyOn(
   FileTreeClass.prototype,
   'setCallbacks'
 ).mockImplementation(() => {});
-const setFilesSpy = spyOn(
-  FileTreeClass.prototype,
-  'setFiles'
-).mockImplementation(() => {});
 
 const resetMethodMocks = (): void => {
   renderSpy.mockImplementation(() => {});
@@ -108,7 +105,6 @@ const resetMethodMocks = (): void => {
   setExpandedSpy.mockImplementation(() => {});
   setSelectedSpy.mockImplementation(() => {});
   setCallbacksSpy.mockImplementation(() => {});
-  setFilesSpy.mockImplementation(() => {});
 };
 
 const requireCapturedStateConfig = (
@@ -125,6 +121,7 @@ const requireCapturedStateConfig = (
 // ---------------------------------------------------------------------------
 
 const FILES = ['README.md', 'src/index.ts', 'src/components/Button.tsx'];
+const createModel = () => FileTreeModel.fromFiles(FILES);
 
 describe('React controlled FileTree wrapper', () => {
   let container: HTMLElement;
@@ -140,7 +137,6 @@ describe('React controlled FileTree wrapper', () => {
     setExpandedSpy.mockClear();
     setSelectedSpy.mockClear();
     setCallbacksSpy.mockClear();
-    setFilesSpy.mockClear();
   });
 
   afterEach(() => {
@@ -156,14 +152,13 @@ describe('React controlled FileTree wrapper', () => {
     setExpandedSpy.mockRestore();
     setSelectedSpy.mockRestore();
     setCallbacksSpy.mockRestore();
-    setFilesSpy.mockRestore();
   });
 
   // -- Mount / unmount --
 
   test('creates FileTree instance and calls render on mount', () => {
     act(() => {
-      root.render(<FileTreeReact options={{}} files={FILES} />);
+      root.render(<FileTreeReact options={{}} model={createModel()} />);
     });
 
     expect(renderSpy).toHaveBeenCalled();
@@ -171,7 +166,7 @@ describe('React controlled FileTree wrapper', () => {
 
   test('calls cleanUp on unmount', () => {
     act(() => {
-      root.render(<FileTreeReact options={{}} files={FILES} />);
+      root.render(<FileTreeReact options={{}} model={createModel()} />);
     });
 
     cleanUpSpy.mockClear();
@@ -194,7 +189,7 @@ describe('React controlled FileTree wrapper', () => {
       return (
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           expandedItems={expanded}
           onExpandedItemsChange={setter}
         />
@@ -221,7 +216,7 @@ describe('React controlled FileTree wrapper', () => {
       return (
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           expandedItems={expanded}
           onExpandedItemsChange={setter}
         />
@@ -247,7 +242,7 @@ describe('React controlled FileTree wrapper', () => {
       return (
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           selectedItems={selected}
           onSelectedItemsChange={setter}
         />
@@ -277,7 +272,7 @@ describe('React controlled FileTree wrapper', () => {
       root.render(
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           onExpandedItemsChange={onExpanded}
           onSelectedItemsChange={onSelected}
         />
@@ -299,7 +294,11 @@ describe('React controlled FileTree wrapper', () => {
       const [cb, setCb] = useState<() => void>(() => {});
       setCallback = setCb;
       return (
-        <FileTreeReact options={{}} files={FILES} onExpandedItemsChange={cb} />
+        <FileTreeReact
+          options={{}}
+          model={createModel()}
+          onExpandedItemsChange={cb}
+        />
       );
     }
 
@@ -330,7 +329,7 @@ describe('React controlled FileTree wrapper', () => {
       return (
         <FileTreeReact
           options={{ flattenEmptyDirectories: flatten }}
-          files={FILES}
+          model={createModel()}
         />
       );
     }
@@ -364,7 +363,11 @@ describe('React controlled FileTree wrapper', () => {
 
     act(() => {
       root.render(
-        <FileTreeReact options={{}} files={FILES} expandedItems={['src']} />
+        <FileTreeReact
+          options={{}}
+          model={createModel()}
+          expandedItems={['src']}
+        />
       );
     });
 
@@ -388,7 +391,7 @@ describe('React controlled FileTree wrapper', () => {
       root.render(
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           selectedItems={['README.md']}
         />
       );
@@ -403,41 +406,36 @@ describe('React controlled FileTree wrapper', () => {
     renderSpy.mockImplementation(() => {});
   });
 
-  // -- Controlled files --
+  // -- Model-driven data updates --
 
-  test('calls setFiles when files prop changes', () => {
-    let setFiles!: (files: string[]) => void;
+  test('passes model to the FileTree constructor options', () => {
+    let capturedOptions: FileTreeClass['options'] | null = null;
+    const model = createModel();
+    renderSpy.mockImplementation(function (this: FileTreeClass) {
+      capturedOptions = this.options;
+    });
 
-    function Harness() {
-      const [files, setter] = useState(FILES);
-      setFiles = setter;
-      const stableOptions = useMemo(() => ({}), []);
-      return <FileTreeReact options={stableOptions} files={files} />;
+    act(() => {
+      root.render(<FileTreeReact options={{}} model={model} />);
+    });
+
+    expect(capturedOptions).not.toBeNull();
+    if (capturedOptions == null) {
+      throw new Error('Expected constructor options to be captured');
     }
+    expect((capturedOptions as { model?: FileTreeModel }).model).toBe(model);
 
-    act(() => {
-      root.render(<Harness />);
-    });
-
-    // Clear spies from mount (the initial useEffect fires setFiles)
-    setFilesSpy.mockClear();
-
-    const newFiles = ['package.json'];
-    act(() => {
-      setFiles(newFiles);
-    });
-
-    expect(setFilesSpy).toHaveBeenCalledWith(newFiles);
+    renderSpy.mockImplementation(() => {});
   });
 
-  test('does NOT recreate FileTree when files prop changes', () => {
-    let setFiles!: (files: string[]) => void;
+  test('recreates FileTree when model prop identity changes', () => {
+    let setModel!: (model: FileTreeModel) => void;
 
     function Harness() {
-      const [files, setter] = useState(FILES);
-      setFiles = setter;
+      const [model, setter] = useState<FileTreeModel>(() => createModel());
+      setModel = setter;
       const stableOptions = useMemo(() => ({}), []);
-      return <FileTreeReact options={stableOptions} files={files} />;
+      return <FileTreeReact options={stableOptions} model={model} />;
     }
 
     act(() => {
@@ -445,32 +443,27 @@ describe('React controlled FileTree wrapper', () => {
     });
 
     cleanUpSpy.mockClear();
-    setFilesSpy.mockClear();
 
     act(() => {
-      setFiles(['package.json']);
+      setModel(FileTreeModel.fromFiles(['package.json']));
     });
 
-    // Should NOT recreate the instance — only setFiles should be called
-    expect(cleanUpSpy).not.toHaveBeenCalled();
-    expect(setFilesSpy).toHaveBeenCalled();
+    expect(cleanUpSpy).toHaveBeenCalled();
   });
 
-  test('passes initialFiles to constructor from files prop', () => {
-    let capturedOptions: FileTreeClass['options'] | null = null;
-    renderSpy.mockImplementation(function (this: FileTreeClass) {
-      capturedOptions = this.options;
-    });
+  test('model mutations do not recreate the FileTree instance', () => {
+    const model = createModel();
 
     act(() => {
-      root.render(<FileTreeReact options={{}} files={FILES} />);
+      root.render(<FileTreeReact options={{}} model={model} />);
     });
 
-    expect(capturedOptions).not.toBeNull();
-    expect(capturedOptions!.initialFiles).toEqual(FILES);
+    cleanUpSpy.mockClear();
+    act(() => {
+      model.replaceAll(['package.json']);
+    });
 
-    // Restore spy
-    renderSpy.mockImplementation(() => {});
+    expect(cleanUpSpy).not.toHaveBeenCalled();
   });
 
   test('passes onFilesChange callback via setCallbacks', () => {
@@ -480,7 +473,7 @@ describe('React controlled FileTree wrapper', () => {
       root.render(
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           onFilesChange={onFilesChange}
         />
       );
@@ -500,7 +493,7 @@ describe('React controlled FileTree wrapper', () => {
       root.render(
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           renderContextMenu={renderCtx}
         />
       );
@@ -518,7 +511,7 @@ describe('React controlled FileTree wrapper', () => {
 
   test('does NOT pass context menu callbacks when renderContextMenu is not provided', () => {
     act(() => {
-      root.render(<FileTreeReact options={{}} files={FILES} />);
+      root.render(<FileTreeReact options={{}} model={createModel()} />);
     });
 
     // Without renderContextMenu, context menu callbacks should be undefined
@@ -534,7 +527,7 @@ describe('React controlled FileTree wrapper', () => {
       root.render(
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           onContextMenuOpen={onContextMenuOpen}
         />
       );
@@ -555,7 +548,7 @@ describe('React controlled FileTree wrapper', () => {
       const html = renderToString(
         <FileTreeReact
           options={{}}
-          initialFiles={FILES}
+          model={createModel()}
           prerenderedHTML={'<div data-file-tree-id="ft_srv_test"></div>'}
           header={<button data-test-header>Header action</button>}
         />
@@ -598,7 +591,7 @@ describe('React controlled FileTree wrapper', () => {
       root.render(
         <FileTreeReact
           options={{}}
-          files={FILES}
+          model={createModel()}
           renderContextMenu={(item) => <div data-test-menu>{item.path}</div>}
         />
       );
@@ -648,7 +641,7 @@ describe('React controlled FileTree wrapper', () => {
         root.render(
           <FileTreeReact
             options={{}}
-            files={FILES}
+            model={createModel()}
             containerId={host.id}
             header={<button data-test-header>Header action</button>}
           />
@@ -663,7 +656,11 @@ describe('React controlled FileTree wrapper', () => {
 
       act(() => {
         root.render(
-          <FileTreeReact options={{}} files={FILES} containerId={host.id} />
+          <FileTreeReact
+            options={{}}
+            model={createModel()}
+            containerId={host.id}
+          />
         );
       });
 

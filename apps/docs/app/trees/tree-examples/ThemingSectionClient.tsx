@@ -19,6 +19,7 @@ import {
   baseTreeOptions,
   DEFAULT_FILE_TREE_PANEL_CLASS,
   GIT_STATUSES_A,
+  toReactTreeProps,
 } from './demo-data';
 import { TreeExampleSection } from './TreeExampleSection';
 import { Button } from '@/components/ui/button';
@@ -115,6 +116,11 @@ function themeDisplayName(theme: string): string {
 function isDefaultTheme(theme: string): boolean {
   return theme === DEFAULT_LIGHT || theme === DEFAULT_DARK;
 }
+
+const { model: themingModel, options: themingReactOptions } = toReactTreeProps({
+  ...baseTreeOptions,
+  id: 'shiki-themes-tree',
+});
 
 export function ThemingSectionClient({
   prerenderedHTML,
@@ -293,12 +299,10 @@ export function ThemingSectionClient({
         {error && <p className="text-destructive py-4 text-sm">{error}</p>}
         {themeStyles != null && (
           <FileTree
+            model={themingModel}
             className={`${DEFAULT_FILE_TREE_PANEL_CLASS} min-h-[320px]`}
             prerenderedHTML={prerenderedHTML}
-            options={{
-              ...baseTreeOptions,
-              id: 'shiki-themes-tree',
-            }}
+            options={themingReactOptions}
             gitStatus={GIT_STATUSES_A}
             initialExpandedItems={['src', 'src/components']}
             initialSelectedItems={['package.json']}

@@ -1,13 +1,18 @@
 'use client';
 
 import { FileTree } from '@pierre/trees';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+import type { FileTreeStateConfig } from '@pierre/trees';
 import { FileTree as FileTreeReact } from '@pierre/trees/react';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 import { ExampleCard } from '../_components/ExampleCard';
 import { useTreesDevSettings } from '../_components/TreesDevSettingsProvider';
-import { customSpriteSheet, sharedDemoStateConfig } from '../demo-data';
+import {
+  customSpriteSheet,
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+  type TreesDevFileTreeOptions,
+} from '../demo-data';
 
 const CUSTOM_ICONS_REMAP = {
   'file-tree-icon-file': 'custom-hamburger-icon',
@@ -62,7 +67,7 @@ function VanillaCustomIcons({
   options,
   stateConfig,
 }: {
-  options: FileTreeOptions;
+  options: TreesDevFileTreeOptions;
   stateConfig?: FileTreeStateConfig;
 }) {
   const ref = useCallback(
@@ -70,10 +75,10 @@ function VanillaCustomIcons({
       if (node == null) return;
       node.innerHTML = '';
       const fileTree = new FileTree(
-        {
+        toRuntimeFileTreeOptions({
           ...options,
           icons: { spriteSheet: customSpriteSheet, remap: CUSTOM_ICONS_REMAP },
-        },
+        }),
         stateConfig
       );
       fileTree.render({ containerWrapper: node });
@@ -99,21 +104,29 @@ function ReactCustomIcons({
   initialFiles,
   stateConfig,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
 }) {
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: initialFiles ?? [],
+        icons: { spriteSheet: customSpriteSheet, remap: CUSTOM_ICONS_REMAP },
+      }),
+    [initialFiles, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
+
   return (
     <ExampleCard
       title="React — Custom Icons"
       description="React CSR tree with a custom spritesheet replacing the file icon with a custom file icon"
     >
       <FileTreeReact
-        options={{
-          ...options,
-          icons: { spriteSheet: customSpriteSheet, remap: CUSTOM_ICONS_REMAP },
-        }}
-        initialFiles={initialFiles}
+        model={model}
+        options={reactTreeOptions}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         onSelection={stateConfig?.onSelection}
       />
@@ -127,22 +140,30 @@ function ReactSSRCustomIcons({
   stateConfig,
   prerenderedHTML,
 }: {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  options: Omit<TreesDevFileTreeOptions, 'initialFiles'>;
   initialFiles?: string[];
   stateConfig?: FileTreeStateConfig;
   prerenderedHTML: string;
 }) {
+  const runtimeOptions = useMemo(
+    () =>
+      toRuntimeFileTreeOptions({
+        ...options,
+        initialFiles: initialFiles ?? [],
+        icons: { spriteSheet: customSpriteSheet, remap: CUSTOM_ICONS_REMAP },
+      }),
+    [initialFiles, options]
+  );
+  const { model, ...reactTreeOptions } = runtimeOptions;
+
   return (
     <ExampleCard
       title="React (SSR) — Custom Icons"
       description="SSR-hydrated React tree with a custom spritesheet replacing the chevron with a folder icon"
     >
       <FileTreeReact
-        options={{
-          ...options,
-          icons: { spriteSheet: customSpriteSheet, remap: CUSTOM_ICONS_REMAP },
-        }}
-        initialFiles={initialFiles}
+        model={model}
+        options={reactTreeOptions}
         prerenderedHTML={prerenderedHTML}
         initialExpandedItems={stateConfig?.initialExpandedItems}
         onSelection={stateConfig?.onSelection}

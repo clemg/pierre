@@ -18,10 +18,18 @@ export const insertItemsAtTarget = async <T>(
   if (!('childIndex' in target)) {
     const newChildren = [...oldChildrenIds, ...itemIds];
     await onChangeChildren(target.item, newChildren);
-    if ('updateCachedChildrenIds' in target.item) {
-      target.item.updateCachedChildrenIds(newChildren);
+
+    const maybeAsyncItem = target.item as ItemInstance<T> & {
+      updateCachedChildrenIds?: (childrenIds: string[]) => void;
+    };
+    if (typeof maybeAsyncItem.updateCachedChildrenIds === 'function') {
+      maybeAsyncItem.updateCachedChildrenIds(newChildren);
+      return;
     }
-    target.item.getTree().rebuildTree();
+
+    const tree = target.item.getTree();
+    tree.markBranchDirty(target.item.getId(), 'children');
+    tree.rebuildTree();
     return;
   }
 
@@ -34,8 +42,15 @@ export const insertItemsAtTarget = async <T>(
 
   await onChangeChildren(target.item, newChildren);
 
-  if ('updateCachedChildrenIds' in target.item) {
-    target.item.updateCachedChildrenIds(newChildren);
+  const maybeAsyncItem = target.item as ItemInstance<T> & {
+    updateCachedChildrenIds?: (childrenIds: string[]) => void;
+  };
+  if (typeof maybeAsyncItem.updateCachedChildrenIds === 'function') {
+    maybeAsyncItem.updateCachedChildrenIds(newChildren);
+    return;
   }
-  target.item.getTree().rebuildTree();
+
+  const tree = target.item.getTree();
+  tree.markBranchDirty(target.item.getId(), 'children');
+  tree.rebuildTree();
 };

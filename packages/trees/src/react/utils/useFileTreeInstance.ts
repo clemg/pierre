@@ -2,24 +2,20 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import {
   FileTree,
-  type FileTreeCallbacks,
   type FileTreeOptions,
   type FileTreeSelectionItem,
   type FileTreeStateConfig,
   type GitStatusEntry,
-  isRenamingEnabled,
 } from '../../FileTree';
+import type { FileTreeModel } from '../../model/FileTreeModel';
 import type { ContextMenuItem, ContextMenuOpenContext } from '../../types';
 import { getGitStatusSignature } from '../../utils/getGitStatusSignature';
 
 interface UseFileTreeInstanceProps {
-  options: Omit<FileTreeOptions, 'initialFiles'>;
+  model: FileTreeModel;
+  options: Omit<FileTreeOptions, 'model'>;
 
-  // Default (uncontrolled) files
-  initialFiles?: string[];
-
-  // Controlled files
-  files?: string[];
+  // State callbacks
   onFilesChange?: (files: string[]) => void;
 
   // Default (uncontrolled) state
@@ -50,9 +46,8 @@ interface UseFileTreeInstanceReturn {
 }
 
 export function useFileTreeInstance({
+  model,
   options,
-  initialFiles,
-  files,
   onFilesChange,
   initialExpandedItems,
   initialSelectedItems,
@@ -74,17 +69,17 @@ export function useFileTreeInstance({
   // them at creation time without including them as useMemo deps.
   const statePropsRef = useRef<
     FileTreeStateConfig & {
-      initialFiles?: string[];
       gitStatus?: GitStatusEntry[];
       onContextMenuOpen?: (
         item: ContextMenuItem,
         context: ContextMenuOpenContext
       ) => void;
       onContextMenuClose?: () => void;
+      model: FileTreeModel;
+      onFilesChange?: (files: string[]) => void;
     }
   >({
-    files,
-    initialFiles,
+    model,
     onFilesChange,
     expandedItems,
     selectedItems,
@@ -99,8 +94,7 @@ export function useFileTreeInstance({
     onContextMenuClose,
   });
   statePropsRef.current = {
-    files,
-    initialFiles,
+    model,
     onFilesChange,
     expandedItems,
     selectedItems,
@@ -115,14 +109,13 @@ export function useFileTreeInstance({
     onContextMenuClose,
   };
 
-  // Ref callback that handles mount/unmount and re-runs when options change.
-  // By including options in the dependency array, the callback identity changes
-  // when structural options change, causing React to call cleanup then re-invoke with the
-  // same DOM node - allowing us to detect and handle options changes.
-  //
   // React 19: Return cleanup function, called when ref changes or element unmounts.
   const ref = useCallback(
     (fileTreeContainer: HTMLElement | null) => {
+      // Model identity must remain a callback dependency so React can recreate
+      // the imperative instance when callers swap models.
+      void model;
+
       if (fileTreeContainer == null) {
         instanceRef.current?.cleanUp();
         instanceRef.current = null;
@@ -160,27 +153,19 @@ export function useFileTreeInstance({
 
       const createInstance = (existingId?: string): FileTree => {
         const sp = statePropsRef.current;
-        const optionsWithFiles = options as FileTreeOptions;
         syncedGitStatusSignatureRef.current = getGitStatusSignature(
           sp.gitStatus
         );
         return new FileTree(
           {
             ...options,
-            initialFiles:
-              sp.initialFiles ??
-              sp.files ??
-              optionsWithFiles.initialFiles ??
-              [],
+            model: sp.model,
             id: existingId,
             ...(sp.gitStatus != null && { gitStatus: sp.gitStatus }),
           },
           {
-            // Use controlled values as initial state, but do NOT pass them as
-            // controlled `expandedItems`/`selectedItems` — those bake into
-            // config.state in the Preact Root and override imperative updates.
-            // Subsequent controlled updates flow via the useEffect below calling
-            // setExpandedItems/setSelectedItems imperatively.
+            // Controlled values are seeded as initial state once, then synced
+            // imperatively by effects below.
             initialExpandedItems: sp.initialExpandedItems ?? sp.expandedItems,
             initialSelectedItems: sp.initialSelectedItems ?? sp.selectedItems,
             initialSearchQuery: sp.initialSearchQuery,
@@ -194,58 +179,29 @@ export function useFileTreeInstance({
         );
       };
 
-      const setupControlledDnD = (inst: FileTree): void => {
-        const sp = statePropsRef.current;
-        if (sp.files === undefined) return;
-        const controlledCallbacks: Partial<FileTreeCallbacks> = {
-          ...(options.dragAndDrop === true && {
-            _onDragMoveFiles: (newFiles: string[]) => {
-              sp.onFilesChange?.(newFiles);
-            },
-          }),
-          ...(isRenamingEnabled(options.renaming) && {
-            _onRenameFiles: (newFiles: string[]) => {
-              sp.onFilesChange?.(newFiles);
-            },
-          }),
-        };
-        if (Object.keys(controlledCallbacks).length > 0) {
-          inst.setCallbacks(controlledCallbacks);
-        }
-      };
-
       const existingFileTreeId = getExistingFileTreeId();
 
-      // Check if this is a re-run due to options change (same container, but new callback identity)
       const isOptionsChange =
         containerRef.current === fileTreeContainer &&
         instanceRef.current != null;
 
       if (isOptionsChange) {
-        // Options changed - clean up and re-create instance
         instanceRef.current?.cleanUp();
         clearExistingFileTree();
         instanceRef.current = createInstance(existingFileTreeId);
-        setupControlledDnD(instanceRef.current);
         void instanceRef.current.render({ fileTreeContainer });
       } else {
-        // Initial mount
         containerRef.current = fileTreeContainer;
 
-        // If markup already exists in the shadow root (typically via SSR
-        // declarative shadow DOM), hydrate it.
         const hasPrerenderedContent = existingFileTreeId != null;
 
         instanceRef.current = createInstance(existingFileTreeId);
-        setupControlledDnD(instanceRef.current);
 
         if (hasPrerenderedContent) {
-          // SSR: hydrate the prerendered HTML
           void instanceRef.current.hydrate({
             fileTreeContainer,
           });
         } else {
-          // CSR: render from scratch
           void instanceRef.current.render({ fileTreeContainer });
         }
       }
@@ -256,15 +212,8 @@ export function useFileTreeInstance({
         containerRef.current = null;
       };
     },
-    [options]
+    [model, options]
   );
-
-  // Sync controlled files imperatively (no tree recreation)
-  useEffect(() => {
-    if (files !== undefined && instanceRef.current != null) {
-      instanceRef.current.setFiles(files);
-    }
-  }, [files]);
 
   // Sync controlled expanded items imperatively (no tree recreation)
   useEffect(() => {
@@ -282,7 +231,6 @@ export function useFileTreeInstance({
 
   const gitStatusSignature = getGitStatusSignature(gitStatus);
 
-  // Sync controlled git status
   useEffect(() => {
     const instance = instanceRef.current;
     if (instance == null) return;
@@ -293,7 +241,6 @@ export function useFileTreeInstance({
     instance.setGitStatus(gitStatus);
   }, [gitStatus, gitStatusSignature]);
 
-  // Update callbacks without re-rendering Preact
   useEffect(() => {
     instanceRef.current?.setCallbacks({
       onExpandedItemsChange,
@@ -302,20 +249,6 @@ export function useFileTreeInstance({
       onFilesChange,
       onContextMenuOpen,
       onContextMenuClose,
-      // In controlled DnD mode, override to only fire onFilesChange
-      // without calling setFiles() directly, letting the parent decide.
-      ...(files !== undefined &&
-        options.dragAndDrop === true && {
-          _onDragMoveFiles: (newFiles) => {
-            onFilesChange?.(newFiles);
-          },
-        }),
-      ...(files !== undefined &&
-        isRenamingEnabled(options.renaming) && {
-          _onRenameFiles: (newFiles: string[]) => {
-            onFilesChange?.(newFiles);
-          },
-        }),
     });
   }, [
     onExpandedItemsChange,
@@ -324,9 +257,6 @@ export function useFileTreeInstance({
     onFilesChange,
     onContextMenuOpen,
     onContextMenuClose,
-    files,
-    options.dragAndDrop,
-    options.renaming,
   ]);
 
   return { ref };

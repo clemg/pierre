@@ -1,7 +1,7 @@
 /* oxlint-disable typescript-eslint/no-unsafe-return, typescript-eslint/strict-boolean-expressions */
 import type { FeatureImplementation } from '../../core/types/core';
 import { makeStateUpdater, poll } from '../../core/utils';
-import { collectVisibleItemMeta } from './visibleItemMeta';
+import type { TreeDataRef } from '../main/types';
 
 // oxlint-disable-next-line typescript-eslint/no-explicit-any
 export const treeFeature: FeatureImplementation<any> = {
@@ -25,7 +25,15 @@ export const treeFeature: FeatureImplementation<any> = {
   },
 
   treeInstance: {
-    getItemsMeta: ({ tree }) => collectVisibleItemMeta(tree),
+    getItemsMeta: ({ tree }) => {
+      const dataRef = tree.getDataRef<TreeDataRef>();
+      const visibleIds =
+        dataRef.current.visibleItemIds ??
+        tree.getItems().map((item) => item.getId());
+      return visibleIds.map((itemId) =>
+        tree.getItemInstance(itemId).getItemMeta()
+      );
+    },
 
     getFocusedItem: ({ tree }) => {
       const focusedItemId = tree.getState().focusedItem;

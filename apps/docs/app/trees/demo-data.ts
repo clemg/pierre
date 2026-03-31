@@ -1,7 +1,8 @@
-import type {
-  FileTreeOptions,
-  FileTreeSelectionItem,
-  FileTreeStateConfig,
+import {
+  FileTreeModel,
+  type FileTreeOptions,
+  type FileTreeSelectionItem,
+  type FileTreeStateConfig,
 } from '@pierre/trees';
 
 export const sampleFileList: string[] = [
@@ -25,10 +26,32 @@ export const sampleFileList: string[] = [
   '.gitignore',
 ];
 
-export const sharedDemoFileTreeOptions: FileTreeOptions = {
+export type TreesDocsFileTreeOptions = Omit<FileTreeOptions, 'model'> & {
+  initialFiles: string[];
+};
+
+export const sharedDemoFileTreeOptions: TreesDocsFileTreeOptions = {
   flattenEmptyDirectories: true,
   initialFiles: sampleFileList,
 };
+
+export function toRuntimeFileTreeOptions(
+  options: TreesDocsFileTreeOptions
+): FileTreeOptions {
+  const { initialFiles, sort, ...rest } = options;
+  const sortComparator =
+    sort === false
+      ? false
+      : sort != null && typeof sort === 'object'
+        ? sort.comparator
+        : undefined;
+
+  return {
+    ...rest,
+    sort,
+    model: FileTreeModel.fromFiles(initialFiles, { sortComparator }),
+  };
+}
 
 export const sharedDemoStateConfig: FileTreeStateConfig = {
   initialExpandedItems: ['Build/assets/images/social'],

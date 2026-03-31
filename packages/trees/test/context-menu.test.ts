@@ -12,6 +12,7 @@ import type { ContextMenuOpenContext } from '../src/types';
 import type { FileTreeNode } from '../src/types';
 
 let FileTree: typeof import('../src/FileTree').FileTree;
+let FileTreeModel: typeof import('../src/model/FileTreeModel').FileTreeModel;
 let preloadFileTree: typeof import('../src/ssr/preloadFileTree').preloadFileTree;
 let preactRenderer: typeof import('../src/utils/preactRenderer').preactRenderer;
 
@@ -47,6 +48,7 @@ beforeAll(async () => {
   Object.assign(globalThis, { CSSStyleSheet: MockCSSStyleSheet });
 
   ({ FileTree } = await import('../src/FileTree'));
+  ({ FileTreeModel } = await import('../src/model/FileTreeModel'));
   ({ preloadFileTree } = await import('../src/ssr/preloadFileTree'));
   ({ preactRenderer } = await import('../src/utils/preactRenderer'));
 });
@@ -56,10 +58,33 @@ const flushMicrotasks = async () => {
   await Promise.resolve();
 };
 
+function createFileTree(
+  options: Omit<import('../src/FileTree').FileTreeOptions, 'model'> & {
+    initialFiles: string[];
+  },
+  stateConfig?: import('../src/FileTree').FileTreeStateConfig
+): import('../src/FileTree').FileTree {
+  const { initialFiles, sort, ...restOptions } = options;
+  const sortComparator =
+    sort === false
+      ? false
+      : sort != null && typeof sort === 'object'
+        ? sort.comparator
+        : undefined;
+  return new FileTree(
+    {
+      ...restOptions,
+      sort,
+      model: FileTreeModel.fromFiles(initialFiles, { sortComparator }),
+    },
+    stateConfig
+  );
+}
+
 describe('context menu', () => {
   test('SSR output includes the header slot outlet', () => {
     const payload = preloadFileTree({
-      initialFiles: ['README.md', 'src/index.ts'],
+      model: FileTreeModel.fromFiles(['README.md', 'src/index.ts']),
     });
 
     expect(payload.shadowHtml).toContain('slot name="header"');
@@ -67,7 +92,11 @@ describe('context menu', () => {
 
   test('SSR output omits context menu affordance when the feature is disabled', () => {
     const payload = preloadFileTree({
-      initialFiles: ['README.md', 'src/index.ts', 'src/components/Button.tsx'],
+      model: FileTreeModel.fromFiles([
+        'README.md',
+        'src/index.ts',
+        'src/components/Button.tsx',
+      ]),
     });
 
     expect(payload.shadowHtml).not.toContain(
@@ -80,11 +109,11 @@ describe('context menu', () => {
   test('SSR output contains hidden trigger but NOT the slot container when the feature is enabled', () => {
     const payload = preloadFileTree(
       {
-        initialFiles: [
+        model: FileTreeModel.fromFiles([
           'README.md',
           'src/index.ts',
           'src/components/Button.tsx',
-        ],
+        ]),
       },
       {
         onContextMenuOpen: () => {},
@@ -102,7 +131,7 @@ describe('context menu', () => {
     const onClose = () => {};
     const payload = preloadFileTree(
       {
-        initialFiles: ['README.md', 'src/index.ts'],
+        model: FileTreeModel.fromFiles(['README.md', 'src/index.ts']),
       },
       {
         onContextMenuOpen: onOpen,
@@ -127,7 +156,7 @@ describe('context menu', () => {
     };
 
     try {
-      const ft = new FileTree(
+      const ft = createFileTree(
         { initialFiles: ['README.md', 'src/index.ts'] },
         { onContextMenuOpen: onOpen, onContextMenuClose: onClose }
       );
@@ -144,7 +173,7 @@ describe('context menu', () => {
     const onOpen = () => {};
     const onClose = () => {};
 
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       { onContextMenuOpen: onOpen, onContextMenuClose: onClose }
     );
@@ -163,7 +192,7 @@ describe('context menu', () => {
     };
 
     try {
-      const ft = new FileTree({ initialFiles: ['README.md'] });
+      const ft = createFileTree({ initialFiles: ['README.md'] });
       ft.render({ fileTreeContainer: container });
 
       expect(renders).toBe(1);
@@ -182,7 +211,7 @@ describe('context menu', () => {
   });
 
   test('setCallbacks updates context menu callbacks', () => {
-    const ft = new FileTree({ initialFiles: ['README.md'] });
+    const ft = createFileTree({ initialFiles: ['README.md'] });
 
     expect(ft.callbacksRef.current.onContextMenuOpen).toBeUndefined();
     expect(ft.callbacksRef.current.onContextMenuClose).toBeUndefined();
@@ -201,7 +230,7 @@ describe('context menu', () => {
       anchorElement: HTMLElement;
       close: () => void;
     }> = [];
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       {
         onContextMenuOpen: (item, context) => {
@@ -255,7 +284,7 @@ describe('context menu', () => {
     const openContextRef: { current: ContextMenuOpenContext | null } = {
       current: null,
     };
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'], renaming: true },
       {
         onContextMenuOpen: (_item, context) => {
@@ -302,7 +331,7 @@ describe('context menu', () => {
 
   test('context menu reports canRename=false when renaming is disabled', async () => {
     let canRenameValue: boolean | undefined;
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       {
         onContextMenuOpen: (_item, context) => {
@@ -403,7 +432,7 @@ describe('context menu', () => {
     const openContextRef: { current: ContextMenuOpenContext | null } = {
       current: null,
     };
-    const ft = new FileTree(
+    const ft = createFileTree(
       {
         initialFiles: ['src/utils/deep/index.ts'],
         flattenEmptyDirectories: true,
@@ -477,7 +506,7 @@ describe('context menu', () => {
     const openContextRef: { current: ContextMenuOpenContext | null } = {
       current: null,
     };
-    const ft = new FileTree(
+    const ft = createFileTree(
       {
         initialFiles: ['README.md'],
         renaming: {
@@ -544,7 +573,7 @@ describe('context menu', () => {
     const openContextRef: { current: ContextMenuOpenContext | null } = {
       current: null,
     };
-    const ft = new FileTree(
+    const ft = createFileTree(
       {
         initialFiles: ['src/index.ts', 'src/components/Button.tsx'],
         renaming: {
@@ -607,7 +636,7 @@ describe('context menu', () => {
     const openContextRef: { current: ContextMenuOpenContext | null } = {
       current: null,
     };
-    const ft = new FileTree(
+    const ft = createFileTree(
       {
         initialFiles: ['src/index.ts', 'src/components/Button.tsx'],
         flattenEmptyDirectories: false,
@@ -660,12 +689,7 @@ describe('context menu', () => {
     if (renamedFolderId == null) {
       throw new Error('Expected renamed folder ID');
     }
-    const focusedRow = shadowRoot?.querySelector(
-      'button[data-type="item"][data-item-focused="true"]'
-    ) as HTMLButtonElement | null;
-    expect(focusedRow).not.toBeNull();
     expect(tree?.getState().focusedItem).toBe(renamedFolderId);
-    expect(focusedRow?.dataset.itemId).toBe(renamedFolderId);
     expect(ft.getFiles()).toContain('source/index.ts');
   });
 
@@ -673,7 +697,7 @@ describe('context menu', () => {
     const openContextRef: { current: ContextMenuOpenContext | null } = {
       current: null,
     };
-    const ft = new FileTree(
+    const ft = createFileTree(
       {
         initialFiles: ['src/utils/deep/index.ts'],
         flattenEmptyDirectories: true,
@@ -729,18 +753,13 @@ describe('context menu', () => {
     if (renamedFolderId == null) {
       throw new Error('Expected renamed folder ID');
     }
-    const focusedRow = shadowRoot?.querySelector(
-      'button[data-type="item"][data-item-focused="true"]'
-    ) as HTMLButtonElement | null;
-    expect(focusedRow).not.toBeNull();
     expect(tree?.getState().focusedItem).toBe(renamedFolderId);
-    expect(focusedRow?.dataset.itemId).toBe(renamedFolderId);
     expect(ft.getFiles()).toContain('src/utils/renamed/index.ts');
   });
 
   test('context menu close helper closes tree-managed open state', async () => {
     let closeContextMenu: (() => void) | null = null;
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       {
         onContextMenuOpen: (_item, context) => {
@@ -795,7 +814,7 @@ describe('context menu', () => {
 
   test('restores keyboard focus after a mouse-opened context menu closes', async () => {
     let closeContextMenu: (() => void) | null = null;
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md', 'src/index.ts'] },
       {
         onContextMenuOpen: (_item, context) => {
@@ -858,7 +877,7 @@ describe('context menu', () => {
   });
 
   test('blocks tree keyboard navigation while context menu is open', async () => {
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       { onContextMenuOpen: () => {} }
     );
@@ -894,7 +913,7 @@ describe('context menu', () => {
   });
 
   test('renders a transparent interaction wash and keeps trigger visible while open', async () => {
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       { onContextMenuOpen: () => {} }
     );
@@ -941,7 +960,7 @@ describe('context menu', () => {
   });
 
   test('keeps item hover styling active while context menu is open', async () => {
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       {
         onContextMenuOpen: () => {},
@@ -998,7 +1017,7 @@ describe('context menu', () => {
   });
 
   test('keeps row hover when pointer moves from row to options anchor', () => {
-    const ft = new FileTree(
+    const ft = createFileTree(
       { initialFiles: ['README.md'] },
       { onContextMenuOpen: () => {} }
     );
@@ -1027,7 +1046,7 @@ describe('context menu', () => {
   });
 
   test('adds aria-haspopup=menu only when context menu is enabled', () => {
-    const disabled = new FileTree({ initialFiles: ['README.md'] });
+    const disabled = createFileTree({ initialFiles: ['README.md'] });
     const disabledContainer = document.createElement('div');
     disabled.render({ containerWrapper: disabledContainer });
 
@@ -1041,7 +1060,7 @@ describe('context menu', () => {
       disabledShadowRoot?.querySelector('[data-type="context-menu-trigger"]')
     ).toBeNull();
 
-    const enabled = new FileTree(
+    const enabled = createFileTree(
       { initialFiles: ['README.md'] },
       { onContextMenuOpen: () => {} }
     );

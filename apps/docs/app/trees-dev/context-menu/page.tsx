@@ -1,7 +1,11 @@
 import { preloadFileTree } from '@pierre/trees/ssr';
 
 import { readSettingsCookies } from '../_components/readSettingsCookies';
-import { sharedDemoFileTreeOptions, sharedDemoStateConfig } from '../demo-data';
+import {
+  sharedDemoFileTreeOptions,
+  sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
+} from '../demo-data';
 import { ContextMenuDemoClient } from './ContextMenuDemoClient';
 
 export default async function ContextMenuPage() {
@@ -14,11 +18,14 @@ export default async function ContextMenuPage() {
   };
 
   const noop = () => {};
-  const contextMenuSsr = preloadFileTree(fileTreeOptions, {
-    ...sharedDemoStateConfig,
-    onContextMenuOpen: noop,
-    onContextMenuClose: noop,
-  });
+  const contextMenuSsr = preloadFileTree(
+    toRuntimeFileTreeOptions(fileTreeOptions),
+    {
+      ...sharedDemoStateConfig,
+      onContextMenuOpen: noop,
+      onContextMenuClose: noop,
+    }
+  );
 
   return (
     <ContextMenuDemoClient

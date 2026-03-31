@@ -2,6 +2,7 @@
 
 import type { FileDiffMetadata } from '@pierre/diffs';
 import { FileDiff } from '@pierre/diffs/react';
+import { FileTreeModel } from '@pierre/trees';
 import { FileTree } from '@pierre/trees/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useRef, useState } from 'react';
@@ -67,8 +68,8 @@ function TreePanel({
     <div ref={panelRef}>
       <FileTree
         className={className ?? 'rounded-sm border p-3'}
+        model={FileTreeModel.fromFiles(PREVIEW_FILES)}
         options={TREE_OPTIONS}
-        initialFiles={PREVIEW_FILES}
         initialExpandedItems={INITIAL_EXPANDED_ITEMS}
         gitStatus={GIT_STATUSES}
         style={{

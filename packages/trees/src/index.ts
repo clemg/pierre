@@ -1,5 +1,6 @@
 export * from './constants';
 export * from './FileTree';
+export * from './model';
 export { generateLazyDataLoader } from './loader/lazy';
 export { generateSyncDataLoader } from './loader/sync';
 export type { DataLoaderOptions, TreeDataLoader } from './loader/types';

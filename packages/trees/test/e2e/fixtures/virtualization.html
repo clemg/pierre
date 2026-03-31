@@ -63,7 +63,14 @@
         color: #4b5563;
       }
 
-      [data-profile-render-button] {
+      [data-profile-actions] {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      [data-profile-render-button],
+      [data-profile-rename-button] {
         padding: 10px 16px;
         border: 1px solid #d1d5db;
         border-radius: 10px;
@@ -74,7 +81,8 @@
         cursor: pointer;
       }
 
-      [data-profile-render-button]:disabled {
+      [data-profile-render-button]:disabled,
+      [data-profile-rename-button]:disabled {
         opacity: 0.65;
         cursor: progress;
       }
@@ -107,7 +115,12 @@
           <div data-profile-meta>
             <strong data-profile-file-count></strong>
           </div>
-          <button type="button" data-profile-render-button>Render</button>
+          <div data-profile-actions>
+            <button type="button" data-profile-render-button>Render</button>
+            <button type="button" data-profile-rename-button disabled>
+              Rename file
+            </button>
+          </div>
         </div>
         <p data-profile-result>Waiting to run.</p>
         <div data-profile-mount></div>
@@ -115,18 +128,22 @@
     </main>
 
     <script type="module">
-      import { FileTree } from '/dist/index.js';
+      import { FileTree, FileTreeModel } from '/dist/index.js';
       import { createBenchmarkInstrumentation } from './benchmarkInstrumentation.ts';
       import {
         DEFAULT_VIRTUALIZATION_WORKLOAD_NAME,
         getVirtualizationWorkload,
       } from './virtualization-data.ts';
 
-      const START_MARK_NAME = 'trees-dev-virtualized-render-start';
-      const END_MARK_NAME = 'trees-dev-virtualized-render-end';
-      const MEASURE_NAME = 'trees-dev-virtualized-render-measure';
-      const START_TRACE_LABEL = 'trees-dev-virtualized-render-trace-start';
-      const END_TRACE_LABEL = 'trees-dev-virtualized-render-trace-end';
+      const INITIAL_MEASURE_SPEC = {
+        startMark: 'trees-dev-virtualized-render-start',
+        endMark: 'trees-dev-virtualized-render-end',
+        measureName: 'trees-dev-virtualized-render-measure',
+        startTraceLabel: 'trees-dev-virtualized-render-trace-start',
+        endTraceLabel: 'trees-dev-virtualized-render-trace-end',
+      };
+      const RENAME_MEASURE_SPEC = INITIAL_MEASURE_SPEC;
+
       const searchParams = new URLSearchParams(window.location.search);
       const instrumentationEnabled =
         searchParams.get('instrumentation') !== '0';
@@ -137,6 +154,9 @@
       const mount = document.querySelector('[data-profile-mount]');
       const renderButton = document.querySelector(
         '[data-profile-render-button]'
+      );
+      const renameButton = document.querySelector(
+        '[data-profile-rename-button]'
       );
       const fileCountLabel = document.querySelector(
         '[data-profile-file-count]'
@@ -149,6 +169,10 @@
 
       if (!(renderButton instanceof HTMLButtonElement)) {
         throw new Error('Missing [data-profile-render-button] element.');
+      }
+
+      if (!(renameButton instanceof HTMLButtonElement)) {
+        throw new Error('Missing [data-profile-rename-button] element.');
       }
 
       if (!(fileCountLabel instanceof HTMLElement)) {
@@ -176,11 +200,47 @@
           : null;
       longTaskObserver?.observe({ type: 'longtask', buffered: true });
 
+      const fixtureState = {
+        fileTree: null,
+        files: [...selectedWorkload.files],
+        renderedItemCount: 0,
+        benchmark: null,
+      };
+
       const formatMs = (value) => `${value.toFixed(1)} ms`;
+
       const getTaskOverlapMs = (entry, startTime, endTime) => {
         const overlapStart = Math.max(entry.startTime, startTime);
         const overlapEnd = Math.min(entry.startTime + entry.duration, endTime);
         return Math.max(0, overlapEnd - overlapStart);
+      };
+
+      const clearMeasureState = (measureSpec) => {
+        performance.clearMarks(measureSpec.startMark);
+        performance.clearMarks(measureSpec.endMark);
+        performance.clearMeasures(measureSpec.measureName);
+      };
+
+      const markMeasureStart = (measureSpec) => {
+        performance.mark(measureSpec.startMark);
+        console.timeStamp(measureSpec.startTraceLabel);
+      };
+
+      const markMeasureEnd = (measureSpec) => {
+        performance.mark(measureSpec.endMark);
+        console.timeStamp(measureSpec.endTraceLabel);
+        performance.measure(
+          measureSpec.measureName,
+          measureSpec.startMark,
+          measureSpec.endMark
+        );
+      };
+
+      const getLatestMeasureDurationMs = (measureSpec) => {
+        return (
+          performance.getEntriesByName(measureSpec.measureName).at(-1)
+            ?.duration ?? 0
+        );
       };
 
       const waitForTreeHost = async () => {
@@ -210,32 +270,190 @@
         await new Promise((resolve) => requestAnimationFrame(resolve));
       };
 
-      const renderVirtualizedTree = async () => {
-        renderButton.disabled = true;
-        renderButton.textContent = 'Rendering…';
+      const summarizeLongTasks = (startTime, endTime) => {
+        const operationLongTasks = longTaskEntries
+          .map((entry) => ({
+            ...entry,
+            overlapMs: getTaskOverlapMs(entry, startTime, endTime),
+          }))
+          .filter((entry) => entry.overlapMs > 0);
 
-        delete window.__treesDevVirtualizationProfile;
-        performance.clearMarks(START_MARK_NAME);
-        performance.clearMarks(END_MARK_NAME);
-        performance.clearMeasures(MEASURE_NAME);
-        const benchmark = instrumentationEnabled
+        const longTaskCount = operationLongTasks.length;
+        const longTaskTotalMs = operationLongTasks.reduce((total, entry) => {
+          return total + entry.overlapMs;
+        }, 0);
+        const longestLongTaskMs = operationLongTasks.reduce(
+          (longest, entry) => {
+            return Math.max(longest, entry.overlapMs);
+          },
+          0
+        );
+
+        return {
+          longTaskCount,
+          longTaskTotalMs,
+          longestLongTaskMs,
+        };
+      };
+
+      const updateProfileOperation = (operationName, summary) => {
+        const profile =
+          window.__treesDevVirtualizationProfile ??
+          (window.__treesDevVirtualizationProfile = {
+            workload: {
+              name: selectedWorkload.name,
+              label: selectedWorkload.label,
+              fileCount: selectedWorkload.files.length,
+              expandedFolderCount: selectedWorkload.expandedFolders.length,
+            },
+            operations: {},
+          });
+        profile.operations[operationName] = summary;
+      };
+
+      const readRebuildModeCounts = () => {
+        const rebuildModeCounts =
+          fixtureState.fileTree?.handleRef?.current?.tree?.getDataRef?.()
+            ?.current?.rebuildModeCounts;
+        return {
+          full: rebuildModeCounts?.full ?? 0,
+          incremental: rebuildModeCounts?.incremental ?? 0,
+          noop: rebuildModeCounts?.noop ?? 0,
+        };
+      };
+
+      const appendRebuildModeCounters = (
+        instrumentation,
+        rebuildModeCountsBefore
+      ) => {
+        const rebuildModeCountsAfter = readRebuildModeCounts();
+
+        instrumentation.counters['workload.rebuild.fullCount'] = Math.max(
+          0,
+          rebuildModeCountsAfter.full - (rebuildModeCountsBefore?.full ?? 0)
+        );
+        instrumentation.counters['workload.rebuild.incrementalCount'] =
+          Math.max(
+            0,
+            rebuildModeCountsAfter.incremental -
+              (rebuildModeCountsBefore?.incremental ?? 0)
+          );
+        instrumentation.counters['workload.rebuild.noopCount'] = Math.max(
+          0,
+          rebuildModeCountsAfter.noop - (rebuildModeCountsBefore?.noop ?? 0)
+        );
+      };
+
+      const createOperationSummary = ({
+        operationName,
+        measureSpec,
+        operationStartTime,
+        operationEndTime,
+        visibleRowsReadyTime,
+        renderedItemCount,
+        instrumentation,
+        rebuildModeCountsBefore,
+        resultText,
+      }) => {
+        const measureDurationMs = getLatestMeasureDurationMs(measureSpec);
+        const longTaskSummary = summarizeLongTasks(
+          operationStartTime,
+          operationEndTime
+        );
+
+        instrumentation.counters['workload.renderedRows'] = renderedItemCount;
+        appendRebuildModeCounters(instrumentation, rebuildModeCountsBefore);
+
+        return {
+          operationName,
+          workload: {
+            name: selectedWorkload.name,
+            label: selectedWorkload.label,
+            fileCount: selectedWorkload.files.length,
+            expandedFolderCount: selectedWorkload.expandedFolders.length,
+          },
+          renderedItemCount,
+          visibleRowsReadyMs: visibleRowsReadyTime - operationStartTime,
+          renderDurationMs: measureDurationMs,
+          longTaskCount: longTaskSummary.longTaskCount,
+          longTaskTotalMs: longTaskSummary.longTaskTotalMs,
+          longestLongTaskMs: longTaskSummary.longestLongTaskMs,
+          instrumentation,
+          resultText,
+        };
+      };
+
+      const ensureBenchmark = () => {
+        fixtureState.benchmark ??= instrumentationEnabled
           ? createBenchmarkInstrumentation()
           : null;
+        return fixtureState.benchmark;
+      };
 
-        const renderStartTime = performance.now();
-        const heapBefore = benchmark?.readHeapSnapshot() ?? null;
-        performance.mark(START_MARK_NAME);
-        console.timeStamp(START_TRACE_LABEL);
+      const normalizeRenameTarget = (files) => {
+        for (const filePath of files) {
+          if (!filePath.endsWith('/')) {
+            return filePath;
+          }
+        }
+
+        throw new Error(
+          'Unable to find a file path to rename in fixture data.'
+        );
+      };
+
+      const buildRenamedPath = (sourcePath, files) => {
+        const slashIndex = sourcePath.lastIndexOf('/');
+        const directoryPrefix =
+          slashIndex >= 0 ? sourcePath.slice(0, slashIndex + 1) : '';
+        const basename =
+          slashIndex >= 0 ? sourcePath.slice(slashIndex + 1) : sourcePath;
+        const dotIndex = basename.lastIndexOf('.');
+        const stem = dotIndex > 0 ? basename.slice(0, dotIndex) : basename;
+        const extension = dotIndex > 0 ? basename.slice(dotIndex) : '';
+
+        let candidateBase = `${stem}__renamed${extension}`;
+        let candidatePath = `${directoryPrefix}${candidateBase}`;
+        let suffix = 2;
+        const existing = new Set(files);
+        while (existing.has(candidatePath)) {
+          candidateBase = `${stem}__renamed_${suffix}${extension}`;
+          candidatePath = `${directoryPrefix}${candidateBase}`;
+          suffix += 1;
+        }
+
+        return candidatePath;
+      };
+
+      const runInitialRender = async () => {
+        renderButton.disabled = true;
+        renameButton.disabled = true;
         resultLabel.textContent = 'Rendering…';
 
+        clearMeasureState(INITIAL_MEASURE_SPEC);
+        const benchmark = ensureBenchmark();
+        const benchmarkSnapshot = benchmark?.createSnapshot() ?? null;
+        const rebuildModeCountsBefore = readRebuildModeCounts();
+
+        const heapBefore = benchmark?.readHeapSnapshot() ?? null;
+        const operationStartTime = performance.now();
+        markMeasureStart(INITIAL_MEASURE_SPEC);
+
+        fixtureState.fileTree?.cleanUp?.();
+        mount.innerHTML = '';
+        fixtureState.files = [...selectedWorkload.files];
+
+        const model = FileTreeModel.fromFiles(fixtureState.files, {
+          sortComparator: false,
+        });
         const fileTree = new FileTree(
           benchmark?.attach({
-            initialFiles: selectedWorkload.files,
+            model,
             virtualize: { threshold: 0 },
             flattenEmptyDirectories: true,
             sort: false,
           }) ?? {
-            initialFiles: selectedWorkload.files,
+            model,
             virtualize: { threshold: 0 },
             flattenEmptyDirectories: true,
             sort: false,
@@ -244,73 +462,149 @@
             initialExpandedItems: selectedWorkload.expandedFolders,
           }
         );
+
+        fixtureState.fileTree = fileTree;
         fileTree.render({ containerWrapper: mount });
 
         const { renderedItemCount } = await waitForTreeHost();
         const visibleRowsReadyTime = performance.now();
         await waitForPaint();
+        const operationEndTime = performance.now();
         const heapAfter = benchmark?.readHeapSnapshot() ?? null;
 
-        performance.mark(END_MARK_NAME);
-        console.timeStamp(END_TRACE_LABEL);
-        performance.measure(MEASURE_NAME, START_MARK_NAME, END_MARK_NAME);
+        markMeasureEnd(INITIAL_MEASURE_SPEC);
 
-        const measure = performance.getEntriesByName(MEASURE_NAME).at(-1);
-        const renderEndTime = performance.now();
-        const renderLongTasks = longTaskEntries
-          .map((entry) => ({
-            ...entry,
-            overlapMs: getTaskOverlapMs(entry, renderStartTime, renderEndTime),
-          }))
-          .filter((entry) => entry.overlapMs > 0);
-        const longTaskCount = renderLongTasks.length;
-        const longTaskTotalMs = renderLongTasks.reduce((total, entry) => {
-          return total + entry.overlapMs;
-        }, 0);
-        const longestLongTaskMs = renderLongTasks.reduce((longest, entry) => {
-          return Math.max(longest, entry.overlapMs);
-        }, 0);
-        const instrumentation = benchmark?.summarize(heapBefore, heapAfter) ?? {
-          phases: [],
-          counters: {},
-          heap: null,
-        };
-        instrumentation.counters['workload.renderedRows'] = renderedItemCount;
+        const instrumentation =
+          benchmark != null
+            ? benchmarkSnapshot != null
+              ? benchmark.summarizeSince(
+                  benchmarkSnapshot,
+                  heapBefore,
+                  heapAfter
+                )
+              : benchmark.summarize(heapBefore, heapAfter)
+            : {
+                phases: [],
+                counters: {},
+                heap: null,
+              };
 
-        window.__treesDevVirtualizationProfile = {
-          workload: {
-            name: selectedWorkload.name,
-            label: selectedWorkload.label,
-            fileCount: selectedWorkload.files.length,
-            expandedFolderCount: selectedWorkload.expandedFolders.length,
-          },
+        fixtureState.renderedItemCount = renderedItemCount;
+
+        const summary = createOperationSummary({
+          operationName: 'initial-render',
+          measureSpec: INITIAL_MEASURE_SPEC,
+          operationStartTime,
+          operationEndTime,
+          visibleRowsReadyTime,
           renderedItemCount,
-          visibleRowsReadyMs: visibleRowsReadyTime - renderStartTime,
-          renderDurationMs: measure?.duration ?? 0,
-          longTaskCount,
-          longTaskTotalMs,
-          longestLongTaskMs,
           instrumentation,
-          resultText: `Post-paint ready ${formatMs(
-            measure?.duration ?? 0
+          rebuildModeCountsBefore,
+          resultText: `Initial render post-paint ready ${formatMs(
+            getLatestMeasureDurationMs(INITIAL_MEASURE_SPEC)
           )}. Visible rows ready ${formatMs(
-            visibleRowsReadyTime - renderStartTime
-          )}. Visible rows ${renderedItemCount}. Long tasks ${longTaskCount}; total ${formatMs(
-            longTaskTotalMs
-          )}; longest ${formatMs(longestLongTaskMs)}.`,
-        };
-        resultLabel.textContent =
-          window.__treesDevVirtualizationProfile.resultText;
+            visibleRowsReadyTime - operationStartTime
+          )}.`,
+        });
+
+        updateProfileOperation('initial-render', summary);
+        resultLabel.textContent = summary.resultText;
         renderButton.textContent = 'Rendered';
+        renameButton.disabled = false;
+        return summary;
       };
 
-      renderButton.addEventListener(
-        'click',
-        () => {
-          void renderVirtualizedTree();
-        },
-        { once: true }
-      );
+      const runRenameFile = async () => {
+        if (fixtureState.fileTree == null) {
+          throw new Error('Rename requested before initial render.');
+        }
+
+        renameButton.disabled = true;
+        resultLabel.textContent = 'Renaming…';
+
+        clearMeasureState(RENAME_MEASURE_SPEC);
+        const benchmark = ensureBenchmark();
+        const benchmarkSnapshot = benchmark?.createSnapshot() ?? null;
+        const rebuildModeCountsBefore = readRebuildModeCounts();
+
+        const sourcePath = normalizeRenameTarget(fixtureState.files);
+        const destinationPath = buildRenamedPath(
+          sourcePath,
+          fixtureState.files
+        );
+
+        const heapBefore = benchmark?.readHeapSnapshot() ?? null;
+        const operationStartTime = performance.now();
+        markMeasureStart(RENAME_MEASURE_SPEC);
+
+        fixtureState.fileTree.renamePath({
+          sourcePath,
+          destinationPath,
+          isFolder: false,
+        });
+
+        const { renderedItemCount } = await waitForTreeHost();
+        const visibleRowsReadyTime = performance.now();
+        await waitForPaint();
+        const operationEndTime = performance.now();
+        const heapAfter = benchmark?.readHeapSnapshot() ?? null;
+
+        markMeasureEnd(RENAME_MEASURE_SPEC);
+
+        const instrumentation =
+          benchmark != null
+            ? benchmarkSnapshot != null
+              ? benchmark.summarizeSince(
+                  benchmarkSnapshot,
+                  heapBefore,
+                  heapAfter
+                )
+              : benchmark.summarize(heapBefore, heapAfter)
+            : {
+                phases: [],
+                counters: {},
+                heap: null,
+              };
+
+        fixtureState.files = fixtureState.fileTree.getFiles();
+        fixtureState.renderedItemCount = renderedItemCount;
+        instrumentation.counters['workload.renameSourceLength'] =
+          sourcePath.length;
+        instrumentation.counters['workload.renameDestinationLength'] =
+          destinationPath.length;
+
+        const summary = createOperationSummary({
+          operationName: 'rename-file',
+          measureSpec: RENAME_MEASURE_SPEC,
+          operationStartTime,
+          operationEndTime,
+          visibleRowsReadyTime,
+          renderedItemCount,
+          instrumentation,
+          rebuildModeCountsBefore,
+          resultText: `Rename post-paint ready ${formatMs(
+            getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+          )}. ${sourcePath} → ${destinationPath}.`,
+        });
+
+        updateProfileOperation('rename-file', summary);
+        resultLabel.textContent = summary.resultText;
+        renameButton.disabled = false;
+        return summary;
+      };
+
+      window.__treesDevVirtualizationFixtureApi = {
+        runInitialRender,
+        runRenameFile,
+      };
+
+      renderButton.addEventListener('click', () => {
+        void runInitialRender();
+      });
+
+      renameButton.addEventListener('click', () => {
+        void runRenameFile();
+      });
 
       window.__treesDevVirtualizationFixtureReady = true;
     </script>

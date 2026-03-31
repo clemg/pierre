@@ -5,6 +5,7 @@ import {
   customSpriteSheet,
   sharedDemoFileTreeOptions,
   sharedDemoStateConfig,
+  toRuntimeFileTreeOptions,
 } from '../demo-data';
 import { CustomIconsDemoClient } from './CustomIconsDemoClient';
 
@@ -18,7 +19,7 @@ export default async function CustomIconsPage() {
   };
 
   const customIconsSsr = preloadFileTree(
-    {
+    toRuntimeFileTreeOptions({
       ...fileTreeOptions,
       icons: {
         spriteSheet: customSpriteSheet,
@@ -31,7 +32,7 @@ export default async function CustomIconsPage() {
           },
         },
       },
-    },
+    }),
     sharedDemoStateConfig
   );
 

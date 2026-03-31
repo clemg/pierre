@@ -50,7 +50,7 @@ export const useTree = <T>(config: TreeConfig<T>): TreeInstance<T> => {
     },
   }));
 
-  // Rebuild when the dataLoader changes (e.g. files were updated via setFiles).
+  // Rebuild when the dataLoader identity changes (e.g. loader mode/config swap).
   // Skip the initial render — the constructor already calls rebuildTree().
   const prevDataLoaderRef = useRef(config.dataLoader);
   if (prevDataLoaderRef.current !== config.dataLoader) {
