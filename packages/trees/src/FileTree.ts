@@ -525,7 +525,9 @@ export class FileTree {
     }
 
     if (mutation.kind === 'rename-path') {
-      handle.tree.markBranchDirty(mutation.parentId, 'children');
+      if (mutation.childrenOrderChanged) {
+        handle.tree.markBranchDirty(mutation.parentId, 'children');
+      }
       handle.tree.rebuildTree();
       return;
     }

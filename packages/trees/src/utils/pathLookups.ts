@@ -12,6 +12,13 @@ export interface PathToIdLookup {
 
 export type IdToPathLookup = Pick<Map<string, string>, 'get' | 'has'>;
 
+export interface DynamicPathToIdLookupResolvers {
+  size: () => number;
+  get: (path: string) => string | undefined;
+  has: (path: string) => boolean;
+  keys: () => IterableIterator<string>;
+}
+
 /**
  * The sync loader uses literal paths as IDs, so this facade can answer the
  * path->id lookups Root needs without allocating a second full identity Map.
@@ -45,5 +52,24 @@ export function createMapPathToIdLookup(
     get: (path: string) => pathToId.get(path),
     has: (path: string) => pathToId.has(path),
     keys: () => pathToId.keys(),
+  };
+}
+
+/**
+ * Builds a PathToId lookup from dynamic resolver callbacks.
+ *
+ * This is useful when the underlying mapping is represented by a base map plus
+ * deferred remap rules that are applied on demand.
+ */
+export function createDynamicPathToIdLookup(
+  resolvers: DynamicPathToIdLookupResolvers
+): PathToIdLookup {
+  return {
+    get size() {
+      return resolvers.size();
+    },
+    get: (path: string) => resolvers.get(path),
+    has: (path: string) => resolvers.has(path),
+    keys: () => resolvers.keys(),
   };
 }

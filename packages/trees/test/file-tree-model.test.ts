@@ -69,6 +69,23 @@ function createInstrumentedModel(
   return { model, counters };
 }
 
+function createTopLevelFolderRenameFixture(
+  rootFolderCount: number,
+  filesPerRootFolder: number
+): string[] {
+  const files: string[] = [];
+
+  for (let rootIndex = 0; rootIndex < rootFolderCount; rootIndex += 1) {
+    const rootName = `root-${rootIndex}`;
+    for (let fileIndex = 0; fileIndex < filesPerRootFolder; fileIndex += 1) {
+      const bucket = Math.floor(fileIndex / 25);
+      files.push(`${rootName}/bucket-${bucket}/file-${fileIndex}.ts`);
+    }
+  }
+
+  return files;
+}
+
 function getCounter(counters: Record<string, number>, name: string): number {
   return counters[name] ?? 0;
 }
@@ -119,6 +136,44 @@ describe('FileTreeModel', () => {
     expect(renamedId).toBe(originalId);
     expect(syncIndex.pathToId.get('src/a.ts')).toBeUndefined();
     expect(syncIndex.tree.get(originalId)?.path).toBe('src/a-renamed.ts');
+  });
+
+  test('reports rename-path childrenOrderChanged=false when sibling order is unchanged', () => {
+    const model = FileTreeModel.fromFiles(['src/a.ts', 'src/b.ts'], {
+      sortComparator: false,
+    });
+
+    const result = model.renamePath({
+      sourcePath: 'src/a.ts',
+      destinationPath: 'src/a-renamed.ts',
+      isFolder: false,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
+    expect(result.mutation?.kind).toBe('rename-path');
+    expect(result.mutation?.childrenOrderChanged).toBe(false);
+  });
+
+  test('reports rename-path childrenOrderChanged=true when sorting reorders siblings', () => {
+    const model = FileTreeModel.fromFiles(['src/a.ts', 'src/b.ts']);
+
+    const result = model.renamePath({
+      sourcePath: 'src/a.ts',
+      destinationPath: 'src/z.ts',
+      isFolder: false,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
+    expect(result.mutation?.kind).toBe('rename-path');
+    expect(result.mutation?.childrenOrderChanged).toBe(true);
   });
 
   test('reuses IDs for unchanged paths during replaceAll', () => {
@@ -327,6 +382,32 @@ describe('FileTreeModel', () => {
     expect(
       getCounter(small.counters, 'model.rename.folder.remapUpdatedNodes')
     ).toBe(getCounter(large.counters, 'model.rename.folder.remapUpdatedNodes'));
+  });
+
+  test('renaming a top-level folder stays on the cold path-tree fast path', () => {
+    const { counters, instrumentation } = createCounterCollector();
+    const model = FileTreeModel.fromFiles(
+      createTopLevelFolderRenameFixture(5, 200),
+      {
+        sortComparator: false,
+        benchmarkInstrumentation: instrumentation,
+      }
+    );
+
+    const renameResult = model.renamePath({
+      sourcePath: 'root-0',
+      destinationPath: 'root-0-renamed',
+      isFolder: true,
+    });
+
+    expect(renameResult.ok).toBe(true);
+    expect(getCounter(counters, 'model.pathTree.createdCount')).toBe(0);
+
+    const nextFiles = model.getFiles();
+    expect(nextFiles.some((path) => path.startsWith('root-0-renamed/'))).toBe(
+      true
+    );
+    expect(nextFiles.some((path) => path.startsWith('root-0/'))).toBe(false);
   });
 
   test('keeps file move remap work constant with many unrelated files', () => {

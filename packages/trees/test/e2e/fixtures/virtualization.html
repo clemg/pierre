@@ -425,6 +425,28 @@
         return candidatePath;
       };
 
+      const selectTopLevelRenameFolder = (files) => {
+        const firstPath = files[0];
+        if (typeof firstPath !== 'string') {
+          throw new Error(
+            'Unable to find a top-level folder path to rename in fixture data.'
+          );
+        }
+
+        const slashIndex = firstPath.indexOf('/');
+        if (slashIndex <= 0) {
+          throw new Error(
+            'Unable to derive a top-level folder path from fixture data.'
+          );
+        }
+
+        return firstPath.slice(0, slashIndex);
+      };
+
+      const buildRenamedTopLevelFolderPath = (sourcePath) => {
+        return `${sourcePath}__renamed`;
+      };
+
       const runInitialRender = async () => {
         renderButton.disabled = true;
         renameButton.disabled = true;
@@ -593,9 +615,86 @@
         return summary;
       };
 
+      const runRenameRootFolder = async () => {
+        if (fixtureState.fileTree == null) {
+          throw new Error('Rename requested before initial render.');
+        }
+
+        renameButton.disabled = true;
+        resultLabel.textContent = 'Renaming top-level folder…';
+
+        clearMeasureState(RENAME_MEASURE_SPEC);
+        const benchmark = ensureBenchmark();
+        const benchmarkSnapshot = benchmark?.createSnapshot() ?? null;
+        const rebuildModeCountsBefore = readRebuildModeCounts();
+
+        const sourcePath = selectTopLevelRenameFolder(fixtureState.files);
+        const destinationPath = buildRenamedTopLevelFolderPath(sourcePath);
+
+        const heapBefore = benchmark?.readHeapSnapshot() ?? null;
+        const operationStartTime = performance.now();
+        markMeasureStart(RENAME_MEASURE_SPEC);
+
+        fixtureState.fileTree.renamePath({
+          sourcePath,
+          destinationPath,
+          isFolder: true,
+        });
+
+        const { renderedItemCount } = await waitForTreeHost();
+        const visibleRowsReadyTime = performance.now();
+        await waitForPaint();
+        const operationEndTime = performance.now();
+        const heapAfter = benchmark?.readHeapSnapshot() ?? null;
+
+        markMeasureEnd(RENAME_MEASURE_SPEC);
+
+        const instrumentation =
+          benchmark != null
+            ? benchmarkSnapshot != null
+              ? benchmark.summarizeSince(
+                  benchmarkSnapshot,
+                  heapBefore,
+                  heapAfter
+                )
+              : benchmark.summarize(heapBefore, heapAfter)
+            : {
+                phases: [],
+                counters: {},
+                heap: null,
+              };
+
+        fixtureState.files = fixtureState.fileTree.getFiles();
+        fixtureState.renderedItemCount = renderedItemCount;
+        instrumentation.counters['workload.renameSourceLength'] =
+          sourcePath.length;
+        instrumentation.counters['workload.renameDestinationLength'] =
+          destinationPath.length;
+
+        const summary = createOperationSummary({
+          operationName: 'rename-root-folder',
+          measureSpec: RENAME_MEASURE_SPEC,
+          operationStartTime,
+          operationEndTime,
+          visibleRowsReadyTime,
+          renderedItemCount,
+          instrumentation,
+          rebuildModeCountsBefore,
+          resultText: `Top-level rename post-paint ready ${formatMs(
+            getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+          )}. ${sourcePath} → ${destinationPath}.`,
+        });
+
+        updateProfileOperation('rename-root-folder', summary);
+        resultLabel.textContent = summary.resultText;
+        renameButton.disabled = false;
+        return summary;
+      };
+
       window.__treesDevVirtualizationFixtureApi = {
         runInitialRender,
         runRenameFile,
+        runRenameRootFolder,
       };
 
       renderButton.addEventListener('click', () => {

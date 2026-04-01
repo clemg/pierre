@@ -16,7 +16,13 @@ interface MutablePathTreeFolderNode extends MutablePathTreeBaseNode {
 
 interface MutablePathTreeFileNode extends MutablePathTreeBaseNode {
   kind: 'file';
-  index: number;
+  /**
+   * Stable insertion order token used for relative ordering operations.
+   * We never compact this, so deletes do not force index shifts.
+   */
+  order: number;
+  previous: MutablePathTreeFileNode | null;
+  next: MutablePathTreeFileNode | null;
 }
 
 function splitPath(path: string): { parentPath: string; baseName: string } {
@@ -56,16 +62,22 @@ export class MutablePathTree {
   };
 
   private readonly pathToNode = new Map<string, MutablePathTreeNode>();
-  private readonly fileIndexByPath = new Map<string, number>();
-  private files: string[] = [];
-  private firstDirtyFileIndex: number | null = null;
+  private headFile: MutablePathTreeFileNode | null = null;
+  private tailFile: MutablePathTreeFileNode | null = null;
+  private fileCount = 0;
+  private nextFileOrder = 0;
+  private readonly filesSnapshot: string[] = [];
+  private filesSnapshotDirty = true;
 
   replaceAll(files: string[]): void {
     this.root.children.clear();
     this.pathToNode.clear();
-    this.fileIndexByPath.clear();
-    this.files.length = 0;
-    this.firstDirtyFileIndex = null;
+    this.headFile = null;
+    this.tailFile = null;
+    this.fileCount = 0;
+    this.nextFileOrder = 0;
+    this.filesSnapshot.length = 0;
+    this.filesSnapshotDirty = true;
 
     for (let index = 0; index < files.length; index += 1) {
       this.addFilePath(files[index]);
@@ -73,11 +85,16 @@ export class MutablePathTree {
   }
 
   getFilesReference(): string[] {
-    return this.files;
+    this.ensureFilesSnapshot();
+    return this.filesSnapshot;
   }
 
   cloneFiles(): string[] {
-    return this.files.slice();
+    return this.getFilesReference().slice();
+  }
+
+  getFileCount(): number {
+    return this.fileCount;
   }
 
   hasPath(path: string): boolean {
@@ -93,12 +110,11 @@ export class MutablePathTree {
   }
 
   getFileIndex(path: string): number | undefined {
-    this.ensureFileIndexesUpToDate();
-    return this.fileIndexByPath.get(path);
+    return this.getFile(path)?.order;
   }
 
   addFilePath(path: string): boolean {
-    if (path.length === 0 || this.fileIndexByPath.has(path)) {
+    if (path.length === 0) {
       return false;
     }
 
@@ -112,31 +128,39 @@ export class MutablePathTree {
       return false;
     }
 
-    const index = this.files.length;
     const node: MutablePathTreeFileNode = {
       kind: 'file',
       name: baseName,
       path,
       parent,
-      index,
+      order: this.nextFileOrder,
+      previous: this.tailFile,
+      next: null,
     };
+    this.nextFileOrder += 1;
 
     parent.children.set(baseName, node);
     this.pathToNode.set(path, node);
-    this.files.push(path);
-    this.fileIndexByPath.set(path, index);
+
+    if (this.tailFile == null) {
+      this.headFile = node;
+    } else {
+      this.tailFile.next = node;
+    }
+    this.tailFile = node;
+
+    this.fileCount += 1;
+    this.filesSnapshotDirty = true;
     return true;
   }
 
   deleteFilePath(path: string): boolean {
-    this.ensureFileIndexesUpToDate();
-
     const node = this.getFile(path);
     if (node == null) {
       return false;
     }
 
-    this.removeFileNode(node, false);
+    this.removeFileNode(node);
     return true;
   }
 
@@ -144,8 +168,6 @@ export class MutablePathTree {
     if (paths.length === 0) {
       return [];
     }
-
-    this.ensureFileIndexesUpToDate();
 
     const nodesToDelete: MutablePathTreeFileNode[] = [];
     const seenPaths = new Set<string>();
@@ -166,14 +188,10 @@ export class MutablePathTree {
       return [];
     }
 
-    nodesToDelete.sort((left, right) => right.index - left.index);
-
     const deletedPathSet = new Set(nodesToDelete.map((node) => node.path));
     for (let index = 0; index < nodesToDelete.length; index += 1) {
-      this.removeFileNode(nodesToDelete[index], false);
+      this.removeFileNode(nodesToDelete[index]);
     }
-
-    this.ensureFileIndexesUpToDate();
 
     const deletedPaths: string[] = [];
     const emitted = new Set<string>();
@@ -195,19 +213,15 @@ export class MutablePathTree {
       return false;
     }
 
-    this.ensureFileIndexesUpToDate();
-
     const descendants = this.getDescendantFileNodes(folder);
     if (descendants.length === 0) {
       return false;
     }
 
-    descendants.sort((left, right) => right.index - left.index);
     for (let index = 0; index < descendants.length; index += 1) {
-      this.removeFileNode(descendants[index], false);
+      this.removeFileNode(descendants[index]);
     }
 
-    this.reindexFiles();
     return true;
   }
 
@@ -216,8 +230,6 @@ export class MutablePathTree {
     destinationPath: string,
     kind: 'file' | 'folder'
   ): MutablePathTreeMoveResult {
-    this.ensureFileIndexesUpToDate();
-
     const node =
       kind === 'file' ? this.getFile(sourcePath) : this.getFolder(sourcePath);
 
@@ -248,8 +260,6 @@ export class MutablePathTree {
     nextBaseName: string,
     kind: 'file' | 'folder'
   ): MutablePathTreeMoveResult {
-    this.ensureFileIndexesUpToDate();
-
     const node =
       kind === 'file' ? this.getFile(sourcePath) : this.getFolder(sourcePath);
 
@@ -282,10 +292,8 @@ export class MutablePathTree {
       return [];
     }
 
-    this.ensureFileIndexesUpToDate();
-
     const descendants = this.getDescendantFileNodes(folder);
-    descendants.sort((left, right) => left.index - right.index);
+    descendants.sort((left, right) => left.order - right.order);
     return descendants.map((node) => node.path);
   }
 
@@ -372,23 +380,21 @@ export class MutablePathTree {
     return current;
   }
 
-  private markFileIndexesDirty(startIndex: number): void {
-    if (
-      this.firstDirtyFileIndex == null ||
-      startIndex < this.firstDirtyFileIndex
-    ) {
-      this.firstDirtyFileIndex = startIndex;
-    }
-  }
-
-  private ensureFileIndexesUpToDate(): void {
-    const dirtyStart = this.firstDirtyFileIndex;
-    if (dirtyStart == null) {
+  /**
+   * Rebuilds the dense files[] snapshot lazily from the linked file order.
+   */
+  private ensureFilesSnapshot(): void {
+    if (!this.filesSnapshotDirty) {
       return;
     }
 
-    this.reindexFiles(dirtyStart);
-    this.firstDirtyFileIndex = null;
+    this.filesSnapshot.length = 0;
+    let current = this.headFile;
+    while (current != null) {
+      this.filesSnapshot.push(current.path);
+      current = current.next;
+    }
+    this.filesSnapshotDirty = false;
   }
 
   /**
@@ -457,9 +463,7 @@ export class MutablePathTree {
         this.pathToNode.set(nextPath, node);
 
         if (node.kind === 'file') {
-          this.files[node.index] = nextPath;
-          this.fileIndexByPath.delete(oldPath);
-          this.fileIndexByPath.set(nextPath, node.index);
+          this.filesSnapshotDirty = true;
         }
       }
 
@@ -491,38 +495,29 @@ export class MutablePathTree {
     return files;
   }
 
-  private removeFileNode(
-    node: MutablePathTreeFileNode,
-    reindexImmediately = true
-  ): void {
+  private removeFileNode(node: MutablePathTreeFileNode): void {
     node.parent?.children.delete(node.name);
     this.pathToNode.delete(node.path);
-    this.fileIndexByPath.delete(node.path);
-    this.files.splice(node.index, 1);
 
-    if (reindexImmediately) {
-      const reindexStart = Math.min(
-        node.index,
-        this.firstDirtyFileIndex ?? node.index
-      );
-      this.reindexFiles(reindexStart);
-      this.firstDirtyFileIndex = null;
+    const previous = node.previous;
+    const next = node.next;
+    if (previous != null) {
+      previous.next = next;
     } else {
-      this.markFileIndexesDirty(node.index);
+      this.headFile = next;
+    }
+    if (next != null) {
+      next.previous = previous;
+    } else {
+      this.tailFile = previous;
     }
 
+    node.previous = null;
+    node.next = null;
+
+    this.fileCount -= 1;
+    this.filesSnapshotDirty = true;
     this.pruneEmptyFolders(node.parent);
-  }
-
-  private reindexFiles(startIndex = 0): void {
-    for (let index = startIndex; index < this.files.length; index += 1) {
-      const path = this.files[index];
-      this.fileIndexByPath.set(path, index);
-      const node = this.pathToNode.get(path);
-      if (node?.kind === 'file') {
-        node.index = index;
-      }
-    }
   }
 
   private pruneEmptyFolders(folder: MutablePathTreeFolderNode | null): void {

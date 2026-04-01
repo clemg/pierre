@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-type ProfileActionName = 'initial-render' | 'rename-file';
+type ProfileActionName =
+  | 'initial-render'
+  | 'rename-file'
+  | 'rename-root-folder';
 
 interface ProfileConfig {
   browserUrl: string;
@@ -342,6 +345,7 @@ interface CdpMessage {
 interface VirtualizationFixtureApi {
   runInitialRender: () => Promise<PageRenderSummary>;
   runRenameFile: () => Promise<PageRenderSummary>;
+  runRenameRootFolder: () => Promise<PageRenderSummary>;
 }
 
 declare global {
@@ -361,7 +365,11 @@ const DEFAULT_URL =
   'http://127.0.0.1:9221/test/e2e/fixtures/virtualization.html';
 const DEFAULT_WORKLOAD_NAME = 'linux-5x';
 const DEFAULT_ACTIONS: ProfileActionName[] = ['initial-render', 'rename-file'];
-const KNOWN_ACTION_NAMES = new Set<ProfileActionName>(DEFAULT_ACTIONS);
+const KNOWN_ACTION_NAMES = new Set<ProfileActionName>([
+  'initial-render',
+  'rename-file',
+  'rename-root-folder',
+]);
 const KNOWN_WORKLOAD_NAMES = new Set([
   'pierre-snapshot',
   'half-linux',
@@ -2568,11 +2576,29 @@ async function closePageTarget(
 }
 
 function getActionMethodName(actionName: ProfileActionName): string {
-  return actionName === 'rename-file' ? 'runRenameFile' : 'runInitialRender';
+  switch (actionName) {
+    case 'initial-render':
+      return 'runInitialRender';
+    case 'rename-file':
+      return 'runRenameFile';
+    case 'rename-root-folder':
+      return 'runRenameRootFolder';
+    default:
+      return 'runInitialRender';
+  }
 }
 
 function getActionLabel(actionName: ProfileActionName): string {
-  return actionName === 'rename-file' ? 'Rename file' : 'Initial render';
+  switch (actionName) {
+    case 'initial-render':
+      return 'Initial render';
+    case 'rename-file':
+      return 'Rename file';
+    case 'rename-root-folder':
+      return 'Rename root folder';
+    default:
+      return actionName;
+  }
 }
 
 async function runFixtureAction(

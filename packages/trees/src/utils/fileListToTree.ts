@@ -9,6 +9,7 @@ import type { FileTreeNode } from '../types';
 import { createLoaderUtils, type LoaderUtils } from './createLoaderUtils';
 import {
   createIdentityPathToIdLookup,
+  type IdToPathLookup,
   type PathToIdLookup,
 } from './pathLookups';
 import type { ChildrenSortOption } from './sortChildren';
@@ -41,6 +42,7 @@ export interface FileListToTreeBuildContext {
 export interface FileListSyncIndex {
   pathToId: PathToIdLookup;
   tree: Map<string, FileTreeNode>;
+  idToPath?: IdToPathLookup;
 }
 
 interface FileListToTreeBuildContextOptions {

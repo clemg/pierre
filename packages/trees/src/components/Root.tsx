@@ -161,7 +161,6 @@ export function Root({
     [sortOption]
   );
 
-  const files = model.getFiles();
   const modelVersion = model.getVersion();
   const syncIndex: FileListSyncIndex = model.getSyncIndex();
 
@@ -197,7 +196,7 @@ export function Root({
     benchmarkInstrumentation,
   });
 
-  const lazyFileInput = useLazyDataLoader === true ? files : null;
+  const lazyFileInput = useLazyDataLoader === true ? model.getFiles() : null;
   const dataLoader = useMemo(
     () =>
       withBenchmarkPhase(benchmarkInstrumentation, 'root.dataLoader', () =>

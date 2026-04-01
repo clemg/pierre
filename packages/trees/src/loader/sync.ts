@@ -48,7 +48,16 @@ export function generateSyncDataLoaderFromIndex(
       if (item == null) {
         throw new Error(`generateSyncDataLoaderFromIndex: unknown id ${id}`);
       }
-      return item;
+
+      const resolvedPath = index.idToPath?.get(id);
+      if (resolvedPath == null || resolvedPath === item.path) {
+        return item;
+      }
+
+      return {
+        ...item,
+        path: resolvedPath,
+      };
     },
     getChildren: (id: string) => {
       const children = index.tree.get(id)?.children;

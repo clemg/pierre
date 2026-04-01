@@ -11,7 +11,7 @@ import {
 } from '../utils/fileListToTree';
 import { MutablePathTree } from '../utils/mutablePathTree';
 import {
-  createMapPathToIdLookup,
+  createDynamicPathToIdLookup,
   type IdToPathLookup,
 } from '../utils/pathLookups';
 import {
@@ -170,6 +170,7 @@ export type FileTreeModelMutation =
       isFolder: boolean;
       parentId: string;
       nodeId: string;
+      childrenOrderChanged: boolean;
       version: number;
     }
   | {
@@ -348,18 +349,33 @@ export class FileTreeModel {
   private readonly pathToIdMap = new Map<string, string>();
   private readonly idToPathMap = new Map<string, string>();
   private readonly tree = new Map<string, FileTreeNode>();
-  private readonly pathToIdLookup = createMapPathToIdLookup(this.pathToIdMap);
+  private readonly pendingPathPrefixRemaps: Array<{
+    sourcePath: string;
+    destinationPath: string;
+  }> = [];
+  private readonly pathToIdLookup = createDynamicPathToIdLookup({
+    size: () => this.pathToIdMap.size,
+    get: (path) => this.resolveIdForPath(path),
+    has: (path) => this.resolveIdForPath(path) != null,
+    keys: () => this.getCurrentPathKeys(),
+  });
   private readonly idToPathLookup: IdToPathLookup = {
-    get: (id: string) => this.idToPathMap.get(id),
+    get: (id: string) => this.getResolvedPathForId(id),
     has: (id: string) => this.idToPathMap.has(id),
   };
   private readonly syncIndex: FileListSyncIndex = {
     pathToId: this.pathToIdLookup,
     tree: this.tree,
+    idToPath: this.idToPathLookup,
   };
 
   private files: string[] = [];
+  private filesPendingPathTreeSync = false;
   private readonly fileIndexByPath = new Map<string, number>();
+  private readonly pendingFileSnapshotPrefixRemaps: Array<{
+    sourcePath: string;
+    destinationPath: string;
+  }> = [];
   private readonly flattenedRefCountById = new Map<string, number>();
   private readonly flattenedIdsPendingPrune = new Set<string>();
   private readonly directChildIndexByFolderId = new Map<
@@ -368,6 +384,7 @@ export class FileTreeModel {
   >();
   private readonly benchmarkInstrumentation: BenchmarkInstrumentation | null;
   private pathTree: MutablePathTree | null = null;
+  private pathTreeCreationCount = 0;
   private version = 0;
   private nextNodeId = 1;
   private sortComparator: ChildrenSortOption;
@@ -422,6 +439,9 @@ export class FileTreeModel {
     }
 
     this.files = builtIndex.files;
+    this.filesPendingPathTreeSync = false;
+    this.pendingFileSnapshotPrefixRemaps.length = 0;
+    this.pendingPathPrefixRemaps.length = 0;
     this.rebuildFileIndexByPath(this.files);
     this.setModelCounter('model.snapshot.fileCount', this.files.length);
     this.nextNodeId = builtIndex.nextNodeId;
@@ -538,12 +558,12 @@ export class FileTreeModel {
 
     const comparator = this.sortComparator ?? defaultChildrenComparator;
     const isFolderPath = (path: string) => {
-      const id = this.pathToIdMap.get(path);
+      const id = this.resolveIdForPath(path);
       return id != null && this.tree.get(id)?.children?.direct != null;
     };
     const compareByPath = (leftId: string, rightId: string) => {
-      const leftPath = this.idToPathMap.get(leftId) ?? leftId;
-      const rightPath = this.idToPathMap.get(rightId) ?? rightId;
+      const leftPath = this.getResolvedPathForId(leftId) ?? leftId;
+      const rightPath = this.getResolvedPathForId(rightId) ?? rightId;
       return comparator(leftPath, rightPath, isFolderPath);
     };
 
@@ -553,10 +573,142 @@ export class FileTreeModel {
     }
   }
 
+  private captureParentChildrenSnapshot(parentId: string): {
+    direct: string[];
+    flattened: string[] | null;
+  } {
+    const parentChildren = this.tree.get(parentId)?.children;
+    return {
+      direct: parentChildren?.direct.slice() ?? [],
+      flattened: parentChildren?.flattened?.slice() ?? null,
+    };
+  }
+
+  private didParentChildrenOrderChange(
+    parentId: string,
+    before: { direct: readonly string[]; flattened: readonly string[] | null }
+  ): boolean {
+    const afterChildren = this.tree.get(parentId)?.children;
+    const afterDirect = afterChildren?.direct ?? [];
+    const afterFlattened = afterChildren?.flattened ?? null;
+
+    if (!this.areIdArraysEqual(before.direct, afterDirect)) {
+      return true;
+    }
+
+    if (before.flattened == null || afterFlattened == null) {
+      return before.flattened !== afterFlattened;
+    }
+
+    return !this.areIdArraysEqual(before.flattened, afterFlattened);
+  }
+
+  private remapPathForward(path: string): string {
+    let remappedPath = path;
+
+    for (
+      let index = 0;
+      index < this.pendingPathPrefixRemaps.length;
+      index += 1
+    ) {
+      const rule = this.pendingPathPrefixRemaps[index];
+      const nextPath = remapPathWithPrefix(
+        remappedPath,
+        rule.sourcePath,
+        rule.destinationPath
+      );
+      if (nextPath != null) {
+        remappedPath = nextPath;
+      }
+    }
+
+    return remappedPath;
+  }
+
+  private remapPathBackward(path: string): string {
+    let canonicalPath = path;
+
+    for (
+      let index = this.pendingPathPrefixRemaps.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const rule = this.pendingPathPrefixRemaps[index];
+      const previousPath = remapPathWithPrefix(
+        canonicalPath,
+        rule.destinationPath,
+        rule.sourcePath
+      );
+      if (previousPath != null) {
+        canonicalPath = previousPath;
+      }
+    }
+
+    return canonicalPath;
+  }
+
+  private getResolvedPathForId(id: string): string | undefined {
+    const canonicalPath = this.idToPathMap.get(id);
+    if (canonicalPath == null) {
+      return undefined;
+    }
+
+    return this.remapPathForward(canonicalPath);
+  }
+
+  private resolveIdForPath(path: string): string | undefined {
+    const canonicalPath = this.remapPathBackward(path);
+    const id = this.pathToIdMap.get(canonicalPath);
+    if (id == null) {
+      return undefined;
+    }
+
+    const resolvedPath = this.remapPathForward(canonicalPath);
+    return resolvedPath === path ? id : undefined;
+  }
+
+  private *getCurrentPathKeys(): IterableIterator<string> {
+    for (const canonicalPath of this.pathToIdMap.keys()) {
+      yield this.remapPathForward(canonicalPath);
+    }
+  }
+
+  private queuePathPrefixRemap(
+    sourcePath: string,
+    destinationPath: string
+  ): void {
+    this.pendingPathPrefixRemaps.push({ sourcePath, destinationPath });
+  }
+
+  private materializePendingPathPrefixRemaps(): void {
+    if (this.pendingPathPrefixRemaps.length === 0) {
+      return;
+    }
+
+    const nextPathToId = new Map<string, string>();
+
+    for (const [canonicalPath, id] of this.pathToIdMap) {
+      const remappedPath = this.remapPathForward(canonicalPath);
+      nextPathToId.set(remappedPath, id);
+      this.idToPathMap.set(id, remappedPath);
+      const node = this.tree.get(id);
+      if (node != null) {
+        node.path = remappedPath;
+      }
+    }
+
+    this.pathToIdMap.clear();
+    for (const [path, id] of nextPathToId) {
+      this.pathToIdMap.set(path, id);
+    }
+
+    this.pendingPathPrefixRemaps.length = 0;
+  }
+
   private resolveAncestorId(path: string): string {
     let candidatePath = path;
     while (true) {
-      const candidateId = this.pathToIdMap.get(candidatePath);
+      const candidateId = this.resolveIdForPath(candidatePath);
       if (candidateId != null) {
         return candidateId;
       }
@@ -584,15 +736,104 @@ export class FileTreeModel {
   }
 
   private adoptPathTreeFilesReference(pathTree: MutablePathTree): void {
-    this.files = pathTree.getFilesReference();
+    this.pathTree = pathTree;
+    this.filesPendingPathTreeSync = true;
+    this.pendingFileSnapshotPrefixRemaps.length = 0;
+    this.pendingPathPrefixRemaps.length = 0;
+    this.fileIndexByPath.clear();
+  }
+
+  private syncFilesSnapshotFromPathTree(): void {
+    if (!this.filesPendingPathTreeSync || this.pathTree == null) {
+      return;
+    }
+
+    this.files = this.pathTree.getFilesReference();
+    this.filesPendingPathTreeSync = false;
+    this.pendingFileSnapshotPrefixRemaps.length = 0;
+    this.pendingPathPrefixRemaps.length = 0;
     this.fileIndexByPath.clear();
     this.setModelCounter('model.snapshot.fileCount', this.files.length);
   }
 
+  private getKnownFileCount(): number {
+    if (this.pathTree != null) {
+      return this.pathTree.getFileCount();
+    }
+
+    return this.files.length;
+  }
+
+  private getFileIndexFromSnapshot(path: string): number {
+    this.applyPendingFileSnapshotPrefixRemaps();
+
+    const knownIndex = this.fileIndexByPath.get(path);
+    if (knownIndex != null) {
+      return knownIndex;
+    }
+
+    this.rebuildFileIndexByPath(this.files);
+    return this.fileIndexByPath.get(path) ?? -1;
+  }
+
+  private queueFileSnapshotPrefixRemap(
+    sourcePath: string,
+    destinationPath: string
+  ): void {
+    this.pendingFileSnapshotPrefixRemaps.push({
+      sourcePath,
+      destinationPath,
+    });
+    this.fileIndexByPath.clear();
+  }
+
+  /**
+   * Applies deferred folder-prefix remaps to the dense files[] snapshot.
+   *
+   * This lets folder rename/move stay cheap on the hot path and only pays the
+   * O(fileCount) rewrite cost when a caller actually needs the full snapshot.
+   */
+  private applyPendingFileSnapshotPrefixRemaps(): void {
+    const remapRules = this.pendingFileSnapshotPrefixRemaps;
+    if (remapRules.length === 0) {
+      return;
+    }
+
+    for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
+      let currentPath = this.files[fileIndex];
+
+      for (let ruleIndex = 0; ruleIndex < remapRules.length; ruleIndex += 1) {
+        const rule = remapRules[ruleIndex];
+        const sourcePath = rule.sourcePath;
+        if (
+          currentPath !== sourcePath &&
+          !currentPath.startsWith(`${sourcePath}/`)
+        ) {
+          continue;
+        }
+
+        currentPath = `${rule.destinationPath}${currentPath.slice(sourcePath.length)}`;
+      }
+
+      this.files[fileIndex] = currentPath;
+    }
+
+    remapRules.length = 0;
+    this.rebuildFileIndexByPath(this.files);
+  }
+
   private getOrCreatePathTree(): MutablePathTree {
     if (this.pathTree == null) {
+      this.applyPendingFileSnapshotPrefixRemaps();
+      this.materializePendingPathPrefixRemaps();
       this.pathTree = MutablePathTree.fromFiles(this.files);
-      this.adoptPathTreeFilesReference(this.pathTree);
+      this.filesPendingPathTreeSync = false;
+      this.fileIndexByPath.clear();
+      this.pathTreeCreationCount += 1;
+      this.setModelCounter(
+        'model.pathTree.createdCount',
+        this.pathTreeCreationCount
+      );
     }
     return this.pathTree;
   }
@@ -1426,6 +1667,8 @@ export class FileTreeModel {
   }
 
   getFiles(): string[] {
+    this.syncFilesSnapshotFromPathTree();
+    this.applyPendingFileSnapshotPrefixRemaps();
     return this.files;
   }
 
@@ -1434,7 +1677,7 @@ export class FileTreeModel {
   }
 
   getPathForId(id: string): string | undefined {
-    return this.idToPathMap.get(id);
+    return this.getResolvedPathForId(id);
   }
 
   hasId(id: string): boolean {
@@ -1451,6 +1694,8 @@ export class FileTreeModel {
       return;
     }
     this.sortComparator = nextComparator;
+    this.syncFilesSnapshotFromPathTree();
+    this.applyPendingFileSnapshotPrefixRemaps();
     this.replaceAll(this.files);
   }
 
@@ -1479,7 +1724,7 @@ export class FileTreeModel {
     const targetPrefix =
       normalizedTarget === ROOT_ID ? '' : `${normalizedTarget}/`;
 
-    if (draggedPaths.length === 0 || this.files.length === 0) {
+    if (draggedPaths.length === 0 || this.getKnownFileCount() === 0) {
       return { ok: true, mutation: null };
     }
 
@@ -1936,7 +2181,12 @@ export class FileTreeModel {
       };
     }
 
-    const nodeId = this.pathToIdMap.get(normalizedSourcePath);
+    const canonicalSourcePath = this.remapPathBackward(normalizedSourcePath);
+    const canonicalDestinationPath = this.remapPathBackward(
+      normalizedDestinationPath
+    );
+
+    const nodeId = this.resolveIdForPath(normalizedSourcePath);
     if (nodeId == null) {
       return {
         ok: false,
@@ -1944,7 +2194,10 @@ export class FileTreeModel {
       };
     }
 
-    if (this.pathToIdMap.has(normalizedDestinationPath)) {
+    const existingDestinationId = this.resolveIdForPath(
+      normalizedDestinationPath
+    );
+    if (existingDestinationId != null && existingDestinationId !== nodeId) {
       return {
         ok: false,
         error: `"${normalizedDestinationPath}" already exists.`,
@@ -1968,12 +2221,13 @@ export class FileTreeModel {
     }
 
     const parentPath = getParentPath(normalizedSourcePath);
-    const parentId = this.pathToIdMap.get(parentPath) ?? ROOT_ID;
-    const existingPathTree = this.pathTree;
+    const parentId = this.resolveIdForPath(parentPath) ?? ROOT_ID;
+    const parentChildrenBeforeSort =
+      this.captureParentChildrenSnapshot(parentId);
 
     if (!nodeIsFolder) {
-      if (existingPathTree != null) {
-        const renameResult = existingPathTree.renamePath(
+      if (this.pathTree != null) {
+        const renameResult = this.pathTree.renamePath(
           normalizedSourcePath,
           normalizedDestinationPath,
           'file'
@@ -1996,27 +2250,34 @@ export class FileTreeModel {
             error: 'Could not rename the selected file.',
           };
         }
-      }
 
-      this.pathToIdMap.delete(normalizedSourcePath);
-      this.pathToIdMap.set(normalizedDestinationPath, nodeId);
-      this.idToPathMap.set(nodeId, normalizedDestinationPath);
+        this.adoptPathTreeFilesReference(this.pathTree);
+      } else {
+        const sourceIndex = this.getFileIndexFromSnapshot(normalizedSourcePath);
+        if (sourceIndex < 0) {
+          return {
+            ok: false,
+            error: 'Could not find the selected file to rename.',
+          };
+        }
 
-      node.path = normalizedDestinationPath;
-      node.name = getLeafName(normalizedDestinationPath);
-
-      const sourceIndex = this.fileIndexByPath.get(normalizedSourcePath);
-      if (sourceIndex != null) {
         this.files[sourceIndex] = normalizedDestinationPath;
         this.fileIndexByPath.delete(normalizedSourcePath);
         this.fileIndexByPath.set(normalizedDestinationPath, sourceIndex);
       }
 
-      if (existingPathTree != null) {
-        this.adoptPathTreeFilesReference(existingPathTree);
-      }
+      this.pathToIdMap.delete(canonicalSourcePath);
+      this.pathToIdMap.set(canonicalDestinationPath, nodeId);
+      this.idToPathMap.set(nodeId, canonicalDestinationPath);
+
+      node.path = canonicalDestinationPath;
+      node.name = getLeafName(normalizedDestinationPath);
 
       this.sortChildren(parentId);
+      const childrenOrderChanged = this.didParentChildrenOrderChange(
+        parentId,
+        parentChildrenBeforeSort
+      );
       this.setModelCounter('model.rename.file.remapScannedNodes', 1);
       this.setModelCounter('model.rename.file.remapUpdatedNodes', 1);
 
@@ -2027,6 +2288,43 @@ export class FileTreeModel {
         isFolder: false,
         parentId,
         nodeId,
+        childrenOrderChanged,
+      };
+      this.emitMutation(mutation);
+      return {
+        ok: true,
+        mutation: { ...mutation, version: this.version },
+      };
+    }
+
+    if (this.pathTree == null) {
+      this.queueFileSnapshotPrefixRemap(
+        normalizedSourcePath,
+        normalizedDestinationPath
+      );
+      this.queuePathPrefixRemap(
+        normalizedSourcePath,
+        normalizedDestinationPath
+      );
+
+      node.name = getLeafName(normalizedDestinationPath);
+
+      this.sortChildren(parentId);
+      const childrenOrderChanged = this.didParentChildrenOrderChange(
+        parentId,
+        parentChildrenBeforeSort
+      );
+      this.setModelCounter('model.rename.folder.remapScannedNodes', 1);
+      this.setModelCounter('model.rename.folder.remapUpdatedNodes', 1);
+
+      const mutation = {
+        kind: 'rename-path' as const,
+        sourcePath: normalizedSourcePath,
+        destinationPath: normalizedDestinationPath,
+        isFolder: true,
+        parentId,
+        nodeId,
+        childrenOrderChanged,
       };
       this.emitMutation(mutation);
       return {
@@ -2060,7 +2358,7 @@ export class FileTreeModel {
 
     const updatedPathSet = new Set(pathUpdates.map((entry) => entry.oldPath));
     for (const { id, newPath } of pathUpdates) {
-      const existingId = this.pathToIdMap.get(newPath);
+      const existingId = this.resolveIdForPath(newPath);
       if (
         existingId != null &&
         existingId !== id &&
@@ -2073,8 +2371,7 @@ export class FileTreeModel {
       }
     }
 
-    const pathTreeForFolder = this.getOrCreatePathTree();
-    const folderRenameResult = pathTreeForFolder.renamePath(
+    const folderRenameResult = this.pathTree.renamePath(
       normalizedSourcePath,
       normalizedDestinationPath,
       'folder'
@@ -2113,9 +2410,13 @@ export class FileTreeModel {
       }
     }
 
-    this.adoptPathTreeFilesReference(pathTreeForFolder);
+    this.adoptPathTreeFilesReference(this.pathTree);
 
     this.sortChildren(parentId);
+    const childrenOrderChanged = this.didParentChildrenOrderChange(
+      parentId,
+      parentChildrenBeforeSort
+    );
 
     const mutation = {
       kind: 'rename-path' as const,
@@ -2124,6 +2425,7 @@ export class FileTreeModel {
       isFolder: true,
       parentId,
       nodeId,
+      childrenOrderChanged,
     };
     this.emitMutation(mutation);
     return {
