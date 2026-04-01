@@ -129,47 +129,6 @@ function getPathDepth(path: string): number {
   return depth;
 }
 
-/**
- * Applies a precomputed file origin->destination mapping to a mutable path
- * tree. Returns false if we hit an unexpected inconsistency and need to fall
- * back to rebuilding the tree from a snapshot.
- */
-function applyMappedFilesToPathTree(
-  pathTree: MutablePathTree,
-  currentFiles: string[],
-  finalPathByOrigin: Map<string, string | null>
-): boolean {
-  for (let index = 0; index < currentFiles.length; index += 1) {
-    const origin = currentFiles[index];
-    if (finalPathByOrigin.get(origin) != null) {
-      continue;
-    }
-    pathTree.deleteFilePath(origin);
-  }
-
-  for (let index = 0; index < currentFiles.length; index += 1) {
-    const origin = currentFiles[index];
-    const destination = finalPathByOrigin.get(origin);
-    if (destination == null || destination === origin) {
-      continue;
-    }
-
-    const { parentPath, baseName } = splitPath(destination);
-    const moveResult = pathTree.movePath(
-      origin,
-      parentPath === '' ? ROOT_ID : parentPath,
-      baseName,
-      'file'
-    );
-
-    if (moveResult !== 'ok') {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 interface PlannedMoveRule {
   sourcePath: string;
   destinationPath: string;
@@ -403,6 +362,10 @@ export class FileTreeModel {
   private readonly fileIndexByPath = new Map<string, number>();
   private readonly flattenedRefCountById = new Map<string, number>();
   private readonly flattenedIdsPendingPrune = new Set<string>();
+  private readonly directChildIndexByFolderId = new Map<
+    string,
+    Map<string, number>
+  >();
   private readonly benchmarkInstrumentation: BenchmarkInstrumentation | null;
   private pathTree: MutablePathTree | null = null;
   private version = 0;
@@ -445,21 +408,29 @@ export class FileTreeModel {
     }
 
     this.tree.clear();
+    this.directChildIndexByFolderId.clear();
     for (const [id, node] of builtIndex.tree) {
       this.tree.set(id, node);
+      const directChildren = node.children?.direct;
+      if (directChildren != null) {
+        const directChildIndexMap = new Map<string, number>();
+        for (let index = 0; index < directChildren.length; index += 1) {
+          directChildIndexMap.set(directChildren[index], index);
+        }
+        this.directChildIndexByFolderId.set(id, directChildIndexMap);
+      }
     }
 
     this.files = builtIndex.files;
-    this.fileIndexByPath.clear();
-    for (let index = 0; index < this.files.length; index += 1) {
-      this.fileIndexByPath.set(this.files[index], index);
-    }
+    this.rebuildFileIndexByPath(this.files);
+    this.setModelCounter('model.snapshot.fileCount', this.files.length);
     this.nextNodeId = builtIndex.nextNodeId;
 
     this.rebuildFlattenedReferenceCounts();
 
     if (options.syncPathTree !== false && this.pathTree != null) {
       this.pathTree.replaceAll(this.files);
+      this.adoptPathTreeFilesReference(this.pathTree);
     }
   }
 
@@ -605,29 +576,70 @@ export class FileTreeModel {
     return [...affectedParentIdsSet];
   }
 
-  private getOrCreatePathTree(): MutablePathTree {
-    this.pathTree ??= MutablePathTree.fromFiles(this.files);
-    return this.pathTree;
-  }
-
-  private replaceFilesSnapshot(files: string[]): void {
-    this.files = files;
+  private rebuildFileIndexByPath(files: readonly string[]): void {
     this.fileIndexByPath.clear();
     for (let index = 0; index < files.length; index += 1) {
       this.fileIndexByPath.set(files[index], index);
     }
-    this.setModelCounter('model.snapshot.fileCount', files.length);
   }
 
-  private addAncestorFoldersForPath(path: string, out: Set<string>): void {
-    let currentPath = path.length === 0 ? ROOT_ID : path;
-    while (true) {
-      out.add(currentPath);
-      if (currentPath === ROOT_ID) {
-        return;
-      }
-      currentPath = getParentPath(currentPath);
+  private adoptPathTreeFilesReference(pathTree: MutablePathTree): void {
+    this.files = pathTree.getFilesReference();
+    this.fileIndexByPath.clear();
+    this.setModelCounter('model.snapshot.fileCount', this.files.length);
+  }
+
+  private getOrCreatePathTree(): MutablePathTree {
+    if (this.pathTree == null) {
+      this.pathTree = MutablePathTree.fromFiles(this.files);
+      this.adoptPathTreeFilesReference(this.pathTree);
     }
+    return this.pathTree;
+  }
+
+  private areIdArraysEqual(
+    left: readonly string[],
+    right: readonly string[]
+  ): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private setDirectChildIndexCache(
+    folderId: string,
+    directChildIds: readonly string[]
+  ): void {
+    const directChildIndexMap = new Map<string, number>();
+    for (let index = 0; index < directChildIds.length; index += 1) {
+      directChildIndexMap.set(directChildIds[index], index);
+    }
+    this.directChildIndexByFolderId.set(folderId, directChildIndexMap);
+  }
+
+  private getDirectChildIndex(
+    folderId: string,
+    childId: string,
+    directChildIds: readonly string[]
+  ): number {
+    let directChildIndexMap = this.directChildIndexByFolderId.get(folderId);
+    if (directChildIndexMap == null) {
+      this.setDirectChildIndexCache(folderId, directChildIds);
+      directChildIndexMap = this.directChildIndexByFolderId.get(folderId);
+      if (directChildIndexMap == null) {
+        return -1;
+      }
+    }
+
+    return directChildIndexMap.get(childId) ?? -1;
   }
 
   private allocateStableIdForPath(path: string): string {
@@ -677,6 +689,7 @@ export class FileTreeModel {
     }
 
     this.tree.delete(id);
+    this.directChildIndexByFolderId.delete(id);
   }
 
   /**
@@ -983,6 +996,42 @@ export class FileTreeModel {
     const rebuiltFolders = new Set<string>();
     const rebuildingFolders = new Set<string>();
     const flattenedEndpointCache = new Map<string, string | null>();
+    const dirtyChildrenByFolderPath = new Map<string, Set<string>>();
+
+    const markDirtyChild = (folderPath: string, childPath: string): void => {
+      const normalizedFolderPath =
+        folderPath.length === 0 ? ROOT_ID : folderPath;
+      const normalizedChildPath = childPath.length === 0 ? ROOT_ID : childPath;
+      const existing = dirtyChildrenByFolderPath.get(normalizedFolderPath);
+      if (existing != null) {
+        existing.add(normalizedChildPath);
+        return;
+      }
+      dirtyChildrenByFolderPath.set(
+        normalizedFolderPath,
+        new Set([normalizedChildPath])
+      );
+    };
+
+    for (const folderPath of folderPaths) {
+      const normalizedFolderPath =
+        folderPath.length === 0 ? ROOT_ID : folderPath;
+      if (normalizedFolderPath === ROOT_ID) {
+        continue;
+      }
+      markDirtyChild(getParentPath(normalizedFolderPath), normalizedFolderPath);
+    }
+
+    const isLocallyAffectedFolder = (path: string): boolean => {
+      let currentPath = path;
+      while (currentPath !== ROOT_ID) {
+        if (folderPaths.has(currentPath)) {
+          return true;
+        }
+        currentPath = getParentPath(currentPath);
+      }
+      return false;
+    };
 
     const rebuildFolder = (folderPath: string): void => {
       const normalizedFolderPath =
@@ -999,6 +1048,7 @@ export class FileTreeModel {
         normalizedFolderPath !== ROOT_ID &&
         !pathTree.hasFolder(normalizedFolderPath)
       ) {
+        let removedFolder = false;
         const missingFolderId = this.pathToIdMap.get(normalizedFolderPath);
         if (missingFolderId != null) {
           const subtreePrefix = `${normalizedFolderPath}/`;
@@ -1011,8 +1061,15 @@ export class FileTreeModel {
               rawPath.startsWith(subtreePrefix)
             );
           });
+          removedFolder = true;
         }
+
         rebuiltFolders.add(normalizedFolderPath);
+        if (removedFolder) {
+          const parentPath = getParentPath(normalizedFolderPath);
+          markDirtyChild(parentPath, normalizedFolderPath);
+          rebuildFolder(parentPath);
+        }
         return;
       }
 
@@ -1023,58 +1080,111 @@ export class FileTreeModel {
           ? ROOT_ID
           : this.ensureStableIdForPath(normalizedFolderPath);
       const previousNode = this.tree.get(folderId);
-      const previousDirectChildren =
-        previousNode?.children?.direct?.slice() ?? [];
-      const previousFlattenedChildren =
-        previousNode?.children?.flattened?.slice() ?? [];
-
-      const directChildren = pathTree.getDirectChildren(normalizedFolderPath);
-      this.sortPathTreeChildren(directChildren, pathTree);
-
-      const directChildIds = new Array<string>(directChildren.length);
-      for (let index = 0; index < directChildren.length; index += 1) {
-        const child = directChildren[index];
-        const childId = this.ensureStableIdForPath(child.path);
-        directChildIds[index] = childId;
-
-        const existingNode = this.tree.get(childId);
-        if (child.kind === 'folder') {
-          if (existingNode?.children == null) {
-            this.tree.set(childId, {
-              name: getLeafName(child.path),
-              path: child.path,
-              children: { direct: [] },
-            });
-          } else {
-            existingNode.path = child.path;
-            existingNode.name = getLeafName(child.path);
-          }
-        } else {
-          this.tree.set(childId, {
-            name: getLeafName(child.path),
-            path: child.path,
-          });
+      const previousDirectChildren = previousNode?.children?.direct ?? [];
+      const previousFlattenedChildren = previousNode?.children?.flattened ?? [];
+      const previousHadSingleFolderChild =
+        previousDirectChildren.length === 1 &&
+        this.tree.get(previousDirectChildren[0])?.children?.direct != null;
+      const previousFlattenedByStartId = new Map<string, string>();
+      for (
+        let index = 0;
+        index < previousFlattenedChildren.length;
+        index += 1
+      ) {
+        const previousFlattenedId = previousFlattenedChildren[index];
+        const flattenedNode = this.tree.get(previousFlattenedId);
+        const flattenedStartId = flattenedNode?.flattens?.[0];
+        if (flattenedStartId != null) {
+          previousFlattenedByStartId.set(flattenedStartId, previousFlattenedId);
         }
       }
 
-      if (previousDirectChildren.length > 0) {
-        const nextDirectSet = new Set(directChildIds);
+      const dirtyChildPaths =
+        dirtyChildrenByFolderPath.get(normalizedFolderPath);
+
+      let directChildren: Array<{
+        path: string;
+        kind: 'folder' | 'file';
+      }> | null = null;
+      let directChildIds: string[];
+
+      let canReuseDirectChildren =
+        previousNode != null &&
+        pathTree.getDirectChildCount(normalizedFolderPath) ===
+          previousDirectChildren.length;
+
+      if (canReuseDirectChildren) {
         for (let index = 0; index < previousDirectChildren.length; index += 1) {
           const previousChildId = previousDirectChildren[index];
-          if (nextDirectSet.has(previousChildId)) {
-            continue;
-          }
-
           const previousChildPath = this.idToPathMap.get(previousChildId);
-          if (previousChildPath == null) {
-            continue;
+          if (
+            previousChildPath == null ||
+            getParentPath(previousChildPath) !== normalizedFolderPath ||
+            !pathTree.hasPath(previousChildPath)
+          ) {
+            canReuseDirectChildren = false;
+            break;
           }
+        }
+      }
 
-          if (pathTree.hasPath(previousChildPath)) {
-            continue;
+      if (canReuseDirectChildren) {
+        directChildIds = previousDirectChildren;
+      } else {
+        directChildren = pathTree.getDirectChildren(normalizedFolderPath);
+        this.sortPathTreeChildren(directChildren, pathTree);
+
+        directChildIds = new Array<string>(directChildren.length);
+        for (let index = 0; index < directChildren.length; index += 1) {
+          const child = directChildren[index];
+          const childId = this.ensureStableIdForPath(child.path);
+          directChildIds[index] = childId;
+
+          const existingNode = this.tree.get(childId);
+          if (child.kind === 'folder') {
+            if (existingNode?.children == null) {
+              this.tree.set(childId, {
+                name: getLeafName(child.path),
+                path: child.path,
+                children: { direct: [] },
+              });
+              this.setDirectChildIndexCache(childId, []);
+            } else {
+              existingNode.path = child.path;
+              existingNode.name = getLeafName(child.path);
+            }
+          } else {
+            this.tree.set(childId, {
+              name: getLeafName(child.path),
+              path: child.path,
+            });
+            this.directChildIndexByFolderId.delete(childId);
           }
+        }
 
-          this.removeSubtreeById(previousChildId);
+        if (previousDirectChildren.length > 0) {
+          const nextDirectSet = new Set(directChildIds);
+          for (
+            let index = 0;
+            index < previousDirectChildren.length;
+            index += 1
+          ) {
+            const previousChildId = previousDirectChildren[index];
+            if (nextDirectSet.has(previousChildId)) {
+              continue;
+            }
+
+            const previousChildPath = this.idToPathMap.get(previousChildId);
+            if (previousChildPath == null) {
+              continue;
+            }
+
+            if (pathTree.hasPath(previousChildPath)) {
+              continue;
+            }
+
+            this.removeSubtreeById(previousChildId);
+          }
         }
       }
 
@@ -1146,21 +1256,84 @@ export class FileTreeModel {
       };
 
       let flattenedChildIds: string[] | undefined;
-      for (let index = 0; index < directChildren.length; index += 1) {
-        const child = directChildren[index];
-
-        if (child.kind === 'folder') {
-          const endpointPath = resolveEndpoint(child.path);
-          if (endpointPath != null) {
-            const flattenedId = ensureFlattenedNode(child.path, endpointPath);
-            flattenedChildIds ??= directChildIds.slice(0, index);
-            flattenedChildIds.push(flattenedId);
-            continue;
-          }
+      if (canReuseDirectChildren) {
+        if (previousFlattenedChildren.length > 0) {
+          flattenedChildIds = previousFlattenedChildren.slice();
         }
 
-        if (flattenedChildIds != null) {
-          flattenedChildIds.push(directChildIds[index]);
+        if (dirtyChildPaths != null && dirtyChildPaths.size > 0) {
+          for (const dirtyChildPath of dirtyChildPaths) {
+            const dirtyChildId = this.pathToIdMap.get(dirtyChildPath);
+            if (dirtyChildId == null) {
+              continue;
+            }
+
+            const childIndex = this.getDirectChildIndex(
+              folderId,
+              dirtyChildId,
+              directChildIds
+            );
+            if (childIndex < 0) {
+              continue;
+            }
+
+            let nextChildEntryId = dirtyChildId;
+            if (pathTree.hasFolder(dirtyChildPath)) {
+              const endpointPath = resolveEndpoint(dirtyChildPath);
+              if (endpointPath != null) {
+                nextChildEntryId = ensureFlattenedNode(
+                  dirtyChildPath,
+                  endpointPath
+                );
+              }
+            }
+
+            const currentChildEntryId =
+              flattenedChildIds?.[childIndex] ?? directChildIds[childIndex];
+            if (nextChildEntryId === currentChildEntryId) {
+              continue;
+            }
+
+            flattenedChildIds ??= directChildIds.slice();
+            flattenedChildIds[childIndex] = nextChildEntryId;
+          }
+        }
+      } else {
+        if (directChildren == null) {
+          throw new Error(
+            'FileTreeModel: expected direct children for non-reused folder rebuild.'
+          );
+        }
+
+        for (let index = 0; index < directChildren.length; index += 1) {
+          const child = directChildren[index];
+
+          if (child.kind === 'folder') {
+            const endpointPath = resolveEndpoint(child.path);
+            if (endpointPath != null) {
+              const childId = directChildIds[index];
+              const reusableFlattenedId =
+                previousFlattenedByStartId.get(childId) ?? null;
+
+              if (
+                reusableFlattenedId != null &&
+                !isLocallyAffectedFolder(child.path)
+              ) {
+                flattenedChildIds ??= directChildIds.slice(0, index);
+                flattenedChildIds.push(reusableFlattenedId);
+                continue;
+              }
+
+              const flattenedId = ensureFlattenedNode(child.path, endpointPath);
+              flattenedChildIds ??= directChildIds.slice(0, index);
+              flattenedChildIds.push(flattenedId);
+              continue;
+            }
+          }
+
+          if (flattenedChildIds != null) {
+            flattenedChildIds.push(directChildIds[index]);
+          }
         }
       }
 
@@ -1177,6 +1350,7 @@ export class FileTreeModel {
           }),
         },
       });
+      this.setDirectChildIndexCache(folderId, directChildIds);
 
       const previousFlattenedSet = new Set(previousFlattenedChildren);
       const nextFlattenedSet = new Set(flattenedChildIds ?? []);
@@ -1192,8 +1366,42 @@ export class FileTreeModel {
         }
       }
 
+      const nextFlattenedChildren = flattenedChildIds ?? [];
+      const folderChildrenChanged =
+        previousNode == null ||
+        !this.areIdArraysEqual(previousDirectChildren, directChildIds) ||
+        !this.areIdArraysEqual(
+          previousFlattenedChildren,
+          nextFlattenedChildren
+        );
+      let nextHasSingleFolderChild = false;
+      if (canReuseDirectChildren) {
+        if (directChildIds.length === 1) {
+          const onlyChildPath = this.idToPathMap.get(directChildIds[0]);
+          nextHasSingleFolderChild =
+            onlyChildPath != null && pathTree.hasFolder(onlyChildPath);
+        }
+      } else {
+        nextHasSingleFolderChild =
+          directChildren != null &&
+          directChildren.length === 1 &&
+          directChildren[0]?.kind === 'folder';
+      }
+      const shouldPropagateToParent =
+        normalizedFolderPath !== ROOT_ID &&
+        folderChildrenChanged &&
+        (previousNode == null ||
+          previousHadSingleFolderChild ||
+          nextHasSingleFolderChild);
+
       rebuildingFolders.delete(normalizedFolderPath);
       rebuiltFolders.add(normalizedFolderPath);
+
+      if (shouldPropagateToParent) {
+        const parentPath = getParentPath(normalizedFolderPath);
+        markDirtyChild(parentPath, normalizedFolderPath);
+        rebuildFolder(parentPath);
+      }
     };
 
     for (const folderPath of folderPaths) {
@@ -1271,8 +1479,7 @@ export class FileTreeModel {
     const targetPrefix =
       normalizedTarget === ROOT_ID ? '' : `${normalizedTarget}/`;
 
-    const currentFiles = this.files;
-    if (draggedPaths.length === 0 || currentFiles.length === 0) {
+    if (draggedPaths.length === 0 || this.files.length === 0) {
       return { ok: true, mutation: null };
     }
 
@@ -1314,9 +1521,8 @@ export class FileTreeModel {
       selectedFiles.add(item.path);
     }
 
-    const moveRules: PlannedMoveRule[] = [];
-    const folderDestinations = new Map<string, string>();
-    const proposedDestinationByOrigin = new Map<string, string>();
+    const fileRules: PlannedMoveRule[] = [];
+    const folderRules: PlannedMoveRule[] = [];
 
     for (const selectedFile of selectedFiles) {
       const destinationPath = `${targetPrefix}${getLeafName(selectedFile)}`;
@@ -1324,14 +1530,14 @@ export class FileTreeModel {
         continue;
       }
 
-      proposedDestinationByOrigin.set(selectedFile, destinationPath);
-      moveRules.push({
+      fileRules.push({
         sourcePath: selectedFile,
         destinationPath,
         isFolder: false,
       });
     }
 
+    const folderDestinations = new Map<string, string>();
     for (const selectedFolder of selectedFolders) {
       if (
         normalizedTarget === selectedFolder ||
@@ -1346,153 +1552,178 @@ export class FileTreeModel {
       }
 
       folderDestinations.set(selectedFolder, destinationPath);
-      moveRules.push({
+      folderRules.push({
         sourcePath: selectedFolder,
         destinationPath,
         isFolder: true,
       });
     }
 
-    for (const [
-      selectedFolder,
-      selectedFolderDestination,
-    ] of folderDestinations) {
-      const descendantFiles = pathTree.getDescendantFilePaths(selectedFolder);
-      for (let index = 0; index < descendantFiles.length; index += 1) {
-        const originPath = descendantFiles[index];
-        const destinationPath = `${selectedFolderDestination}${originPath.slice(selectedFolder.length)}`;
-        if (destinationPath === originPath) {
+    const plannedActions: Array<{
+      originPath: string;
+      destinationPath: string;
+      sourceIndex: number;
+      folderSourcePath: string | null;
+    }> = [];
+    const plannedOrigins = new Set<string>();
+
+    for (let index = 0; index < fileRules.length; index += 1) {
+      const rule = fileRules[index];
+      const sourceIndex = pathTree.getFileIndex(rule.sourcePath);
+      if (sourceIndex == null) {
+        continue;
+      }
+      plannedActions.push({
+        originPath: rule.sourcePath,
+        destinationPath: rule.destinationPath,
+        sourceIndex,
+        folderSourcePath: null,
+      });
+      plannedOrigins.add(rule.sourcePath);
+    }
+
+    for (let index = 0; index < folderRules.length; index += 1) {
+      const rule = folderRules[index];
+      const descendants = pathTree.getDescendantFilePaths(rule.sourcePath);
+      for (
+        let descendantIndex = 0;
+        descendantIndex < descendants.length;
+        descendantIndex += 1
+      ) {
+        const originPath = descendants[descendantIndex];
+        const destinationPath = `${rule.destinationPath}${originPath.slice(rule.sourcePath.length)}`;
+        if (destinationPath === originPath || plannedOrigins.has(originPath)) {
           continue;
         }
-        proposedDestinationByOrigin.set(originPath, destinationPath);
+
+        const sourceIndex = pathTree.getFileIndex(originPath);
+        if (sourceIndex == null) {
+          continue;
+        }
+
+        plannedActions.push({
+          originPath,
+          destinationPath,
+          sourceIndex,
+          folderSourcePath: rule.sourcePath,
+        });
+        plannedOrigins.add(originPath);
       }
+    }
+
+    plannedActions.sort((left, right) => left.sourceIndex - right.sourceIndex);
+    if (plannedActions.length === 0) {
+      return { ok: true, mutation: null };
     }
 
     const finalPathByOrigin = new Map<string, string | null>();
-    const occupantByDestination = new Map<string, string>();
-    for (let index = 0; index < currentFiles.length; index += 1) {
-      const filePath = currentFiles[index];
-      finalPathByOrigin.set(filePath, filePath);
-      occupantByDestination.set(filePath, filePath);
+    const originByCurrentPath = new Map<string, string>();
+    for (let index = 0; index < plannedActions.length; index += 1) {
+      const originPath = plannedActions[index].originPath;
+      if (finalPathByOrigin.has(originPath)) {
+        continue;
+      }
+      finalPathByOrigin.set(originPath, originPath);
+      originByCurrentPath.set(originPath, originPath);
     }
 
-    for (let index = 0; index < currentFiles.length; index += 1) {
-      const originPath = currentFiles[index];
-      const destinationPath = proposedDestinationByOrigin.get(originPath);
-      if (destinationPath == null) {
-        continue;
-      }
+    const removedFilePaths: string[] = [];
+    const movedFileDestinationByOrigin = new Map<string, string>();
+    const activeFolderSources = new Set<string>();
 
+    for (let index = 0; index < plannedActions.length; index += 1) {
+      const action = plannedActions[index];
+      const originPath = action.originPath;
       const currentPath = finalPathByOrigin.get(originPath);
-      if (currentPath == null || currentPath === destinationPath) {
+
+      if (currentPath == null || currentPath === action.destinationPath) {
+        continue;
+      }
+      if (!pathTree.hasFile(currentPath)) {
+        finalPathByOrigin.set(originPath, null);
+        originByCurrentPath.delete(currentPath);
+        movedFileDestinationByOrigin.delete(originPath);
         continue;
       }
 
-      const existingOccupant = occupantByDestination.get(destinationPath);
-      if (existingOccupant != null && existingOccupant !== originPath) {
+      if (
+        pathTree.hasFile(action.destinationPath) &&
+        action.destinationPath !== currentPath
+      ) {
         const allowOverwrite =
           onCollision?.({
             origin: originPath,
-            destination: destinationPath,
+            destination: action.destinationPath,
           }) === true;
         if (!allowOverwrite) {
           continue;
         }
 
-        const existingPath = finalPathByOrigin.get(existingOccupant);
-        if (existingPath != null) {
-          occupantByDestination.delete(existingPath);
+        pathTree.deleteFilePath(action.destinationPath);
+
+        const removedMovingOrigin = originByCurrentPath.get(
+          action.destinationPath
+        );
+        if (removedMovingOrigin != null) {
+          finalPathByOrigin.set(removedMovingOrigin, null);
+          movedFileDestinationByOrigin.delete(removedMovingOrigin);
+          originByCurrentPath.delete(action.destinationPath);
+          removedFilePaths.push(removedMovingOrigin);
+        } else {
+          removedFilePaths.push(action.destinationPath);
         }
-        finalPathByOrigin.set(existingOccupant, null);
       }
 
-      occupantByDestination.delete(currentPath);
-      occupantByDestination.set(destinationPath, originPath);
-      finalPathByOrigin.set(originPath, destinationPath);
-    }
-
-    const nextFiles: string[] = [];
-    const removedFilePaths: string[] = [];
-    for (let index = 0; index < currentFiles.length; index += 1) {
-      const filePath = currentFiles[index];
-      const nextPath = finalPathByOrigin.get(filePath);
-      if (nextPath != null) {
-        nextFiles.push(nextPath);
+      const { parentPath, baseName } = splitPath(action.destinationPath);
+      const moveResult = pathTree.movePath(
+        currentPath,
+        parentPath === '' ? ROOT_ID : parentPath,
+        baseName,
+        'file'
+      );
+      if (moveResult !== 'ok') {
         continue;
       }
-      removedFilePaths.push(filePath);
+
+      finalPathByOrigin.set(originPath, action.destinationPath);
+      movedFileDestinationByOrigin.set(originPath, action.destinationPath);
+      originByCurrentPath.delete(currentPath);
+      originByCurrentPath.set(action.destinationPath, originPath);
+      if (action.folderSourcePath != null) {
+        activeFolderSources.add(action.folderSourcePath);
+      }
     }
 
     if (
-      nextFiles.length === currentFiles.length &&
-      nextFiles.every((path, index) => path === currentFiles[index])
+      movedFileDestinationByOrigin.size === 0 &&
+      removedFilePaths.length === 0
     ) {
       return { ok: true, mutation: null };
     }
 
-    const movedFolderRuleBySource = new Map<string, PlannedMoveRule>();
-    for (let index = 0; index < moveRules.length; index += 1) {
-      const rule = moveRules[index];
-      if (rule.isFolder) {
-        movedFolderRuleBySource.set(rule.sourcePath, rule);
-      }
-    }
-
-    const activeFolderSources = new Set<string>();
-    for (const [sourcePath, rule] of movedFolderRuleBySource) {
-      const descendants = pathTree.getDescendantFilePaths(sourcePath);
-      for (let index = 0; index < descendants.length; index += 1) {
-        const nextPath = finalPathByOrigin.get(descendants[index]);
-        if (
-          nextPath != null &&
-          nextPath.startsWith(`${rule.destinationPath}/`)
-        ) {
-          activeFolderSources.add(sourcePath);
-          break;
-        }
-      }
-    }
-
-    const remapRules = moveRules
+    const remapRules = [...fileRules, ...folderRules]
       .filter((rule) => {
         if (!rule.isFolder) {
           return (
-            finalPathByOrigin.get(rule.sourcePath) === rule.destinationPath
+            movedFileDestinationByOrigin.get(rule.sourcePath) ===
+            rule.destinationPath
           );
         }
         return activeFolderSources.has(rule.sourcePath);
       })
       .sort((left, right) => right.sourcePath.length - left.sourcePath.length);
 
-    const pathTreeApplied = applyMappedFilesToPathTree(
-      pathTree,
-      currentFiles,
-      finalPathByOrigin
-    );
-    if (!pathTreeApplied) {
-      pathTree.replaceAll(nextFiles);
-    }
-
     this.applyPathRemapRules(remapRules);
-    this.replaceFilesSnapshot(nextFiles);
+    this.adoptPathTreeFilesReference(pathTree);
 
     const affectedFolderPaths = new Set<string>();
     for (let index = 0; index < remapRules.length; index += 1) {
       const rule = remapRules[index];
-      this.addAncestorFoldersForPath(
-        getParentPath(rule.sourcePath),
-        affectedFolderPaths
-      );
-      this.addAncestorFoldersForPath(
-        getParentPath(rule.destinationPath),
-        affectedFolderPaths
-      );
+      affectedFolderPaths.add(getParentPath(rule.sourcePath));
+      affectedFolderPaths.add(getParentPath(rule.destinationPath));
     }
     for (let index = 0; index < removedFilePaths.length; index += 1) {
-      this.addAncestorFoldersForPath(
-        getParentPath(removedFilePaths[index]),
-        affectedFolderPaths
-      );
+      affectedFolderPaths.add(getParentPath(removedFilePaths[index]));
     }
     if (affectedFolderPaths.size === 0) {
       affectedFolderPaths.add(ROOT_ID);
@@ -1567,14 +1798,11 @@ export class FileTreeModel {
       return { ok: true, mutation: null };
     }
 
-    this.replaceFilesSnapshot(pathTree.cloneFiles());
+    this.adoptPathTreeFilesReference(pathTree);
 
     const affectedFolderPaths = new Set<string>();
     for (let index = 0; index < addedPaths.length; index += 1) {
-      this.addAncestorFoldersForPath(
-        getParentPath(addedPaths[index]),
-        affectedFolderPaths
-      );
+      affectedFolderPaths.add(getParentPath(addedPaths[index]));
     }
     if (affectedFolderPaths.size === 0) {
       affectedFolderPaths.add(ROOT_ID);
@@ -1638,14 +1866,7 @@ export class FileTreeModel {
       }
     }
 
-    const deletedPaths: string[] = [];
-
-    for (let index = 0; index < selectedFiles.length; index += 1) {
-      const path = selectedFiles[index];
-      if (pathTree.deleteFilePath(path)) {
-        deletedPaths.push(path);
-      }
-    }
+    const deletedPaths = pathTree.deleteFilePaths(selectedFiles);
 
     for (const path of selectedFolders) {
       if (pathTree.deleteFolderPath(path)) {
@@ -1657,14 +1878,11 @@ export class FileTreeModel {
       return { ok: true, mutation: null };
     }
 
-    this.replaceFilesSnapshot(pathTree.cloneFiles());
+    this.adoptPathTreeFilesReference(pathTree);
 
     const affectedFolderPaths = new Set<string>();
     for (let index = 0; index < deletedPaths.length; index += 1) {
-      this.addAncestorFoldersForPath(
-        getParentPath(deletedPaths[index]),
-        affectedFolderPaths
-      );
+      affectedFolderPaths.add(getParentPath(deletedPaths[index]));
     }
     if (affectedFolderPaths.size === 0) {
       affectedFolderPaths.add(ROOT_ID);
@@ -1751,11 +1969,11 @@ export class FileTreeModel {
 
     const parentPath = getParentPath(normalizedSourcePath);
     const parentId = this.pathToIdMap.get(parentPath) ?? ROOT_ID;
-    const pathTree = this.pathTree;
+    const existingPathTree = this.pathTree;
 
     if (!nodeIsFolder) {
-      if (pathTree != null) {
-        const renameResult = pathTree.renamePath(
+      if (existingPathTree != null) {
+        const renameResult = existingPathTree.renamePath(
           normalizedSourcePath,
           normalizedDestinationPath,
           'file'
@@ -1792,6 +2010,10 @@ export class FileTreeModel {
         this.files[sourceIndex] = normalizedDestinationPath;
         this.fileIndexByPath.delete(normalizedSourcePath);
         this.fileIndexByPath.set(normalizedDestinationPath, sourceIndex);
+      }
+
+      if (existingPathTree != null) {
+        this.adoptPathTreeFilesReference(existingPathTree);
       }
 
       this.sortChildren(parentId);
@@ -1851,30 +2073,29 @@ export class FileTreeModel {
       }
     }
 
-    if (pathTree != null) {
-      const folderRenameResult = pathTree.renamePath(
-        normalizedSourcePath,
-        normalizedDestinationPath,
-        'folder'
-      );
-      if (folderRenameResult === 'missing') {
-        return {
-          ok: false,
-          error: 'Could not find the selected folder to rename.',
-        };
-      }
-      if (folderRenameResult === 'collision') {
-        return {
-          ok: false,
-          error: `"${normalizedDestinationPath}" already exists.`,
-        };
-      }
-      if (folderRenameResult === 'invalid') {
-        return {
-          ok: false,
-          error: 'Could not rename the selected folder.',
-        };
-      }
+    const pathTreeForFolder = this.getOrCreatePathTree();
+    const folderRenameResult = pathTreeForFolder.renamePath(
+      normalizedSourcePath,
+      normalizedDestinationPath,
+      'folder'
+    );
+    if (folderRenameResult === 'missing') {
+      return {
+        ok: false,
+        error: 'Could not find the selected folder to rename.',
+      };
+    }
+    if (folderRenameResult === 'collision') {
+      return {
+        ok: false,
+        error: `"${normalizedDestinationPath}" already exists.`,
+      };
+    }
+    if (folderRenameResult === 'invalid') {
+      return {
+        ok: false,
+        error: 'Could not rename the selected folder.',
+      };
     }
 
     for (const { oldPath } of pathUpdates) {
@@ -1892,20 +2113,7 @@ export class FileTreeModel {
       }
     }
 
-    const sourcePrefix = `${normalizedSourcePath}/`;
-    const remappedFiles = new Array<string>(this.files.length);
-    for (let index = 0; index < this.files.length; index += 1) {
-      const filePath = this.files[index];
-      remappedFiles[index] =
-        filePath === normalizedSourcePath || filePath.startsWith(sourcePrefix)
-          ? `${normalizedDestinationPath}${filePath.slice(normalizedSourcePath.length)}`
-          : filePath;
-    }
-    this.files = remappedFiles;
-    this.fileIndexByPath.clear();
-    for (let index = 0; index < remappedFiles.length; index += 1) {
-      this.fileIndexByPath.set(remappedFiles[index], index);
-    }
+    this.adoptPathTreeFilesReference(pathTreeForFolder);
 
     this.sortChildren(parentId);
 

@@ -21,7 +21,12 @@ function createCounterCollector(): {
   };
 }
 
-function createMutationComplexityFixture(unrelatedFileCount: number): string[] {
+type ComplexityFixtureShape = 'wide' | 'deep';
+
+function createMutationComplexityFixture(
+  unrelatedFileCount: number,
+  shape: ComplexityFixtureShape = 'wide'
+): string[] {
   const files = [
     'workspace/src/deep/nested/file-a.ts',
     'workspace/src/deep/nested/file-b.ts',
@@ -30,19 +35,31 @@ function createMutationComplexityFixture(unrelatedFileCount: number): string[] {
   ];
 
   for (let index = 0; index < unrelatedFileCount; index += 1) {
-    files.push(`noise-${index}/file-${index}.ts`);
+    if (shape === 'wide') {
+      files.push(`noise-${index}/file-${index}.ts`);
+      continue;
+    }
+
+    let parentPath = `noise-${index}`;
+    for (let depth = 0; depth < 8; depth += 1) {
+      parentPath = `${parentPath}/segment-${depth}`;
+    }
+    files.push(`${parentPath}/file-${index}.ts`);
   }
 
   return files;
 }
 
-function createInstrumentedModel(unrelatedFileCount: number): {
+function createInstrumentedModel(
+  unrelatedFileCount: number,
+  shape: ComplexityFixtureShape = 'wide'
+): {
   model: FileTreeModel;
   counters: Record<string, number>;
 } {
   const { counters, instrumentation } = createCounterCollector();
   const model = FileTreeModel.fromFiles(
-    createMutationComplexityFixture(unrelatedFileCount),
+    createMutationComplexityFixture(unrelatedFileCount, shape),
     {
       sortComparator: false,
       benchmarkInstrumentation: instrumentation,
@@ -369,6 +386,59 @@ describe('FileTreeModel', () => {
 
     const smallDelete = createInstrumentedModel(5);
     const largeDelete = createInstrumentedModel(500);
+
+    const deleteRequest = {
+      paths: ['workspace/src/deep/nested/file-b.ts'],
+    };
+
+    expect(smallDelete.model.deletePaths(deleteRequest).ok).toBe(true);
+    expect(largeDelete.model.deletePaths(deleteRequest).ok).toBe(true);
+
+    expect(
+      getCounter(smallDelete.counters, 'model.rebuildFolders.executedCount')
+    ).toBe(
+      getCounter(largeDelete.counters, 'model.rebuildFolders.executedCount')
+    );
+  });
+
+  test('keeps folder rename remap work stable across deep-thin unrelated trees', () => {
+    const small = createInstrumentedModel(4, 'deep');
+    const large = createInstrumentedModel(200, 'deep');
+
+    const renameRequest = {
+      sourcePath: 'workspace/src/deep',
+      destinationPath: 'workspace/src/deep-renamed',
+      isFolder: true,
+    } as const;
+
+    expect(small.model.renamePath(renameRequest).ok).toBe(true);
+    expect(large.model.renamePath(renameRequest).ok).toBe(true);
+
+    expect(
+      getCounter(small.counters, 'model.rename.folder.remapScannedNodes')
+    ).toBe(getCounter(large.counters, 'model.rename.folder.remapScannedNodes'));
+    expect(
+      getCounter(small.counters, 'model.rename.folder.remapUpdatedNodes')
+    ).toBe(getCounter(large.counters, 'model.rename.folder.remapUpdatedNodes'));
+  });
+
+  test('keeps local add/delete folder rebuild work stable across deep-thin unrelated trees', () => {
+    const smallAdd = createInstrumentedModel(4, 'deep');
+    const largeAdd = createInstrumentedModel(200, 'deep');
+
+    const addRequest = {
+      paths: ['workspace/src/deep/nested/added.ts'],
+    };
+
+    expect(smallAdd.model.addPaths(addRequest).ok).toBe(true);
+    expect(largeAdd.model.addPaths(addRequest).ok).toBe(true);
+
+    expect(
+      getCounter(smallAdd.counters, 'model.rebuildFolders.executedCount')
+    ).toBe(getCounter(largeAdd.counters, 'model.rebuildFolders.executedCount'));
+
+    const smallDelete = createInstrumentedModel(4, 'deep');
+    const largeDelete = createInstrumentedModel(200, 'deep');
 
     const deleteRequest = {
       paths: ['workspace/src/deep/nested/file-b.ts'],

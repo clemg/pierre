@@ -38,6 +38,7 @@
     "benchmark:file-list-to-tree": "bun run ./scripts/benchmarkFileListToTree.ts",
     "benchmark:core": "bun run ./scripts/benchmarkTreeCorePrimitives.ts",
     "benchmark:incremental-index": "bun run ./scripts/benchmarkIncrementalTreeIndex.ts",
+    "benchmark:model-mutations": "bun run ./scripts/benchmarkModelMutationComplexity.ts",
     "benchmark:render": "bun run ./scripts/benchmarkVirtualizedFileTreeRender.ts",
     "benchmark:render:client": "bun run ./scripts/benchmarkVirtualizedFileTreeClientMount.ts",
     "profile:virtualization": "bun run ./scripts/profileTreesDevVirtualization.ts",

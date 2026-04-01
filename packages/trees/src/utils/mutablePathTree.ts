@@ -58,16 +58,22 @@ export class MutablePathTree {
   private readonly pathToNode = new Map<string, MutablePathTreeNode>();
   private readonly fileIndexByPath = new Map<string, number>();
   private files: string[] = [];
+  private firstDirtyFileIndex: number | null = null;
 
   replaceAll(files: string[]): void {
     this.root.children.clear();
     this.pathToNode.clear();
     this.fileIndexByPath.clear();
-    this.files = [];
+    this.files.length = 0;
+    this.firstDirtyFileIndex = null;
 
     for (let index = 0; index < files.length; index += 1) {
       this.addFilePath(files[index]);
     }
+  }
+
+  getFilesReference(): string[] {
+    return this.files;
   }
 
   cloneFiles(): string[] {
@@ -84,6 +90,11 @@ export class MutablePathTree {
 
   hasFolder(path: string): boolean {
     return this.getFolder(path) != null;
+  }
+
+  getFileIndex(path: string): number | undefined {
+    this.ensureFileIndexesUpToDate();
+    return this.fileIndexByPath.get(path);
   }
 
   addFilePath(path: string): boolean {
@@ -118,13 +129,64 @@ export class MutablePathTree {
   }
 
   deleteFilePath(path: string): boolean {
+    this.ensureFileIndexesUpToDate();
+
     const node = this.getFile(path);
     if (node == null) {
       return false;
     }
 
-    this.removeFileNode(node);
+    this.removeFileNode(node, false);
     return true;
+  }
+
+  deleteFilePaths(paths: readonly string[]): string[] {
+    if (paths.length === 0) {
+      return [];
+    }
+
+    this.ensureFileIndexesUpToDate();
+
+    const nodesToDelete: MutablePathTreeFileNode[] = [];
+    const seenPaths = new Set<string>();
+    for (let index = 0; index < paths.length; index += 1) {
+      const path = paths[index];
+      if (seenPaths.has(path)) {
+        continue;
+      }
+      seenPaths.add(path);
+
+      const node = this.getFile(path);
+      if (node != null) {
+        nodesToDelete.push(node);
+      }
+    }
+
+    if (nodesToDelete.length === 0) {
+      return [];
+    }
+
+    nodesToDelete.sort((left, right) => right.index - left.index);
+
+    const deletedPathSet = new Set(nodesToDelete.map((node) => node.path));
+    for (let index = 0; index < nodesToDelete.length; index += 1) {
+      this.removeFileNode(nodesToDelete[index], false);
+    }
+
+    this.ensureFileIndexesUpToDate();
+
+    const deletedPaths: string[] = [];
+    const emitted = new Set<string>();
+    for (let index = 0; index < paths.length; index += 1) {
+      const path = paths[index];
+      if (!deletedPathSet.has(path) || emitted.has(path)) {
+        continue;
+      }
+      emitted.add(path);
+      deletedPaths.push(path);
+    }
+
+    return deletedPaths;
   }
 
   deleteFolderPath(path: string): boolean {
@@ -132,6 +194,8 @@ export class MutablePathTree {
     if (folder == null) {
       return false;
     }
+
+    this.ensureFileIndexesUpToDate();
 
     const descendants = this.getDescendantFileNodes(folder);
     if (descendants.length === 0) {
@@ -152,6 +216,8 @@ export class MutablePathTree {
     destinationPath: string,
     kind: 'file' | 'folder'
   ): MutablePathTreeMoveResult {
+    this.ensureFileIndexesUpToDate();
+
     const node =
       kind === 'file' ? this.getFile(sourcePath) : this.getFolder(sourcePath);
 
@@ -182,6 +248,8 @@ export class MutablePathTree {
     nextBaseName: string,
     kind: 'file' | 'folder'
   ): MutablePathTreeMoveResult {
+    this.ensureFileIndexesUpToDate();
+
     const node =
       kind === 'file' ? this.getFile(sourcePath) : this.getFolder(sourcePath);
 
@@ -214,9 +282,18 @@ export class MutablePathTree {
       return [];
     }
 
+    this.ensureFileIndexesUpToDate();
+
     const descendants = this.getDescendantFileNodes(folder);
     descendants.sort((left, right) => left.index - right.index);
     return descendants.map((node) => node.path);
+  }
+
+  getDirectChildCount(folderPath: string): number {
+    const normalizedPath = folderPath === 'root' ? '' : folderPath;
+    const folder =
+      normalizedPath === '' ? this.root : this.getFolder(normalizedPath);
+    return folder?.children.size ?? 0;
   }
 
   /**
@@ -293,6 +370,25 @@ export class MutablePathTree {
     }
 
     return current;
+  }
+
+  private markFileIndexesDirty(startIndex: number): void {
+    if (
+      this.firstDirtyFileIndex == null ||
+      startIndex < this.firstDirtyFileIndex
+    ) {
+      this.firstDirtyFileIndex = startIndex;
+    }
+  }
+
+  private ensureFileIndexesUpToDate(): void {
+    const dirtyStart = this.firstDirtyFileIndex;
+    if (dirtyStart == null) {
+      return;
+    }
+
+    this.reindexFiles(dirtyStart);
+    this.firstDirtyFileIndex = null;
   }
 
   /**
@@ -405,7 +501,14 @@ export class MutablePathTree {
     this.files.splice(node.index, 1);
 
     if (reindexImmediately) {
-      this.reindexFiles(node.index);
+      const reindexStart = Math.min(
+        node.index,
+        this.firstDirtyFileIndex ?? node.index
+      );
+      this.reindexFiles(reindexStart);
+      this.firstDirtyFileIndex = null;
+    } else {
+      this.markFileIndexesDirty(node.index);
     }
 
     this.pruneEmptyFolders(node.parent);
