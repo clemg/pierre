@@ -271,6 +271,47 @@ describe('core/incremental-tree-index', () => {
     assertVisibleInvariants(tree);
   });
 
+  it('moves a root child into another expanded root child branch', () => {
+    const { tree, children, childCalls } = createMutableFixture();
+    const dataRef = tree.getDataRef<TreeDataRef>();
+    const fullBefore = dataRef.current.rebuildModeCounts?.full ?? 0;
+
+    children.root = ['b', 'c'];
+    children.b = ['b1', 'a'];
+
+    childCalls.length = 0;
+    tree.markBranchDirty('root', 'children');
+    tree.markBranchDirty('b', 'children');
+    tree.rebuildTree();
+
+    expect(getVisibleIds(tree)).toEqual([
+      'b',
+      'b1',
+      'a',
+      'a1',
+      'a2',
+      'a2x',
+      'a2y',
+      'a3',
+      'c',
+    ]);
+    expect(tree.getItemInstance('a').getItemMeta()).toEqual({
+      itemId: 'a',
+      parentId: 'b',
+      level: 1,
+      index: 2,
+      posInSet: 1,
+      setSize: 2,
+    });
+
+    expect(childCalls.includes('root')).toBe(true);
+    expect(childCalls.includes('b')).toBe(true);
+    expect(dataRef.current.lastRebuildMode).not.toBe('full');
+    expect(dataRef.current.rebuildModeCounts?.full ?? 0).toBe(fullBefore);
+
+    assertVisibleInvariants(tree);
+  });
+
   it('treats metadata-only rebuilds as structural no-ops', () => {
     const { tree, items, childCalls } = createMutableFixture();
     const before = getVisibleIds(tree);
@@ -330,6 +371,35 @@ describe('core/incremental-tree-index', () => {
     tree.rebuildTree();
 
     expect(getVisibleIds(tree)).toEqual(['lazy', 'lazy-child']);
+    assertVisibleInvariants(tree);
+  });
+
+  it('handles root-level insertion without falling back to a full rebuild', () => {
+    const { tree, items, children } = createMutableFixture();
+    const dataRef = tree.getDataRef<TreeDataRef>();
+    const fullBefore = dataRef.current.rebuildModeCounts?.full ?? 0;
+
+    items.d = { id: 'd', name: 'd', isFolder: false };
+    children.root = ['a', 'b', 'c', 'd'];
+
+    tree.markBranchDirty('root', 'children');
+    tree.rebuildTree();
+
+    expect(getVisibleIds(tree)).toEqual([
+      'a',
+      'a1',
+      'a2',
+      'a2x',
+      'a2y',
+      'a3',
+      'b',
+      'b1',
+      'c',
+      'd',
+    ]);
+
+    expect(dataRef.current.lastRebuildMode).not.toBe('full');
+    expect(dataRef.current.rebuildModeCounts?.full ?? 0).toBe(fullBefore);
     assertVisibleInvariants(tree);
   });
 

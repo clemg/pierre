@@ -80,10 +80,30 @@ const EMPTY_ANCESTORS: string[] = [];
 // Reuses the last rebuild's visible ID list so virtualized rendering can size
 // and slice the tree without forcing core to instantiate every visible item.
 function getVisibleItemIds(tree: TreeInstance<FileTreeNode>): string[] {
-  return (
-    tree.getDataRef<TreeDataRef>().current.visibleItemIds ??
-    tree.getItems().map((item) => item.getId())
-  );
+  const treeDataRef = tree.getDataRef<TreeDataRef>().current;
+  if (treeDataRef.visibleItemIds != null) {
+    return treeDataRef.visibleItemIds;
+  }
+
+  const visibleItemCount =
+    treeDataRef.visibleItemCount ?? tree.getVisibleItemCount();
+  const visibleItemIds = new Array<string>(visibleItemCount);
+  let resolvedCount = 0;
+
+  for (let index = 0; index < visibleItemCount; index += 1) {
+    const itemId = tree.getVisibleItemIdAt(index);
+    if (itemId == null) {
+      break;
+    }
+    visibleItemIds[index] = itemId;
+    resolvedCount += 1;
+  }
+
+  if (resolvedCount !== visibleItemCount) {
+    visibleItemIds.length = resolvedCount;
+  }
+
+  return visibleItemIds;
 }
 
 export function Root({
@@ -657,20 +677,25 @@ export function Root({
       {(() => {
         const visibleIdSet = getSearchVisibleIdSet(tree);
         const gitStatusMap = getGitStatusMap(tree);
-        const allItemIds = getVisibleItemIds(tree);
-        const itemIds =
-          visibleIdSet != null
-            ? allItemIds.filter((itemId) => visibleIdSet.has(itemId))
-            : allItemIds;
+        let allItemIds: string[] | null = null;
+        let filteredItemIds: string[] | null = null;
+        if (visibleIdSet != null) {
+          allItemIds = getVisibleItemIds(tree);
+          filteredItemIds = allItemIds.filter((itemId) =>
+            visibleIdSet.has(itemId)
+          );
+        }
+        const itemCount = filteredItemIds?.length ?? tree.getVisibleItemCount();
+
         setBenchmarkCounter(
           benchmarkInstrumentation,
           'workload.visibleItemIds',
-          allItemIds.length
+          allItemIds?.length ?? itemCount
         );
         setBenchmarkCounter(
           benchmarkInstrumentation,
           'workload.renderItemIds',
-          itemIds.length
+          itemCount
         );
         const draggedItemIdSet = isDnD
           ? new Set(
@@ -680,8 +705,15 @@ export function Root({
             )
           : null;
 
+        const getItemIdAtIndex = (index: number): string | undefined => {
+          if (filteredItemIds != null) {
+            return filteredItemIds[index];
+          }
+          return tree.getVisibleItemIdAt(index);
+        };
+
         const renderItemAtIndex = (index: number) => {
-          const itemId = itemIds[index];
+          const itemId = getItemIdAtIndex(index);
           if (itemId == null) {
             return null;
           }
@@ -767,15 +799,19 @@ export function Root({
 
         if (
           shouldVirtualize &&
-          itemIds.length > 0 &&
-          itemIds.length >= virtualizeThreshold
+          itemCount > 0 &&
+          itemCount >= virtualizeThreshold
         ) {
           const focusedIndex =
-            focusedItemId != null ? itemIds.indexOf(focusedItemId) : null;
+            focusedItemId != null
+              ? filteredItemIds != null
+                ? filteredItemIds.indexOf(focusedItemId)
+                : tree.getItemInstance(focusedItemId).getItemMeta().index
+              : null;
           return (
             <div data-file-tree-virtualized-scroll="true">
               <VirtualizedList
-                itemCount={itemIds.length}
+                itemCount={itemCount}
                 renderItem={renderItemAtIndex}
                 scrollToIndex={
                   focusedIndex != null && focusedIndex >= 0
@@ -789,9 +825,17 @@ export function Root({
           );
         }
 
+        const renderedItems: JSX.Element[] = [];
+        for (let index = 0; index < itemCount; index += 1) {
+          const renderedItem = renderItemAtIndex(index);
+          if (renderedItem != null) {
+            renderedItems.push(renderedItem);
+          }
+        }
+
         return (
           <>
-            {itemIds.map((_, i) => renderItemAtIndex(i))}
+            {renderedItems}
             {contextMenuTrigger}
           </>
         );

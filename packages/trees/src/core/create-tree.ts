@@ -129,7 +129,7 @@ export const createTree = <T>(
 
   let rebuildScheduled = false;
   const itemInstancesMap: Record<string, ItemInstance<T>> = {};
-  let visibleItemIds: string[] = [];
+  let visibleItemIds: string[] | null = null;
   let itemInstances: ItemInstance<T>[] | null = null;
   const itemElementsMap: Record<string, HTMLElement | undefined | null> = {};
   // oxlint-disable-next-line typescript-eslint/no-explicit-any
@@ -186,17 +186,24 @@ export const createTree = <T>(
 
   const invalidateVisibleCaches = () => {
     itemInstances = null;
+    visibleItemIds = null;
     itemMetaCache.clear();
   };
 
+  const getVisibleItemIdsSnapshot = (): string[] => {
+    visibleItemIds ??= treeIndex.getVisibleItemIds();
+    return visibleItemIds;
+  };
+
   const syncVisibleIdsToDataRef = () => {
-    visibleItemIds = treeIndex.getVisibleItemIds();
+    const visibleItemCount = treeIndex.getVisibleCount();
     const ref = treeDataRef.current as TreeDataRef;
-    ref.visibleItemIds = visibleItemIds;
+    ref.visibleItemIds = undefined;
+    ref.visibleItemCount = visibleItemCount;
     setBenchmarkCounter(
       benchmarkInstrumentation,
       'workload.visibleItemMeta',
-      visibleItemIds.length
+      visibleItemCount
     );
   };
 
@@ -307,6 +314,7 @@ export const createTree = <T>(
         rebuildScheduled = true;
         const ref = treeDataRef.current as TreeDataRef;
         ref.visibleItemIds = undefined;
+        ref.visibleItemCount = undefined;
       },
       getConfig: () => config,
       setConfig: (_, updater) => {
@@ -329,10 +337,19 @@ export const createTree = <T>(
       getItemInstance: (_opts, itemId) => getOrCreateItemInstance(itemId),
       getItems: () => {
         if (rebuildScheduled) rebuildItemMeta();
-        itemInstances ??= visibleItemIds.map((itemId) =>
+        const currentVisibleIds = getVisibleItemIdsSnapshot();
+        itemInstances ??= currentVisibleIds.map((itemId) =>
           getOrCreateItemInstance(itemId)
         );
         return itemInstances;
+      },
+      getVisibleItemCount: () => {
+        if (rebuildScheduled) rebuildItemMeta();
+        return treeIndex.getVisibleCount();
+      },
+      getVisibleItemIdAt: (_opts, index) => {
+        if (rebuildScheduled) rebuildItemMeta();
+        return treeIndex.getVisibleItemIdAt(index);
       },
       registerElement: (_opts, element) => {
         if (treeElement === element) {

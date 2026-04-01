@@ -17,6 +17,32 @@ rebuilding flattened metadata from a DFS traversal on every `rebuildTree()`.
 
 ## Ordered-index choice
 
+### Lock-in snapshot (current branch shape)
+
+The current mutation-fast shape we are converging on is:
+
+- **Model graph is ID/parent-pointer first** (`FileTreeModel` +
+  `MutablePathTree`)
+  - stable IDs are decoupled from path strings,
+  - path lookups are projection helpers (`pathToId` / `idToPath`),
+  - path-tree mutations (`add/delete/move/rename`) rewire pointers locally.
+- **Core visible order is index-first** (`IncrementalTreeIndex`)
+  - `nodes` keeps structural metadata,
+  - `visible` (`VisibleBlockIndex`) is the mutable ordered visible sequence,
+  - `visibleMetaById` keeps per-visible-node ARIA/index metadata.
+- **Mutation notifications are changesets**
+  - runtime marks only affected parents dirty,
+  - rebuild performs branch-local refreshes instead of full traversal.
+
+Important implementation detail we now rely on for large subtree moves:
+
+- Visible block insertion avoids argument-spread splice (`splice(...ids)`) for
+  large fragments, because JS argument limits can trigger stack overflows. We
+  build a merged block array (`head + inserted + tail`) and then split.
+
+This keeps root-structural edits incremental and avoids fallback-to-full rebuild
+on very large insert fragments.
+
 v1 uses a **chunked block index** (`VisibleBlockIndex`) instead of a flat array:
 
 - IDs are stored in fixed-size blocks (default 128 IDs per block).

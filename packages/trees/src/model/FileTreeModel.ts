@@ -385,6 +385,8 @@ export class FileTreeModel {
   private readonly benchmarkInstrumentation: BenchmarkInstrumentation | null;
   private pathTree: MutablePathTree | null = null;
   private pathTreeCreationCount = 0;
+  private pathPrefixRemapMaterializationCount = 0;
+  private fileIndexRebuildCount = 0;
   private version = 0;
   private nextNodeId = 1;
   private sortComparator: ChildrenSortOption;
@@ -685,6 +687,12 @@ export class FileTreeModel {
       return;
     }
 
+    this.pathPrefixRemapMaterializationCount += 1;
+    this.setModelCounter(
+      'model.pathPrefixRemaps.materializedCount',
+      this.pathPrefixRemapMaterializationCount
+    );
+
     const nextPathToId = new Map<string, string>();
 
     for (const [canonicalPath, id] of this.pathToIdMap) {
@@ -733,13 +741,18 @@ export class FileTreeModel {
     for (let index = 0; index < files.length; index += 1) {
       this.fileIndexByPath.set(files[index], index);
     }
+
+    this.fileIndexRebuildCount += 1;
+    this.setModelCounter(
+      'model.snapshot.fileIndexRebuildCount',
+      this.fileIndexRebuildCount
+    );
   }
 
   private adoptPathTreeFilesReference(pathTree: MutablePathTree): void {
     this.pathTree = pathTree;
     this.filesPendingPathTreeSync = true;
     this.pendingFileSnapshotPrefixRemaps.length = 0;
-    this.pendingPathPrefixRemaps.length = 0;
     this.fileIndexByPath.clear();
   }
 
@@ -751,7 +764,6 @@ export class FileTreeModel {
     this.files = this.pathTree.getFilesReference();
     this.filesPendingPathTreeSync = false;
     this.pendingFileSnapshotPrefixRemaps.length = 0;
-    this.pendingPathPrefixRemaps.length = 0;
     this.fileIndexByPath.clear();
     this.setModelCounter('model.snapshot.fileCount', this.files.length);
   }
@@ -784,14 +796,13 @@ export class FileTreeModel {
       sourcePath,
       destinationPath,
     });
-    this.fileIndexByPath.clear();
   }
 
   /**
    * Applies deferred folder-prefix remaps to the dense files[] snapshot.
    *
-   * This lets folder rename/move stay cheap on the hot path and only pays the
-   * O(fileCount) rewrite cost when a caller actually needs the full snapshot.
+   * This keeps folder rename/move cheap on the hot path and only pays the
+   * O(fileCount) rewrite when a caller asks for a full files[] snapshot.
    */
   private applyPendingFileSnapshotPrefixRemaps(): void {
     const remapRules = this.pendingFileSnapshotPrefixRemaps;
@@ -799,33 +810,66 @@ export class FileTreeModel {
       return;
     }
 
-    for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
-      let currentPath = this.files[fileIndex];
+    const preparedRules = remapRules.map((rule) => ({
+      sourcePath: rule.sourcePath,
+      sourcePathWithSlash: `${rule.sourcePath}/`,
+      sourcePathLength: rule.sourcePath.length,
+      destinationPath: rule.destinationPath,
+    }));
 
-      for (let ruleIndex = 0; ruleIndex < remapRules.length; ruleIndex += 1) {
-        const rule = remapRules[ruleIndex];
-        const sourcePath = rule.sourcePath;
+    const originalPathByTouchedIndex = new Map<number, string>();
+
+    for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
+      const originalPath = this.files[fileIndex];
+      let currentPath = originalPath;
+
+      for (
+        let ruleIndex = 0;
+        ruleIndex < preparedRules.length;
+        ruleIndex += 1
+      ) {
+        const rule = preparedRules[ruleIndex];
         if (
-          currentPath !== sourcePath &&
-          !currentPath.startsWith(`${sourcePath}/`)
+          currentPath !== rule.sourcePath &&
+          !currentPath.startsWith(rule.sourcePathWithSlash)
         ) {
           continue;
         }
 
-        currentPath = `${rule.destinationPath}${currentPath.slice(sourcePath.length)}`;
+        currentPath = `${rule.destinationPath}${currentPath.slice(rule.sourcePathLength)}`;
       }
 
-      this.files[fileIndex] = currentPath;
+      if (currentPath !== originalPath) {
+        originalPathByTouchedIndex.set(fileIndex, originalPath);
+        this.files[fileIndex] = currentPath;
+      }
     }
 
     remapRules.length = 0;
-    this.rebuildFileIndexByPath(this.files);
+
+    if (
+      originalPathByTouchedIndex.size === 0 ||
+      this.fileIndexByPath.size === 0
+    ) {
+      return;
+    }
+
+    if (originalPathByTouchedIndex.size > 4096) {
+      this.fileIndexByPath.clear();
+      return;
+    }
+
+    for (const originalPath of originalPathByTouchedIndex.values()) {
+      this.fileIndexByPath.delete(originalPath);
+    }
+    for (const fileIndex of originalPathByTouchedIndex.keys()) {
+      this.fileIndexByPath.set(this.files[fileIndex], fileIndex);
+    }
   }
 
   private getOrCreatePathTree(): MutablePathTree {
     if (this.pathTree == null) {
       this.applyPendingFileSnapshotPrefixRemaps();
-      this.materializePendingPathPrefixRemaps();
       this.pathTree = MutablePathTree.fromFiles(this.files);
       this.filesPendingPathTreeSync = false;
       this.fileIndexByPath.clear();
@@ -899,14 +943,20 @@ export class FileTreeModel {
   }
 
   private ensureStableIdForPath(path: string): string {
-    const existingId = this.pathToIdMap.get(path);
+    const existingId = this.resolveIdForPath(path);
     if (existingId != null) {
       return existingId;
     }
 
-    const allocatedId = this.allocateStableIdForPath(path);
-    this.pathToIdMap.set(path, allocatedId);
-    this.idToPathMap.set(allocatedId, path);
+    const canonicalPath = this.remapPathBackward(path);
+    const canonicalExistingId = this.pathToIdMap.get(canonicalPath);
+    if (canonicalExistingId != null) {
+      return canonicalExistingId;
+    }
+
+    const allocatedId = this.allocateStableIdForPath(canonicalPath);
+    this.pathToIdMap.set(canonicalPath, allocatedId);
+    this.idToPathMap.set(allocatedId, canonicalPath);
     return allocatedId;
   }
 
@@ -957,7 +1007,7 @@ export class FileTreeModel {
       }
       visited.add(id);
 
-      const nodePath = this.idToPathMap.get(id);
+      const nodePath = this.getResolvedPathForId(id);
       if (
         shouldRemovePath != null &&
         nodePath != null &&
@@ -996,7 +1046,7 @@ export class FileTreeModel {
     updates: Array<{ id: string; oldPath: string; newPath: string }>;
     scannedNodeCount: number;
   } {
-    const sourceId = this.pathToIdMap.get(sourcePath);
+    const sourceId = this.resolveIdForPath(sourcePath);
     if (sourceId == null) {
       return { updates: [], scannedNodeCount: 0 };
     }
@@ -1016,39 +1066,55 @@ export class FileTreeModel {
       scannedNodeCount += 1;
 
       const node = this.tree.get(id);
-      const oldPath = this.idToPathMap.get(id);
+      const canonicalPath = this.idToPathMap.get(id);
+      const resolvedPath =
+        canonicalPath == null
+          ? undefined
+          : this.remapPathForward(canonicalPath);
       const remappedPath =
-        oldPath == null
+        resolvedPath == null
           ? null
-          : remapPathWithPrefix(oldPath, sourcePath, destinationPath);
+          : remapPathWithPrefix(resolvedPath, sourcePath, destinationPath);
 
       if (
-        oldPath != null &&
+        canonicalPath != null &&
+        resolvedPath != null &&
         remappedPath != null &&
-        remappedPath !== oldPath &&
+        remappedPath !== resolvedPath &&
         !updatedIds.has(id)
       ) {
-        updates.push({ id, oldPath, newPath: remappedPath });
+        updates.push({
+          id,
+          oldPath: canonicalPath,
+          newPath: this.remapPathBackward(remappedPath),
+        });
         updatedIds.add(id);
       }
 
       if (
-        oldPath != null &&
+        canonicalPath != null &&
+        resolvedPath != null &&
         remappedPath != null &&
-        remappedPath !== oldPath &&
+        remappedPath !== resolvedPath &&
         node?.children?.direct != null &&
-        !oldPath.startsWith(FLATTENED_PREFIX)
+        !resolvedPath.startsWith(FLATTENED_PREFIX)
       ) {
-        const flattenedAliasPath = `${FLATTENED_PREFIX}${oldPath}`;
-        const flattenedAliasId = this.pathToIdMap.get(flattenedAliasPath);
+        const flattenedAliasPath = `${FLATTENED_PREFIX}${resolvedPath}`;
+        const flattenedAliasId = this.resolveIdForPath(flattenedAliasPath);
         if (flattenedAliasId != null && !updatedIds.has(flattenedAliasId)) {
-          updates.push({
-            id: flattenedAliasId,
-            oldPath: flattenedAliasPath,
-            newPath: `${FLATTENED_PREFIX}${remappedPath}`,
-          });
-          updatedIds.add(flattenedAliasId);
-          scannedNodeCount += 1;
+          const flattenedAliasCanonicalPath =
+            this.idToPathMap.get(flattenedAliasId);
+          if (flattenedAliasCanonicalPath != null) {
+            updates.push({
+              id: flattenedAliasId,
+              oldPath: flattenedAliasCanonicalPath,
+              newPath: this.remapPathBackward(
+                `${FLATTENED_PREFIX}${remappedPath}`
+              ),
+            });
+            updatedIds.add(flattenedAliasId);
+            scannedNodeCount += 1;
+          }
         }
       }
 
@@ -1104,8 +1170,13 @@ export class FileTreeModel {
         continue;
       }
 
-      const id = this.pathToIdMap.get(rule.sourcePath);
+      const id = this.resolveIdForPath(rule.sourcePath);
       if (id == null || updatedIds.has(id)) {
+        continue;
+      }
+
+      const canonicalSourcePath = this.idToPathMap.get(id);
+      if (canonicalSourcePath == null) {
         continue;
       }
 
@@ -1113,8 +1184,8 @@ export class FileTreeModel {
       updatedIds.add(id);
       updates.push({
         id,
-        oldPath: rule.sourcePath,
-        newPath: rule.destinationPath,
+        oldPath: canonicalSourcePath,
+        newPath: this.remapPathBackward(rule.destinationPath),
       });
     }
 
@@ -1290,7 +1361,7 @@ export class FileTreeModel {
         !pathTree.hasFolder(normalizedFolderPath)
       ) {
         let removedFolder = false;
-        const missingFolderId = this.pathToIdMap.get(normalizedFolderPath);
+        const missingFolderId = this.resolveIdForPath(normalizedFolderPath);
         if (missingFolderId != null) {
           const subtreePrefix = `${normalizedFolderPath}/`;
           this.removeSubtreeById(missingFolderId, (path) => {
@@ -1357,7 +1428,7 @@ export class FileTreeModel {
       if (canReuseDirectChildren) {
         for (let index = 0; index < previousDirectChildren.length; index += 1) {
           const previousChildId = previousDirectChildren[index];
-          const previousChildPath = this.idToPathMap.get(previousChildId);
+          const previousChildPath = this.getResolvedPathForId(previousChildId);
           if (
             previousChildPath == null ||
             getParentPath(previousChildPath) !== normalizedFolderPath ||
@@ -1415,7 +1486,8 @@ export class FileTreeModel {
               continue;
             }
 
-            const previousChildPath = this.idToPathMap.get(previousChildId);
+            const previousChildPath =
+              this.getResolvedPathForId(previousChildId);
             if (previousChildPath == null) {
               continue;
             }
@@ -1448,7 +1520,7 @@ export class FileTreeModel {
         const flattenedPath = `${FLATTENED_PREFIX}${endpointPath}`;
         const flattenedId = this.ensureStableIdForPath(flattenedPath);
 
-        const endpointId = this.pathToIdMap.get(endpointPath);
+        const endpointId = this.resolveIdForPath(endpointPath);
         const endpointNode =
           endpointId != null ? this.tree.get(endpointId) : undefined;
         const endpointChildren = endpointNode?.children;
@@ -1504,7 +1576,7 @@ export class FileTreeModel {
 
         if (dirtyChildPaths != null && dirtyChildPaths.size > 0) {
           for (const dirtyChildPath of dirtyChildPaths) {
-            const dirtyChildId = this.pathToIdMap.get(dirtyChildPath);
+            const dirtyChildId = this.resolveIdForPath(dirtyChildPath);
             if (dirtyChildId == null) {
               continue;
             }
@@ -1618,7 +1690,7 @@ export class FileTreeModel {
       let nextHasSingleFolderChild = false;
       if (canReuseDirectChildren) {
         if (directChildIds.length === 1) {
-          const onlyChildPath = this.idToPathMap.get(directChildIds[0]);
+          const onlyChildPath = this.getResolvedPathForId(directChildIds[0]);
           nextHasSingleFolderChild =
             onlyChildPath != null && pathTree.hasFolder(onlyChildPath);
         }
@@ -1666,6 +1738,16 @@ export class FileTreeModel {
     return this.version;
   }
 
+  /**
+   * Prepares mutable indexes used by structural mutations (add/delete/move).
+   *
+   * This lets callers shift one-time index construction cost out of a hot
+   * interaction path (for example: prime during initial mount, then mutate).
+   */
+  prepareMutationIndexes(): void {
+    this.getOrCreatePathTree();
+  }
+
   getFiles(): string[] {
     this.syncFilesSnapshotFromPathTree();
     this.applyPendingFileSnapshotPrefixRemaps();
@@ -1700,6 +1782,7 @@ export class FileTreeModel {
   }
 
   replaceAll(files: string[]): void {
+    this.materializePendingPathPrefixRemaps();
     const builtIndex = buildStableIndexFromFiles(
       files,
       this.sortComparator,
@@ -1709,6 +1792,205 @@ export class FileTreeModel {
     );
     this.applyBuiltIndex(builtIndex);
     this.emitMutation({ kind: 'replace-all' });
+  }
+
+  /**
+   * Rebinds a single source path to a destination path while preserving its
+   * stable ID. Used for direct file moves where no subtree-wide remap is needed.
+   */
+  private remapDirectPath(
+    sourcePath: string,
+    destinationPath: string
+  ): boolean {
+    const sourceId = this.resolveIdForPath(sourcePath);
+    if (sourceId == null) {
+      return false;
+    }
+
+    const existingDestinationId = this.resolveIdForPath(destinationPath);
+    if (existingDestinationId != null && existingDestinationId !== sourceId) {
+      return false;
+    }
+
+    const canonicalSourcePath = this.remapPathBackward(sourcePath);
+    const canonicalDestinationPath = this.remapPathBackward(destinationPath);
+
+    this.pathToIdMap.delete(canonicalSourcePath);
+    this.pathToIdMap.set(canonicalDestinationPath, sourceId);
+    this.idToPathMap.set(sourceId, canonicalDestinationPath);
+
+    const node = this.tree.get(sourceId);
+    if (node != null) {
+      node.path = canonicalDestinationPath;
+      node.name = getLeafName(destinationPath);
+    }
+
+    return true;
+  }
+
+  private hasFastMoveCollision(
+    pathTree: MutablePathTree,
+    fileRules: readonly PlannedMoveRule[],
+    folderRules: readonly PlannedMoveRule[]
+  ): boolean {
+    const sourcePaths = new Set<string>();
+    for (let index = 0; index < fileRules.length; index += 1) {
+      sourcePaths.add(fileRules[index].sourcePath);
+    }
+    for (let index = 0; index < folderRules.length; index += 1) {
+      sourcePaths.add(folderRules[index].sourcePath);
+    }
+
+    const destinationPaths = new Set<string>();
+    const allRules = [...fileRules, ...folderRules];
+
+    for (let index = 0; index < allRules.length; index += 1) {
+      const rule = allRules[index];
+      if (destinationPaths.has(rule.destinationPath)) {
+        return true;
+      }
+      destinationPaths.add(rule.destinationPath);
+
+      if (sourcePaths.has(rule.destinationPath)) {
+        return true;
+      }
+
+      if (
+        pathTree.hasPath(rule.destinationPath) &&
+        !sourcePaths.has(rule.destinationPath)
+      ) {
+        return true;
+      }
+
+      const destinationParentPath = getParentPath(rule.destinationPath);
+      if (
+        destinationParentPath !== ROOT_ID &&
+        pathTree.hasFile(destinationParentPath)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Fast-path move application for collision-free operations.
+   *
+   * This avoids per-descendant remap scans by queuing folder prefix remaps and
+   * only rebinding direct file paths that actually moved.
+   */
+  private tryApplyCollisionFreeMoveRules(
+    pathTree: MutablePathTree,
+    fileRules: readonly PlannedMoveRule[],
+    folderRules: readonly PlannedMoveRule[]
+  ): FileTreeModelMoveResult | null {
+    if (fileRules.length === 0 && folderRules.length === 0) {
+      return { ok: true, mutation: null };
+    }
+
+    if (this.hasFastMoveCollision(pathTree, fileRules, folderRules)) {
+      return null;
+    }
+
+    const movedRules: PlannedMoveRule[] = [];
+
+    for (let index = 0; index < fileRules.length; index += 1) {
+      const rule = fileRules[index];
+      const { parentPath, baseName } = splitPath(rule.destinationPath);
+      const moveResult = pathTree.movePath(
+        rule.sourcePath,
+        parentPath === '' ? ROOT_ID : parentPath,
+        baseName,
+        'file'
+      );
+      if (moveResult !== 'ok') {
+        return null;
+      }
+
+      if (!this.remapDirectPath(rule.sourcePath, rule.destinationPath)) {
+        return null;
+      }
+
+      movedRules.push(rule);
+    }
+
+    for (let index = 0; index < folderRules.length; index += 1) {
+      const rule = folderRules[index];
+      const { parentPath, baseName } = splitPath(rule.destinationPath);
+      const moveResult = pathTree.movePath(
+        rule.sourcePath,
+        parentPath === '' ? ROOT_ID : parentPath,
+        baseName,
+        'folder'
+      );
+      if (moveResult !== 'ok') {
+        return null;
+      }
+
+      const folderId = this.resolveIdForPath(rule.sourcePath);
+      if (folderId != null) {
+        const folderNode = this.tree.get(folderId);
+        if (folderNode != null) {
+          folderNode.name = getLeafName(rule.destinationPath);
+        }
+      }
+
+      this.queuePathPrefixRemap(rule.sourcePath, rule.destinationPath);
+      movedRules.push(rule);
+    }
+
+    if (movedRules.length === 0) {
+      return { ok: true, mutation: null };
+    }
+
+    this.setModelCounter('model.move.remapScannedNodes', movedRules.length);
+    this.setModelCounter('model.move.remapUpdatedNodes', movedRules.length);
+
+    this.adoptPathTreeFilesReference(pathTree);
+
+    const affectedFolderPaths = new Set<string>();
+    const affectedParentIdsSet = new Set<string>();
+
+    for (let index = 0; index < movedRules.length; index += 1) {
+      const rule = movedRules[index];
+      const sourceParentPath = getParentPath(rule.sourcePath);
+      const destinationParentPath = getParentPath(rule.destinationPath);
+
+      affectedFolderPaths.add(sourceParentPath);
+      affectedFolderPaths.add(destinationParentPath);
+
+      affectedParentIdsSet.add(this.resolveAncestorId(sourceParentPath));
+      affectedParentIdsSet.add(this.resolveAncestorId(destinationParentPath));
+    }
+
+    if (affectedFolderPaths.size === 0) {
+      affectedFolderPaths.add(ROOT_ID);
+    }
+
+    this.rebuildFolderNodesFromPathTree(pathTree, affectedFolderPaths);
+    this.prunePendingFlattenedNodes();
+
+    const movedPaths = movedRules.map((rule) => ({
+      sourcePath: rule.sourcePath,
+      destinationPath: rule.destinationPath,
+      isFolder: rule.isFolder,
+    }));
+
+    const mutation = {
+      kind: 'move-paths' as const,
+      movedPaths,
+      affectedParentIds: [...affectedParentIdsSet],
+    };
+    this.emitMutation(mutation);
+
+    return {
+      ok: true,
+      mutation: {
+        ...mutation,
+        version: this.version,
+      },
+    };
   }
 
   movePaths({
@@ -1782,7 +2064,6 @@ export class FileTreeModel {
       });
     }
 
-    const folderDestinations = new Map<string, string>();
     for (const selectedFolder of selectedFolders) {
       if (
         normalizedTarget === selectedFolder ||
@@ -1796,12 +2077,20 @@ export class FileTreeModel {
         continue;
       }
 
-      folderDestinations.set(selectedFolder, destinationPath);
       folderRules.push({
         sourcePath: selectedFolder,
         destinationPath,
         isFolder: true,
       });
+    }
+
+    const fastPathResult = this.tryApplyCollisionFreeMoveRules(
+      pathTree,
+      fileRules,
+      folderRules
+    );
+    if (fastPathResult != null) {
+      return fastPathResult;
     }
 
     const plannedActions: Array<{
@@ -2297,126 +2586,49 @@ export class FileTreeModel {
       };
     }
 
-    if (this.pathTree == null) {
-      this.queueFileSnapshotPrefixRemap(
+    if (this.pathTree != null) {
+      const folderRenameResult = this.pathTree.renamePath(
         normalizedSourcePath,
-        normalizedDestinationPath
+        normalizedDestinationPath,
+        'folder'
       );
-      this.queuePathPrefixRemap(
-        normalizedSourcePath,
-        normalizedDestinationPath
-      );
-
-      node.name = getLeafName(normalizedDestinationPath);
-
-      this.sortChildren(parentId);
-      const childrenOrderChanged = this.didParentChildrenOrderChange(
-        parentId,
-        parentChildrenBeforeSort
-      );
-      this.setModelCounter('model.rename.folder.remapScannedNodes', 1);
-      this.setModelCounter('model.rename.folder.remapUpdatedNodes', 1);
-
-      const mutation = {
-        kind: 'rename-path' as const,
-        sourcePath: normalizedSourcePath,
-        destinationPath: normalizedDestinationPath,
-        isFolder: true,
-        parentId,
-        nodeId,
-        childrenOrderChanged,
-      };
-      this.emitMutation(mutation);
-      return {
-        ok: true,
-        mutation: { ...mutation, version: this.version },
-      };
-    }
-
-    const {
-      updates: pathUpdates,
-      scannedNodeCount: folderRenameScannedNodeCount,
-    } = this.collectSubtreePathUpdates(
-      normalizedSourcePath,
-      normalizedDestinationPath
-    );
-    this.setModelCounter(
-      'model.rename.folder.remapScannedNodes',
-      folderRenameScannedNodeCount
-    );
-    this.setModelCounter(
-      'model.rename.folder.remapUpdatedNodes',
-      pathUpdates.length
-    );
-
-    if (pathUpdates.length === 0) {
-      return {
-        ok: false,
-        error: 'Could not find the selected folder to rename.',
-      };
-    }
-
-    const updatedPathSet = new Set(pathUpdates.map((entry) => entry.oldPath));
-    for (const { id, newPath } of pathUpdates) {
-      const existingId = this.resolveIdForPath(newPath);
-      if (
-        existingId != null &&
-        existingId !== id &&
-        !updatedPathSet.has(newPath)
-      ) {
+      if (folderRenameResult === 'missing') {
+        return {
+          ok: false,
+          error: 'Could not find the selected folder to rename.',
+        };
+      }
+      if (folderRenameResult === 'collision') {
         return {
           ok: false,
           error: `"${normalizedDestinationPath}" already exists.`,
         };
       }
-    }
-
-    const folderRenameResult = this.pathTree.renamePath(
-      normalizedSourcePath,
-      normalizedDestinationPath,
-      'folder'
-    );
-    if (folderRenameResult === 'missing') {
-      return {
-        ok: false,
-        error: 'Could not find the selected folder to rename.',
-      };
-    }
-    if (folderRenameResult === 'collision') {
-      return {
-        ok: false,
-        error: `"${normalizedDestinationPath}" already exists.`,
-      };
-    }
-    if (folderRenameResult === 'invalid') {
-      return {
-        ok: false,
-        error: 'Could not rename the selected folder.',
-      };
-    }
-
-    for (const { oldPath } of pathUpdates) {
-      this.pathToIdMap.delete(oldPath);
-    }
-    for (const { id, newPath } of pathUpdates) {
-      this.pathToIdMap.set(newPath, id);
-      this.idToPathMap.set(id, newPath);
-      const item = this.tree.get(id);
-      if (item != null) {
-        item.path = newPath;
-        if (id === nodeId) {
-          item.name = getLeafName(newPath);
-        }
+      if (folderRenameResult === 'invalid') {
+        return {
+          ok: false,
+          error: 'Could not rename the selected folder.',
+        };
       }
+
+      this.adoptPathTreeFilesReference(this.pathTree);
+    } else {
+      this.queueFileSnapshotPrefixRemap(
+        normalizedSourcePath,
+        normalizedDestinationPath
+      );
     }
 
-    this.adoptPathTreeFilesReference(this.pathTree);
+    this.queuePathPrefixRemap(normalizedSourcePath, normalizedDestinationPath);
+    node.name = getLeafName(normalizedDestinationPath);
 
     this.sortChildren(parentId);
     const childrenOrderChanged = this.didParentChildrenOrderChange(
       parentId,
       parentChildrenBeforeSort
     );
+    this.setModelCounter('model.rename.folder.remapScannedNodes', 1);
+    this.setModelCounter('model.rename.folder.remapUpdatedNodes', 1);
 
     const mutation = {
       kind: 'rename-path' as const,

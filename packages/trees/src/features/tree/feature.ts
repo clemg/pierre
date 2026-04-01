@@ -27,9 +27,30 @@ export const treeFeature: FeatureImplementation<any> = {
   treeInstance: {
     getItemsMeta: ({ tree }) => {
       const dataRef = tree.getDataRef<TreeDataRef>();
+      const cachedVisibleIds = dataRef.current.visibleItemIds;
       const visibleIds =
-        dataRef.current.visibleItemIds ??
-        tree.getItems().map((item) => item.getId());
+        cachedVisibleIds ??
+        (() => {
+          const visibleCount =
+            dataRef.current.visibleItemCount ?? tree.getVisibleItemCount();
+          const ids = new Array<string>(visibleCount);
+          let resolvedCount = 0;
+
+          for (let index = 0; index < visibleCount; index += 1) {
+            const visibleId = tree.getVisibleItemIdAt(index);
+            if (visibleId == null) {
+              break;
+            }
+            ids[index] = visibleId;
+            resolvedCount += 1;
+          }
+
+          if (resolvedCount !== visibleCount) {
+            ids.length = resolvedCount;
+          }
+
+          return ids;
+        })();
       return visibleIds.map((itemId) =>
         tree.getItemInstance(itemId).getItemMeta()
       );

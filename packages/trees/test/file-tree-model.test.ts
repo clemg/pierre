@@ -408,6 +408,192 @@ describe('FileTreeModel', () => {
       true
     );
     expect(nextFiles.some((path) => path.startsWith('root-0/'))).toBe(false);
+    expect(getCounter(counters, 'model.snapshot.fileIndexRebuildCount')).toBe(
+      1
+    );
+  });
+
+  test('chained deferred folder remaps reuse snapshot file indices', () => {
+    const { counters, instrumentation } = createCounterCollector();
+    const model = FileTreeModel.fromFiles(
+      ['root-0/a.ts', 'root-0/b.ts', 'docs/readme.md'],
+      {
+        sortComparator: false,
+        benchmarkInstrumentation: instrumentation,
+      }
+    );
+
+    expect(
+      model.renamePath({
+        sourcePath: 'root-0',
+        destinationPath: 'root-a',
+        isFolder: true,
+      }).ok
+    ).toBe(true);
+
+    expect(
+      model.renamePath({
+        sourcePath: 'root-a',
+        destinationPath: 'root-b',
+        isFolder: true,
+      }).ok
+    ).toBe(true);
+
+    expect(model.getFiles()).toEqual([
+      'root-b/a.ts',
+      'root-b/b.ts',
+      'docs/readme.md',
+    ]);
+    expect(getCounter(counters, 'model.snapshot.fileIndexRebuildCount')).toBe(
+      1
+    );
+  });
+
+  test('file rename after deferred folder remap reuses snapshot file indices', () => {
+    const { counters, instrumentation } = createCounterCollector();
+    const model = FileTreeModel.fromFiles(
+      ['root-0/a.ts', 'root-0/b.ts', 'docs/readme.md'],
+      {
+        sortComparator: false,
+        benchmarkInstrumentation: instrumentation,
+      }
+    );
+
+    expect(
+      model.renamePath({
+        sourcePath: 'root-0',
+        destinationPath: 'root-a',
+        isFolder: true,
+      }).ok
+    ).toBe(true);
+
+    expect(
+      model.renamePath({
+        sourcePath: 'root-a/a.ts',
+        destinationPath: 'root-a/a-renamed.ts',
+        isFolder: false,
+      }).ok
+    ).toBe(true);
+
+    expect(model.getFiles()).toEqual([
+      'root-a/a-renamed.ts',
+      'root-a/b.ts',
+      'docs/readme.md',
+    ]);
+    expect(getCounter(counters, 'model.snapshot.fileIndexRebuildCount')).toBe(
+      1
+    );
+  });
+
+  test('keeps deferred folder remaps when addPaths creates the path tree', () => {
+    const { counters, instrumentation } = createCounterCollector();
+    const model = FileTreeModel.fromFiles(
+      ['root-0/a.ts', 'docs/readme.md', 'other/keep.md'],
+      {
+        sortComparator: false,
+        benchmarkInstrumentation: instrumentation,
+      }
+    );
+
+    const syncIndex = model.getSyncIndex();
+    const renamedRootId = syncIndex.pathToId.get('root-0');
+    expect(renamedRootId).toBeDefined();
+    if (renamedRootId == null) {
+      throw new Error('Expected stable ID for root-0');
+    }
+
+    expect(
+      model.renamePath({
+        sourcePath: 'root-0',
+        destinationPath: 'root-0-renamed',
+        isFolder: true,
+      }).ok
+    ).toBe(true);
+
+    expect(model.addPaths({ paths: ['docs/new.ts'] }).ok).toBe(true);
+
+    expect(syncIndex.pathToId.get('root-0-renamed')).toBe(renamedRootId);
+    expect(model.getPathForId(renamedRootId)).toBe('root-0-renamed');
+    expect(
+      getCounter(counters, 'model.pathPrefixRemaps.materializedCount')
+    ).toBe(0);
+  });
+
+  test('keeps deferred folder remaps when movePaths creates the path tree', () => {
+    const { counters, instrumentation } = createCounterCollector();
+    const model = FileTreeModel.fromFiles(
+      ['root-0/a.ts', 'docs/readme.md', 'other/keep.md'],
+      {
+        sortComparator: false,
+        benchmarkInstrumentation: instrumentation,
+      }
+    );
+
+    const syncIndex = model.getSyncIndex();
+    const renamedRootId = syncIndex.pathToId.get('root-0');
+    const movedFileId = syncIndex.pathToId.get('docs/readme.md');
+    expect(renamedRootId).toBeDefined();
+    expect(movedFileId).toBeDefined();
+    if (renamedRootId == null || movedFileId == null) {
+      throw new Error('Expected stable IDs for deferred move remap test');
+    }
+
+    expect(
+      model.renamePath({
+        sourcePath: 'root-0',
+        destinationPath: 'root-0-renamed',
+        isFolder: true,
+      }).ok
+    ).toBe(true);
+
+    expect(
+      model.movePaths({
+        draggedPaths: ['docs/readme.md'],
+        targetPath: 'other',
+      }).ok
+    ).toBe(true);
+
+    expect(syncIndex.pathToId.get('other/readme.md')).toBe(movedFileId);
+    expect(syncIndex.pathToId.get('root-0-renamed')).toBe(renamedRootId);
+    expect(model.getPathForId(renamedRootId)).toBe('root-0-renamed');
+    expect(
+      getCounter(counters, 'model.pathPrefixRemaps.materializedCount')
+    ).toBe(0);
+  });
+
+  test('keeps deferred folder remaps when deletePaths creates the path tree', () => {
+    const { counters, instrumentation } = createCounterCollector();
+    const model = FileTreeModel.fromFiles(
+      ['root-0/a.ts', 'docs/readme.md', 'other/keep.md'],
+      {
+        sortComparator: false,
+        benchmarkInstrumentation: instrumentation,
+      }
+    );
+
+    const syncIndex = model.getSyncIndex();
+    const renamedRootId = syncIndex.pathToId.get('root-0');
+    expect(renamedRootId).toBeDefined();
+    if (renamedRootId == null) {
+      throw new Error('Expected stable ID for root-0');
+    }
+
+    expect(
+      model.renamePath({
+        sourcePath: 'root-0',
+        destinationPath: 'root-0-renamed',
+        isFolder: true,
+      }).ok
+    ).toBe(true);
+
+    expect(model.deletePaths({ paths: ['docs/readme.md'] }).ok).toBe(true);
+
+    expect(syncIndex.pathToId.get('docs/readme.md')).toBeUndefined();
+    expect(syncIndex.pathToId.get('root-0-renamed')).toBe(renamedRootId);
+    expect(model.getPathForId(renamedRootId)).toBe('root-0-renamed');
+    expect(
+      getCounter(counters, 'model.pathPrefixRemaps.materializedCount')
+    ).toBe(0);
   });
 
   test('keeps file move remap work constant with many unrelated files', () => {

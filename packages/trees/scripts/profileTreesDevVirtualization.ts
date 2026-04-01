@@ -7,7 +7,14 @@ import { fileURLToPath } from 'node:url';
 type ProfileActionName =
   | 'initial-render'
   | 'rename-file'
-  | 'rename-root-folder';
+  | 'rename-root-folder'
+  | 'add-file-root'
+  | 'add-file-deep'
+  | 'delete-file-deep'
+  | 'delete-root-folder'
+  | 'move-file-to-root'
+  | 'move-folder-to-root'
+  | 'move-root-folder';
 
 interface ProfileConfig {
   browserUrl: string;
@@ -346,6 +353,13 @@ interface VirtualizationFixtureApi {
   runInitialRender: () => Promise<PageRenderSummary>;
   runRenameFile: () => Promise<PageRenderSummary>;
   runRenameRootFolder: () => Promise<PageRenderSummary>;
+  runAddFileRoot: () => Promise<PageRenderSummary>;
+  runAddFileDeep: () => Promise<PageRenderSummary>;
+  runDeleteFileDeep: () => Promise<PageRenderSummary>;
+  runDeleteRootFolder: () => Promise<PageRenderSummary>;
+  runMoveFileToRoot: () => Promise<PageRenderSummary>;
+  runMoveFolderToRoot: () => Promise<PageRenderSummary>;
+  runMoveRootFolder: () => Promise<PageRenderSummary>;
 }
 
 declare global {
@@ -369,6 +383,13 @@ const KNOWN_ACTION_NAMES = new Set<ProfileActionName>([
   'initial-render',
   'rename-file',
   'rename-root-folder',
+  'add-file-root',
+  'add-file-deep',
+  'delete-file-deep',
+  'delete-root-folder',
+  'move-file-to-root',
+  'move-folder-to-root',
+  'move-root-folder',
 ]);
 const KNOWN_WORKLOAD_NAMES = new Set([
   'pierre-snapshot',
@@ -528,6 +549,9 @@ function printHelpAndExit(): never {
   );
   console.log(
     `  --action <name>        Profile action to run (repeatable, default: ${DEFAULT_ACTIONS.join(', ')})`
+  );
+  console.log(
+    '  --all-actions          Run every known profile action (render + all mutation workloads)'
   );
   console.log(
     `  --timeout <ms>         Navigation/render timeout in milliseconds (default: ${DEFAULT_TIMEOUT_MS})`
@@ -740,6 +764,11 @@ function parseArgs(argv: string[]): ProfileConfig {
 
     if (rawArg === '--dominant-trace-events') {
       config.showDominantTraceEvents = true;
+      continue;
+    }
+
+    if (rawArg === '--all-actions') {
+      config.actions = [...KNOWN_ACTION_NAMES];
       continue;
     }
 
@@ -2583,6 +2612,20 @@ function getActionMethodName(actionName: ProfileActionName): string {
       return 'runRenameFile';
     case 'rename-root-folder':
       return 'runRenameRootFolder';
+    case 'add-file-root':
+      return 'runAddFileRoot';
+    case 'add-file-deep':
+      return 'runAddFileDeep';
+    case 'delete-file-deep':
+      return 'runDeleteFileDeep';
+    case 'delete-root-folder':
+      return 'runDeleteRootFolder';
+    case 'move-file-to-root':
+      return 'runMoveFileToRoot';
+    case 'move-folder-to-root':
+      return 'runMoveFolderToRoot';
+    case 'move-root-folder':
+      return 'runMoveRootFolder';
     default:
       return 'runInitialRender';
   }
@@ -2596,6 +2639,20 @@ function getActionLabel(actionName: ProfileActionName): string {
       return 'Rename file';
     case 'rename-root-folder':
       return 'Rename root folder';
+    case 'add-file-root':
+      return 'Add file (root)';
+    case 'add-file-deep':
+      return 'Add file (deep)';
+    case 'delete-file-deep':
+      return 'Delete file (deep)';
+    case 'delete-root-folder':
+      return 'Delete root folder';
+    case 'move-file-to-root':
+      return 'Move file to root';
+    case 'move-folder-to-root':
+      return 'Move folder to root';
+    case 'move-root-folder':
+      return 'Move root folder';
     default:
       return actionName;
   }
@@ -3159,7 +3216,7 @@ function printActionTimingHumanSummary(
           'right',
           'right',
         ],
-        maxWidths: [28, 18, 14, 14, 18, 14, 8],
+        maxWidths: [28, 26, 14, 14, 18, 14, 8],
       }
     )
   );
@@ -3686,7 +3743,7 @@ function printRunsHumanSummary(output: ProfileBenchmarkOutput): void {
   console.log('Benchmark');
   console.log(
     createTable(['Field', 'Value'], runInfoRows, {
-      maxWidths: [22, 96],
+      maxWidths: [22, 140],
     })
   );
 

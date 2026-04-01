@@ -5,7 +5,6 @@ type MutablePathTreeMoveResult = 'ok' | 'missing' | 'collision' | 'invalid';
 interface MutablePathTreeBaseNode {
   kind: 'folder' | 'file';
   name: string;
-  path: string;
   parent: MutablePathTreeFolderNode | null;
 }
 
@@ -36,15 +35,11 @@ function splitPath(path: string): { parentPath: string; baseName: string } {
   };
 }
 
-function joinPath(parentPath: string, baseName: string): string {
-  return parentPath === '' ? baseName : `${parentPath}/${baseName}`;
-}
-
 /**
  * Mutable parent-pointer tree for file paths.
  *
- * Move/rename/delete logic can mutate this structure directly instead of
- * repeatedly rescanning and slicing full path arrays.
+ * Paths are derived lazily from parent/name pointers instead of being eagerly
+ * rewritten through the full descendant subtree on every folder move/rename.
  */
 export class MutablePathTree {
   static fromFiles(files: string[]): MutablePathTree {
@@ -56,12 +51,10 @@ export class MutablePathTree {
   private readonly root: MutablePathTreeFolderNode = {
     kind: 'folder',
     name: 'root',
-    path: '',
     parent: null,
     children: new Map(),
   };
 
-  private readonly pathToNode = new Map<string, MutablePathTreeNode>();
   private headFile: MutablePathTreeFileNode | null = null;
   private tailFile: MutablePathTreeFileNode | null = null;
   private fileCount = 0;
@@ -71,7 +64,6 @@ export class MutablePathTree {
 
   replaceAll(files: string[]): void {
     this.root.children.clear();
-    this.pathToNode.clear();
     this.headFile = null;
     this.tailFile = null;
     this.fileCount = 0;
@@ -98,7 +90,7 @@ export class MutablePathTree {
   }
 
   hasPath(path: string): boolean {
-    return this.pathToNode.has(path);
+    return this.getNodeByPath(path) != null;
   }
 
   hasFile(path: string): boolean {
@@ -131,7 +123,6 @@ export class MutablePathTree {
     const node: MutablePathTreeFileNode = {
       kind: 'file',
       name: baseName,
-      path,
       parent,
       order: this.nextFileOrder,
       previous: this.tailFile,
@@ -140,7 +131,6 @@ export class MutablePathTree {
     this.nextFileOrder += 1;
 
     parent.children.set(baseName, node);
-    this.pathToNode.set(path, node);
 
     if (this.tailFile == null) {
       this.headFile = node;
@@ -169,8 +159,12 @@ export class MutablePathTree {
       return [];
     }
 
-    const nodesToDelete: MutablePathTreeFileNode[] = [];
     const seenPaths = new Set<string>();
+    const filesToDelete: Array<{
+      path: string;
+      node: MutablePathTreeFileNode;
+    }> = [];
+
     for (let index = 0; index < paths.length; index += 1) {
       const path = paths[index];
       if (seenPaths.has(path)) {
@@ -180,31 +174,19 @@ export class MutablePathTree {
 
       const node = this.getFile(path);
       if (node != null) {
-        nodesToDelete.push(node);
+        filesToDelete.push({ path, node });
       }
     }
 
-    if (nodesToDelete.length === 0) {
+    if (filesToDelete.length === 0) {
       return [];
     }
 
-    const deletedPathSet = new Set(nodesToDelete.map((node) => node.path));
-    for (let index = 0; index < nodesToDelete.length; index += 1) {
-      this.removeFileNode(nodesToDelete[index]);
+    for (let index = 0; index < filesToDelete.length; index += 1) {
+      this.removeFileNode(filesToDelete[index].node);
     }
 
-    const deletedPaths: string[] = [];
-    const emitted = new Set<string>();
-    for (let index = 0; index < paths.length; index += 1) {
-      const path = paths[index];
-      if (!deletedPathSet.has(path) || emitted.has(path)) {
-        continue;
-      }
-      emitted.add(path);
-      deletedPaths.push(path);
-    }
-
-    return deletedPaths;
+    return filesToDelete.map((entry) => entry.path);
   }
 
   deleteFolderPath(path: string): boolean {
@@ -241,13 +223,16 @@ export class MutablePathTree {
       return 'ok';
     }
 
-    if (this.pathToNode.has(destinationPath)) {
+    if (this.getNodeByPath(destinationPath) != null) {
       return 'collision';
     }
 
     const { parentPath, baseName } = splitPath(destinationPath);
     const expectedParent = node.parent;
-    if (expectedParent == null || expectedParent.path !== parentPath) {
+    if (
+      expectedParent == null ||
+      this.getNodePath(expectedParent) !== parentPath
+    ) {
       return 'invalid';
     }
 
@@ -294,7 +279,18 @@ export class MutablePathTree {
 
     const descendants = this.getDescendantFileNodes(folder);
     descendants.sort((left, right) => left.order - right.order);
-    return descendants.map((node) => node.path);
+
+    const folderPathCache = new Map<MutablePathTreeFolderNode, string>([
+      [this.root, ''],
+    ]);
+    const paths = new Array<string>(descendants.length);
+    for (let index = 0; index < descendants.length; index += 1) {
+      paths[index] = this.getFilePathCached(
+        descendants[index],
+        folderPathCache
+      );
+    }
+    return paths;
   }
 
   getDirectChildCount(folderPath: string): number {
@@ -320,19 +316,105 @@ export class MutablePathTree {
 
     const children: Array<{ path: string; kind: 'folder' | 'file' }> = [];
     for (const child of folder.children.values()) {
-      children.push({ path: child.path, kind: child.kind });
+      children.push({ path: this.getNodePath(child), kind: child.kind });
     }
     return children;
   }
 
+  private getNodeByPath(path: string): MutablePathTreeNode | undefined {
+    if (path.length === 0) {
+      return this.root;
+    }
+
+    const segments = path.split('/');
+    let current: MutablePathTreeFolderNode = this.root;
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      if (segment.length === 0) {
+        return undefined;
+      }
+
+      const child = current.children.get(segment);
+      if (child == null) {
+        return undefined;
+      }
+
+      if (index === segments.length - 1) {
+        return child;
+      }
+
+      if (child.kind !== 'folder') {
+        return undefined;
+      }
+
+      current = child;
+    }
+
+    return undefined;
+  }
+
   private getFile(path: string): MutablePathTreeFileNode | undefined {
-    const node = this.pathToNode.get(path);
+    const node = this.getNodeByPath(path);
     return node?.kind === 'file' ? node : undefined;
   }
 
   private getFolder(path: string): MutablePathTreeFolderNode | undefined {
-    const node = this.pathToNode.get(path);
+    if (path.length === 0) {
+      return this.root;
+    }
+
+    const node = this.getNodeByPath(path);
     return node?.kind === 'folder' ? node : undefined;
+  }
+
+  private getNodePath(
+    node: MutablePathTreeNode | MutablePathTreeFolderNode
+  ): string {
+    if (node.parent == null) {
+      return '';
+    }
+
+    const segments: string[] = [];
+    let current: MutablePathTreeNode | MutablePathTreeFolderNode | null = node;
+
+    while (current != null && current.parent != null) {
+      segments.push(current.name);
+      current = current.parent;
+    }
+
+    segments.reverse();
+    return segments.join('/');
+  }
+
+  private getFolderPathCached(
+    folder: MutablePathTreeFolderNode,
+    folderPathCache: Map<MutablePathTreeFolderNode, string>
+  ): string {
+    const cachedPath = folderPathCache.get(folder);
+    if (cachedPath != null) {
+      return cachedPath;
+    }
+
+    const parent = folder.parent;
+    if (parent == null) {
+      folderPathCache.set(folder, '');
+      return '';
+    }
+
+    const parentPath = this.getFolderPathCached(parent, folderPathCache);
+    const path =
+      parentPath === '' ? folder.name : `${parentPath}/${folder.name}`;
+    folderPathCache.set(folder, path);
+    return path;
+  }
+
+  private getFilePathCached(
+    file: MutablePathTreeFileNode,
+    folderPathCache: Map<MutablePathTreeFolderNode, string>
+  ): string {
+    const parentPath = this.getFolderPathCached(file.parent!, folderPathCache);
+    return parentPath === '' ? file.name : `${parentPath}/${file.name}`;
   }
 
   /**
@@ -345,7 +427,6 @@ export class MutablePathTree {
 
     const segments = path.split('/');
     let current = this.root;
-    let currentPath = '';
 
     for (let index = 0; index < segments.length; index += 1) {
       const segment = segments[index];
@@ -353,19 +434,16 @@ export class MutablePathTree {
         return null;
       }
 
-      currentPath = currentPath === '' ? segment : `${currentPath}/${segment}`;
       const existing = current.children.get(segment);
 
       if (existing == null) {
         const folder: MutablePathTreeFolderNode = {
           kind: 'folder',
           name: segment,
-          path: currentPath,
           parent: current,
           children: new Map(),
         };
         current.children.set(segment, folder);
-        this.pathToNode.set(currentPath, folder);
         current = folder;
         continue;
       }
@@ -389,16 +467,23 @@ export class MutablePathTree {
     }
 
     this.filesSnapshot.length = 0;
+    const folderPathCache = new Map<MutablePathTreeFolderNode, string>([
+      [this.root, ''],
+    ]);
+
     let current = this.headFile;
     while (current != null) {
-      this.filesSnapshot.push(current.path);
+      this.filesSnapshot.push(this.getFilePathCached(current, folderPathCache));
       current = current.next;
     }
     this.filesSnapshotDirty = false;
   }
 
   /**
-   * Moves/renames a node by rewiring parent links and rewriting subtree paths.
+   * Moves/renames a node by rewiring parent links only.
+   *
+   * Descendant paths are derived lazily from parent pointers, so large folder
+   * moves avoid eager subtree path rewrites.
    */
   private moveNode(
     node: MutablePathTreeNode,
@@ -429,7 +514,7 @@ export class MutablePathTree {
     node.name = nextBaseName;
     targetFolder.children.set(nextBaseName, node);
 
-    this.rewriteSubtreePaths(node);
+    this.filesSnapshotDirty = true;
     this.pruneEmptyFolders(currentParent);
     return 'ok';
   }
@@ -446,33 +531,6 @@ export class MutablePathTree {
       current = current.parent;
     }
     return false;
-  }
-
-  private rewriteSubtreePaths(rootNode: MutablePathTreeNode): void {
-    const stack: MutablePathTreeNode[] = [rootNode];
-
-    while (stack.length > 0) {
-      const node = stack.pop()!;
-      const oldPath = node.path;
-      const parentPath = node.parent?.path ?? '';
-      const nextPath = joinPath(parentPath, node.name);
-
-      if (oldPath !== nextPath) {
-        this.pathToNode.delete(oldPath);
-        node.path = nextPath;
-        this.pathToNode.set(nextPath, node);
-
-        if (node.kind === 'file') {
-          this.filesSnapshotDirty = true;
-        }
-      }
-
-      if (node.kind === 'folder') {
-        for (const child of node.children.values()) {
-          stack.push(child);
-        }
-      }
-    }
   }
 
   private getDescendantFileNodes(
@@ -497,7 +555,6 @@ export class MutablePathTree {
 
   private removeFileNode(node: MutablePathTreeFileNode): void {
     node.parent?.children.delete(node.name);
-    this.pathToNode.delete(node.path);
 
     const previous = node.previous;
     const next = node.next;
@@ -532,7 +589,6 @@ export class MutablePathTree {
         return;
       }
       parent.children.delete(current.name);
-      this.pathToNode.delete(current.path);
       current = parent;
     }
   }

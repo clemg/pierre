@@ -290,6 +290,8 @@ export class FileTree {
       },
     };
 
+    this.model.prepareMutationIndexes();
+
     this.model.subscribe((mutation) => {
       this.handleModelMutation(mutation);
     });

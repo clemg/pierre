@@ -70,7 +70,8 @@
       }
 
       [data-profile-render-button],
-      [data-profile-rename-button] {
+      [data-profile-action-button],
+      [data-profile-action-select] {
         padding: 10px 16px;
         border: 1px solid #d1d5db;
         border-radius: 10px;
@@ -78,11 +79,16 @@
         font-weight: 600;
         color: #111827;
         background: #ffffff;
+      }
+
+      [data-profile-render-button],
+      [data-profile-action-button] {
         cursor: pointer;
       }
 
       [data-profile-render-button]:disabled,
-      [data-profile-rename-button]:disabled {
+      [data-profile-action-button]:disabled,
+      [data-profile-action-select]:disabled {
         opacity: 0.65;
         cursor: progress;
       }
@@ -117,8 +123,19 @@
           </div>
           <div data-profile-actions>
             <button type="button" data-profile-render-button>Render</button>
-            <button type="button" data-profile-rename-button disabled>
-              Rename file
+            <select data-profile-action-select disabled>
+              <option value="rename-file">Rename file</option>
+              <option value="rename-root-folder">Rename root folder</option>
+              <option value="add-file-root">Add file (root)</option>
+              <option value="add-file-deep">Add file (deep)</option>
+              <option value="delete-file-deep">Delete file (deep)</option>
+              <option value="delete-root-folder">Delete root folder</option>
+              <option value="move-file-to-root">Move file to root</option>
+              <option value="move-folder-to-root">Move folder to root</option>
+              <option value="move-root-folder">Move root folder</option>
+            </select>
+            <button type="button" data-profile-action-button disabled>
+              Run action
             </button>
           </div>
         </div>
@@ -155,8 +172,11 @@
       const renderButton = document.querySelector(
         '[data-profile-render-button]'
       );
-      const renameButton = document.querySelector(
-        '[data-profile-rename-button]'
+      const actionSelect = document.querySelector(
+        '[data-profile-action-select]'
+      );
+      const actionButton = document.querySelector(
+        '[data-profile-action-button]'
       );
       const fileCountLabel = document.querySelector(
         '[data-profile-file-count]'
@@ -171,8 +191,12 @@
         throw new Error('Missing [data-profile-render-button] element.');
       }
 
-      if (!(renameButton instanceof HTMLButtonElement)) {
-        throw new Error('Missing [data-profile-rename-button] element.');
+      if (!(actionSelect instanceof HTMLSelectElement)) {
+        throw new Error('Missing [data-profile-action-select] element.');
+      }
+
+      if (!(actionButton instanceof HTMLButtonElement)) {
+        throw new Error('Missing [data-profile-action-button] element.');
       }
 
       if (!(fileCountLabel instanceof HTMLElement)) {
@@ -447,9 +471,228 @@
         return `${sourcePath}__renamed`;
       };
 
+      const getParentPath = (path) => {
+        const slashIndex = path.lastIndexOf('/');
+        return slashIndex < 0 ? 'root' : path.slice(0, slashIndex);
+      };
+
+      const getLeafName = (path) => {
+        const slashIndex = path.lastIndexOf('/');
+        return slashIndex < 0 ? path : path.slice(slashIndex + 1);
+      };
+
+      const getPathDepth = (path) => {
+        let depth = 1;
+        for (let index = 0; index < path.length; index += 1) {
+          if (path.charCodeAt(index) === 47) {
+            depth += 1;
+          }
+        }
+        return depth;
+      };
+
+      const collectTopLevelEntries = (files) => {
+        const entries = new Set();
+        for (const path of files) {
+          const slashIndex = path.indexOf('/');
+          entries.add(slashIndex < 0 ? path : path.slice(0, slashIndex));
+        }
+        return entries;
+      };
+
+      const createUniquePath = (candidatePath, existing) => {
+        if (!existing.has(candidatePath)) {
+          return candidatePath;
+        }
+
+        const slashIndex = candidatePath.lastIndexOf('/');
+        const directoryPrefix =
+          slashIndex >= 0 ? candidatePath.slice(0, slashIndex + 1) : '';
+        const basename =
+          slashIndex >= 0 ? candidatePath.slice(slashIndex + 1) : candidatePath;
+        const dotIndex = basename.lastIndexOf('.');
+        const stem = dotIndex > 0 ? basename.slice(0, dotIndex) : basename;
+        const extension = dotIndex > 0 ? basename.slice(dotIndex) : '';
+
+        let suffix = 2;
+        while (true) {
+          const nextPath = `${directoryPrefix}${stem}_${suffix}${extension}`;
+          if (!existing.has(nextPath)) {
+            return nextPath;
+          }
+          suffix += 1;
+        }
+      };
+
+      const selectDeepFilePath = (files, minimumDepth = 5) => {
+        for (const path of files) {
+          if (getPathDepth(path) >= minimumDepth) {
+            return path;
+          }
+        }
+
+        const fallbackPath = files[0];
+        if (typeof fallbackPath !== 'string') {
+          throw new Error('Unable to find a file path in fixture data.');
+        }
+
+        return fallbackPath;
+      };
+
+      const selectTopLevelFolderPair = (files) => {
+        let first = null;
+        let second = null;
+        const seen = new Set();
+
+        for (const path of files) {
+          const slashIndex = path.indexOf('/');
+          if (slashIndex <= 0) {
+            continue;
+          }
+
+          const topLevelFolder = path.slice(0, slashIndex);
+          if (seen.has(topLevelFolder)) {
+            continue;
+          }
+
+          seen.add(topLevelFolder);
+          if (first == null) {
+            first = topLevelFolder;
+            continue;
+          }
+
+          second = topLevelFolder;
+          break;
+        }
+
+        if (first == null || second == null) {
+          throw new Error(
+            'Unable to derive two top-level folders from fixture data.'
+          );
+        }
+
+        return { first, second };
+      };
+
+      const selectMoveFileToRootScenario = (files) => {
+        const existing = new Set(files);
+
+        for (const sourcePath of files) {
+          const destinationPath = getLeafName(sourcePath);
+          if (!existing.has(destinationPath)) {
+            return {
+              sourcePath,
+              targetPath: 'root',
+              destinationPath,
+            };
+          }
+        }
+
+        throw new Error('Unable to find a file that can be moved to root.');
+      };
+
+      const selectMoveFolderToRootScenario = (files) => {
+        const topLevelEntries = collectTopLevelEntries(files);
+        let candidateFolderPath = getParentPath(selectDeepFilePath(files, 5));
+
+        while (candidateFolderPath !== 'root') {
+          const leafName = getLeafName(candidateFolderPath);
+          if (!topLevelEntries.has(leafName)) {
+            return {
+              sourcePath: candidateFolderPath,
+              targetPath: 'root',
+              destinationPath: leafName,
+            };
+          }
+
+          candidateFolderPath = getParentPath(candidateFolderPath);
+        }
+
+        throw new Error('Unable to find a folder that can be moved to root.');
+      };
+
+      const runMutationOperation = async ({
+        operationName,
+        startMessage,
+        mutate,
+        buildResultText,
+        annotateCounters,
+      }) => {
+        if (fixtureState.fileTree == null) {
+          throw new Error(`${operationName} requested before initial render.`);
+        }
+
+        actionButton.disabled = true;
+        actionSelect.disabled = true;
+        resultLabel.textContent = startMessage;
+
+        try {
+          clearMeasureState(RENAME_MEASURE_SPEC);
+          const benchmark = ensureBenchmark();
+          const benchmarkSnapshot = benchmark?.createSnapshot() ?? null;
+          const rebuildModeCountsBefore = readRebuildModeCounts();
+
+          const heapBefore = benchmark?.readHeapSnapshot() ?? null;
+          const operationStartTime = performance.now();
+          markMeasureStart(RENAME_MEASURE_SPEC);
+
+          const details = mutate();
+
+          const { renderedItemCount } = await waitForTreeHost();
+          const visibleRowsReadyTime = performance.now();
+          await waitForPaint();
+          const operationEndTime = performance.now();
+          const heapAfter = benchmark?.readHeapSnapshot() ?? null;
+
+          markMeasureEnd(RENAME_MEASURE_SPEC);
+
+          const instrumentation =
+            benchmark != null
+              ? benchmarkSnapshot != null
+                ? benchmark.summarizeSince(
+                    benchmarkSnapshot,
+                    heapBefore,
+                    heapAfter
+                  )
+                : benchmark.summarize(heapBefore, heapAfter)
+              : {
+                  phases: [],
+                  counters: {},
+                  heap: null,
+                };
+
+          fixtureState.files = fixtureState.fileTree.getFiles();
+          fixtureState.renderedItemCount = renderedItemCount;
+
+          if (typeof annotateCounters === 'function') {
+            annotateCounters(instrumentation.counters, details);
+          }
+
+          const summary = createOperationSummary({
+            operationName,
+            measureSpec: RENAME_MEASURE_SPEC,
+            operationStartTime,
+            operationEndTime,
+            visibleRowsReadyTime,
+            renderedItemCount,
+            instrumentation,
+            rebuildModeCountsBefore,
+            resultText: buildResultText(details),
+          });
+
+          updateProfileOperation(operationName, summary);
+          resultLabel.textContent = summary.resultText;
+          return summary;
+        } finally {
+          actionButton.disabled = false;
+          actionSelect.disabled = false;
+        }
+      };
+
       const runInitialRender = async () => {
         renderButton.disabled = true;
-        renameButton.disabled = true;
+        actionButton.disabled = true;
+        actionSelect.disabled = true;
         resultLabel.textContent = 'Rendering…';
 
         clearMeasureState(INITIAL_MEASURE_SPEC);
@@ -532,177 +775,327 @@
         updateProfileOperation('initial-render', summary);
         resultLabel.textContent = summary.resultText;
         renderButton.textContent = 'Rendered';
-        renameButton.disabled = false;
+        actionButton.disabled = false;
+        actionSelect.disabled = false;
         return summary;
       };
 
       const runRenameFile = async () => {
-        if (fixtureState.fileTree == null) {
-          throw new Error('Rename requested before initial render.');
-        }
-
-        renameButton.disabled = true;
-        resultLabel.textContent = 'Renaming…';
-
-        clearMeasureState(RENAME_MEASURE_SPEC);
-        const benchmark = ensureBenchmark();
-        const benchmarkSnapshot = benchmark?.createSnapshot() ?? null;
-        const rebuildModeCountsBefore = readRebuildModeCounts();
-
-        const sourcePath = normalizeRenameTarget(fixtureState.files);
-        const destinationPath = buildRenamedPath(
-          sourcePath,
-          fixtureState.files
-        );
-
-        const heapBefore = benchmark?.readHeapSnapshot() ?? null;
-        const operationStartTime = performance.now();
-        markMeasureStart(RENAME_MEASURE_SPEC);
-
-        fixtureState.fileTree.renamePath({
-          sourcePath,
-          destinationPath,
-          isFolder: false,
-        });
-
-        const { renderedItemCount } = await waitForTreeHost();
-        const visibleRowsReadyTime = performance.now();
-        await waitForPaint();
-        const operationEndTime = performance.now();
-        const heapAfter = benchmark?.readHeapSnapshot() ?? null;
-
-        markMeasureEnd(RENAME_MEASURE_SPEC);
-
-        const instrumentation =
-          benchmark != null
-            ? benchmarkSnapshot != null
-              ? benchmark.summarizeSince(
-                  benchmarkSnapshot,
-                  heapBefore,
-                  heapAfter
-                )
-              : benchmark.summarize(heapBefore, heapAfter)
-            : {
-                phases: [],
-                counters: {},
-                heap: null,
-              };
-
-        fixtureState.files = fixtureState.fileTree.getFiles();
-        fixtureState.renderedItemCount = renderedItemCount;
-        instrumentation.counters['workload.renameSourceLength'] =
-          sourcePath.length;
-        instrumentation.counters['workload.renameDestinationLength'] =
-          destinationPath.length;
-
-        const summary = createOperationSummary({
+        return runMutationOperation({
           operationName: 'rename-file',
-          measureSpec: RENAME_MEASURE_SPEC,
-          operationStartTime,
-          operationEndTime,
-          visibleRowsReadyTime,
-          renderedItemCount,
-          instrumentation,
-          rebuildModeCountsBefore,
-          resultText: `Rename post-paint ready ${formatMs(
-            getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
-          )}. ${sourcePath} → ${destinationPath}.`,
-        });
+          startMessage: 'Renaming file…',
+          mutate: () => {
+            const sourcePath = normalizeRenameTarget(fixtureState.files);
+            const destinationPath = buildRenamedPath(
+              sourcePath,
+              fixtureState.files
+            );
 
-        updateProfileOperation('rename-file', summary);
-        resultLabel.textContent = summary.resultText;
-        renameButton.disabled = false;
-        return summary;
+            fixtureState.fileTree.renamePath({
+              sourcePath,
+              destinationPath,
+              isFolder: false,
+            });
+
+            return { sourcePath, destinationPath };
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.renameSourceLength'] = details.sourcePath.length;
+            counters['workload.renameDestinationLength'] =
+              details.destinationPath.length;
+          },
+          buildResultText: (details) =>
+            `Rename file post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. ${details.sourcePath} → ${details.destinationPath}.`,
+        });
       };
 
       const runRenameRootFolder = async () => {
-        if (fixtureState.fileTree == null) {
-          throw new Error('Rename requested before initial render.');
-        }
-
-        renameButton.disabled = true;
-        resultLabel.textContent = 'Renaming top-level folder…';
-
-        clearMeasureState(RENAME_MEASURE_SPEC);
-        const benchmark = ensureBenchmark();
-        const benchmarkSnapshot = benchmark?.createSnapshot() ?? null;
-        const rebuildModeCountsBefore = readRebuildModeCounts();
-
-        const sourcePath = selectTopLevelRenameFolder(fixtureState.files);
-        const destinationPath = buildRenamedTopLevelFolderPath(sourcePath);
-
-        const heapBefore = benchmark?.readHeapSnapshot() ?? null;
-        const operationStartTime = performance.now();
-        markMeasureStart(RENAME_MEASURE_SPEC);
-
-        fixtureState.fileTree.renamePath({
-          sourcePath,
-          destinationPath,
-          isFolder: true,
-        });
-
-        const { renderedItemCount } = await waitForTreeHost();
-        const visibleRowsReadyTime = performance.now();
-        await waitForPaint();
-        const operationEndTime = performance.now();
-        const heapAfter = benchmark?.readHeapSnapshot() ?? null;
-
-        markMeasureEnd(RENAME_MEASURE_SPEC);
-
-        const instrumentation =
-          benchmark != null
-            ? benchmarkSnapshot != null
-              ? benchmark.summarizeSince(
-                  benchmarkSnapshot,
-                  heapBefore,
-                  heapAfter
-                )
-              : benchmark.summarize(heapBefore, heapAfter)
-            : {
-                phases: [],
-                counters: {},
-                heap: null,
-              };
-
-        fixtureState.files = fixtureState.fileTree.getFiles();
-        fixtureState.renderedItemCount = renderedItemCount;
-        instrumentation.counters['workload.renameSourceLength'] =
-          sourcePath.length;
-        instrumentation.counters['workload.renameDestinationLength'] =
-          destinationPath.length;
-
-        const summary = createOperationSummary({
+        return runMutationOperation({
           operationName: 'rename-root-folder',
-          measureSpec: RENAME_MEASURE_SPEC,
-          operationStartTime,
-          operationEndTime,
-          visibleRowsReadyTime,
-          renderedItemCount,
-          instrumentation,
-          rebuildModeCountsBefore,
-          resultText: `Top-level rename post-paint ready ${formatMs(
-            getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
-          )}. ${sourcePath} → ${destinationPath}.`,
-        });
+          startMessage: 'Renaming top-level folder…',
+          mutate: () => {
+            const sourcePath = selectTopLevelRenameFolder(fixtureState.files);
+            const destinationPath = buildRenamedTopLevelFolderPath(sourcePath);
 
-        updateProfileOperation('rename-root-folder', summary);
-        resultLabel.textContent = summary.resultText;
-        renameButton.disabled = false;
-        return summary;
+            fixtureState.fileTree.renamePath({
+              sourcePath,
+              destinationPath,
+              isFolder: true,
+            });
+
+            return { sourcePath, destinationPath };
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.renameSourceLength'] = details.sourcePath.length;
+            counters['workload.renameDestinationLength'] =
+              details.destinationPath.length;
+          },
+          buildResultText: (details) =>
+            `Rename root folder post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. ${details.sourcePath} → ${details.destinationPath}.`,
+        });
+      };
+
+      const runAddFileRoot = async () => {
+        return runMutationOperation({
+          operationName: 'add-file-root',
+          startMessage: 'Adding root file…',
+          mutate: () => {
+            const existingPaths = new Set(fixtureState.files);
+            const destinationPath = createUniquePath(
+              '__profile-added-root-file.ts',
+              existingPaths
+            );
+
+            fixtureState.fileTree.addPaths({
+              paths: [destinationPath],
+            });
+
+            return { destinationPath };
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.addPathLength'] = details.destinationPath.length;
+            counters['workload.addPathDepth'] = getPathDepth(
+              details.destinationPath
+            );
+          },
+          buildResultText: (details) =>
+            `Add root file post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. added ${details.destinationPath}.`,
+        });
+      };
+
+      const runAddFileDeep = async () => {
+        return runMutationOperation({
+          operationName: 'add-file-deep',
+          startMessage: 'Adding deep file…',
+          mutate: () => {
+            const existingPaths = new Set(fixtureState.files);
+            const deepParentPath = getParentPath(
+              selectDeepFilePath(fixtureState.files, 6)
+            );
+            const candidatePath = `${deepParentPath}/__profile-added-deep-file.ts`;
+            const destinationPath = createUniquePath(
+              candidatePath,
+              existingPaths
+            );
+
+            fixtureState.fileTree.addPaths({
+              paths: [destinationPath],
+            });
+
+            return { destinationPath };
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.addPathLength'] = details.destinationPath.length;
+            counters['workload.addPathDepth'] = getPathDepth(
+              details.destinationPath
+            );
+          },
+          buildResultText: (details) =>
+            `Add deep file post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. added ${details.destinationPath}.`,
+        });
+      };
+
+      const runDeleteFileDeep = async () => {
+        return runMutationOperation({
+          operationName: 'delete-file-deep',
+          startMessage: 'Deleting deep file…',
+          mutate: () => {
+            const sourcePath = selectDeepFilePath(fixtureState.files, 6);
+
+            fixtureState.fileTree.deletePaths({
+              paths: [sourcePath],
+            });
+
+            return { sourcePath };
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.deletePathLength'] = details.sourcePath.length;
+            counters['workload.deletePathDepth'] = getPathDepth(
+              details.sourcePath
+            );
+          },
+          buildResultText: (details) =>
+            `Delete deep file post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. deleted ${details.sourcePath}.`,
+        });
+      };
+
+      const runDeleteRootFolder = async () => {
+        return runMutationOperation({
+          operationName: 'delete-root-folder',
+          startMessage: 'Deleting root folder…',
+          mutate: () => {
+            const sourcePath = selectTopLevelRenameFolder(fixtureState.files);
+
+            fixtureState.fileTree.deletePaths({
+              paths: [sourcePath],
+            });
+
+            return { sourcePath };
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.deletePathLength'] = details.sourcePath.length;
+            counters['workload.deletePathDepth'] = 1;
+          },
+          buildResultText: (details) =>
+            `Delete root folder post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. deleted ${details.sourcePath}.`,
+        });
+      };
+
+      const runMoveFileToRoot = async () => {
+        return runMutationOperation({
+          operationName: 'move-file-to-root',
+          startMessage: 'Moving file to root…',
+          mutate: () => {
+            const scenario = selectMoveFileToRootScenario(fixtureState.files);
+
+            fixtureState.fileTree.movePaths({
+              draggedPaths: [scenario.sourcePath],
+              targetPath: scenario.targetPath,
+            });
+
+            return scenario;
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.moveSourceLength'] = details.sourcePath.length;
+            counters['workload.moveDestinationLength'] =
+              details.destinationPath.length;
+            counters['workload.moveSourceDepth'] = getPathDepth(
+              details.sourcePath
+            );
+            counters['workload.moveDestinationDepth'] = getPathDepth(
+              details.destinationPath
+            );
+          },
+          buildResultText: (details) =>
+            `Move file-to-root post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. ${details.sourcePath} → ${details.destinationPath}.`,
+        });
+      };
+
+      const runMoveFolderToRoot = async () => {
+        return runMutationOperation({
+          operationName: 'move-folder-to-root',
+          startMessage: 'Moving deep folder to root…',
+          mutate: () => {
+            const scenario = selectMoveFolderToRootScenario(fixtureState.files);
+
+            fixtureState.fileTree.movePaths({
+              draggedPaths: [scenario.sourcePath],
+              targetPath: scenario.targetPath,
+            });
+
+            return scenario;
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.moveSourceLength'] = details.sourcePath.length;
+            counters['workload.moveDestinationLength'] =
+              details.destinationPath.length;
+            counters['workload.moveSourceDepth'] = getPathDepth(
+              details.sourcePath
+            );
+            counters['workload.moveDestinationDepth'] = getPathDepth(
+              details.destinationPath
+            );
+          },
+          buildResultText: (details) =>
+            `Move folder-to-root post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. ${details.sourcePath} → ${details.destinationPath}.`,
+        });
+      };
+
+      const runMoveRootFolder = async () => {
+        return runMutationOperation({
+          operationName: 'move-root-folder',
+          startMessage: 'Moving root folder into another root folder…',
+          mutate: () => {
+            const { first, second } = selectTopLevelFolderPair(
+              fixtureState.files
+            );
+            const sourcePath = first;
+            const targetPath = second;
+            const destinationPath = `${targetPath}/${sourcePath}`;
+
+            fixtureState.fileTree.movePaths({
+              draggedPaths: [sourcePath],
+              targetPath,
+            });
+
+            return {
+              sourcePath,
+              targetPath,
+              destinationPath,
+            };
+          },
+          annotateCounters: (counters, details) => {
+            counters['workload.moveSourceLength'] = details.sourcePath.length;
+            counters['workload.moveDestinationLength'] =
+              details.destinationPath.length;
+            counters['workload.moveSourceDepth'] = 1;
+            counters['workload.moveDestinationDepth'] = getPathDepth(
+              details.destinationPath
+            );
+          },
+          buildResultText: (details) =>
+            `Move root-folder post-paint ready ${formatMs(
+              getLatestMeasureDurationMs(RENAME_MEASURE_SPEC)
+            )}. ${details.sourcePath} → ${details.destinationPath}.`,
+        });
+      };
+
+      const actionRunners = {
+        'rename-file': runRenameFile,
+        'rename-root-folder': runRenameRootFolder,
+        'add-file-root': runAddFileRoot,
+        'add-file-deep': runAddFileDeep,
+        'delete-file-deep': runDeleteFileDeep,
+        'delete-root-folder': runDeleteRootFolder,
+        'move-file-to-root': runMoveFileToRoot,
+        'move-folder-to-root': runMoveFolderToRoot,
+        'move-root-folder': runMoveRootFolder,
+      };
+
+      const runSelectedAction = async () => {
+        const actionName = actionSelect.value;
+        const runner = actionRunners[actionName];
+        if (typeof runner !== 'function') {
+          throw new Error(`Unknown selected action: ${actionName}`);
+        }
+        return runner();
       };
 
       window.__treesDevVirtualizationFixtureApi = {
         runInitialRender,
         runRenameFile,
         runRenameRootFolder,
+        runAddFileRoot,
+        runAddFileDeep,
+        runDeleteFileDeep,
+        runDeleteRootFolder,
+        runMoveFileToRoot,
+        runMoveFolderToRoot,
+        runMoveRootFolder,
       };
 
       renderButton.addEventListener('click', () => {
         void runInitialRender();
       });
 
-      renameButton.addEventListener('click', () => {
-        void runRenameFile();
+      actionButton.addEventListener('click', () => {
+        void runSelectedAction();
       });
 
       window.__treesDevVirtualizationFixtureReady = true;

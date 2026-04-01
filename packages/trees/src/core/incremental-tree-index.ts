@@ -198,7 +198,9 @@ class VisibleBlockIndex {
 
     const { blockIndex, offset } = this.findBlockAtIndex(normalizedIndex);
     const initialBlock = this.blocks[blockIndex];
-    initialBlock.ids.splice(offset, 0, ...ids);
+    const blockHead = initialBlock.ids.slice(0, offset);
+    const blockTail = initialBlock.ids.slice(offset);
+    initialBlock.ids = blockHead.concat(ids, blockTail);
 
     const changedBlocks = new Set<number>([blockIndex]);
     this.splitOversizedBlocks(blockIndex, changedBlocks);
@@ -438,6 +440,14 @@ export class IncrementalTreeIndex {
     return this.visibleIdsCache;
   }
 
+  getVisibleCount(): number {
+    return this.visible.length;
+  }
+
+  getVisibleItemIdAt(index: number): string | undefined {
+    return this.visible.getIdAt(index);
+  }
+
   getVisibleIndex(itemId: string): number | undefined {
     return this.visible.getIndex(itemId);
   }
@@ -637,9 +647,20 @@ export class IncrementalTreeIndex {
     );
     parentNode.expanded = parentId === rootId || expandedItems.has(parentId);
 
+    const previousChildren = parentNode.children.slice();
     this.readAndSyncChildren(parentId, expandedItems);
 
     if (parentId === rootId) {
+      const rootRefreshResult = this.tryRefreshRootVisibleBranch(
+        rootId,
+        previousChildren,
+        parentNode.children,
+        expandedItems
+      );
+      if (rootRefreshResult != null) {
+        return rootRefreshResult;
+      }
+
       this.visible.clear();
       this.visibleMetaById.clear();
 
@@ -690,6 +711,213 @@ export class IncrementalTreeIndex {
     }
 
     return removedIds.length > 0 || fragment.ids.length > 0;
+  }
+
+  private tryRefreshRootVisibleBranch(
+    rootId: string,
+    previousChildren: readonly string[],
+    nextChildren: readonly string[],
+    expandedItems: Set<string>
+  ): boolean | null {
+    if (areIdArraysEqual(previousChildren, nextChildren)) {
+      return null;
+    }
+
+    let prefixLength = 0;
+    const minLength = Math.min(previousChildren.length, nextChildren.length);
+    while (
+      prefixLength < minLength &&
+      previousChildren[prefixLength] === nextChildren[prefixLength]
+    ) {
+      prefixLength += 1;
+    }
+
+    let previousSuffixIndex = previousChildren.length - 1;
+    let nextSuffixIndex = nextChildren.length - 1;
+    while (
+      previousSuffixIndex >= prefixLength &&
+      nextSuffixIndex >= prefixLength &&
+      previousChildren[previousSuffixIndex] === nextChildren[nextSuffixIndex]
+    ) {
+      previousSuffixIndex -= 1;
+      nextSuffixIndex -= 1;
+    }
+
+    const removedCount = Math.max(0, previousSuffixIndex - prefixLength + 1);
+    const insertedCount = Math.max(0, nextSuffixIndex - prefixLength + 1);
+
+    let visibleChanged = false;
+
+    if (removedCount > 0) {
+      const removedChildren = previousChildren.slice(
+        prefixLength,
+        prefixLength + removedCount
+      );
+      for (let index = removedChildren.length - 1; index >= 0; index--) {
+        const removedChildId = removedChildren[index];
+        const removedVisibleMeta = this.visibleMetaById.get(removedChildId);
+        if (
+          removedVisibleMeta == null ||
+          removedVisibleMeta.parentId !== rootId ||
+          removedVisibleMeta.level !== 0
+        ) {
+          continue;
+        }
+
+        const removedVisibleIndex = this.visible.getIndex(removedChildId);
+        if (removedVisibleIndex == null) {
+          continue;
+        }
+
+        const removedIds = this.removeVisibleSubtree(removedVisibleIndex, 0);
+        if (removedIds.length > 0) {
+          visibleChanged = true;
+        }
+      }
+    }
+
+    if (insertedCount > 0) {
+      const insertionAnchorId = nextChildren[prefixLength + insertedCount];
+      const insertIndex =
+        insertionAnchorId == null
+          ? this.visible.length
+          : (this.visible.getIndex(insertionAnchorId) ?? this.visible.length);
+
+      const fragment = this.collectVisibleRootInsertedChildren(
+        rootId,
+        nextChildren,
+        prefixLength,
+        prefixLength + insertedCount,
+        expandedItems
+      );
+
+      if (fragment.ids.length > 0) {
+        this.visible.insertAt(insertIndex, fragment.ids);
+        for (let index = 0; index < fragment.ids.length; index++) {
+          const fragmentId = fragment.ids[index];
+          this.visibleMetaById.set(fragmentId, fragment.meta[index]);
+        }
+        visibleChanged = true;
+      }
+    }
+
+    if (!visibleChanged) {
+      this.updateRootChildrenVisibleMeta(rootId, nextChildren);
+      return false;
+    }
+
+    this.updateRootChildrenVisibleMeta(rootId, nextChildren);
+    return true;
+  }
+
+  private collectVisibleRootInsertedChildren(
+    rootId: string,
+    rootChildren: readonly string[],
+    startIndex: number,
+    endIndexExclusive: number,
+    expandedItems: Set<string>
+  ): VisibleFragment {
+    const fragment: VisibleFragment = {
+      ids: [],
+      meta: [],
+    };
+
+    const ancestorSet = new Set<string>();
+    const fragmentIdSet = new Set<string>();
+    const setSize = rootChildren.length;
+
+    for (
+      let childIndex = startIndex;
+      childIndex < endIndexExclusive;
+      childIndex++
+    ) {
+      const childId = rootChildren[childIndex];
+      if (childId == null || fragmentIdSet.has(childId)) {
+        continue;
+      }
+
+      const childNode = this.ensureNode(childId, rootId, 0);
+      childNode.parentId = rootId;
+      childNode.level = 0;
+      childNode.expanded = expandedItems.has(childId);
+      childNode.posInSet = childIndex;
+      childNode.setSize = setSize;
+
+      fragment.ids.push(childId);
+      fragment.meta.push({
+        parentId: rootId,
+        level: 0,
+        posInSet: childIndex,
+        setSize,
+      });
+      fragmentIdSet.add(childId);
+
+      if (!childNode.expanded) {
+        continue;
+      }
+
+      ancestorSet.add(childId);
+      this.appendVisibleChildren(
+        childId,
+        0,
+        expandedItems,
+        ancestorSet,
+        fragmentIdSet,
+        fragment,
+        false
+      );
+      ancestorSet.delete(childId);
+    }
+
+    return fragment;
+  }
+
+  private updateRootChildrenVisibleMeta(
+    rootId: string,
+    rootChildren: readonly string[]
+  ): void {
+    const setSize = rootChildren.length;
+
+    for (let childIndex = 0; childIndex < rootChildren.length; childIndex++) {
+      const childId = rootChildren[childIndex];
+      const visibleMeta = this.visibleMetaById.get(childId);
+      if (visibleMeta == null) {
+        continue;
+      }
+
+      visibleMeta.parentId = rootId;
+      visibleMeta.level = 0;
+      visibleMeta.posInSet = childIndex;
+      visibleMeta.setSize = setSize;
+    }
+  }
+
+  private removeVisibleSubtree(
+    startIndex: number,
+    rootLevel: number
+  ): string[] {
+    let removeCount = 1;
+
+    while (startIndex + removeCount < this.visible.length) {
+      const visibleId = this.visible.getIdAt(startIndex + removeCount);
+      if (visibleId == null) {
+        break;
+      }
+
+      const visibleMeta = this.visibleMetaById.get(visibleId);
+      if (visibleMeta == null || visibleMeta.level <= rootLevel) {
+        break;
+      }
+
+      removeCount += 1;
+    }
+
+    const removedIds = this.visible.removeRange(startIndex, removeCount);
+    for (let index = 0; index < removedIds.length; index++) {
+      this.visibleMetaById.delete(removedIds[index]);
+    }
+
+    return removedIds;
   }
 
   private removeVisibleDescendants(
@@ -779,8 +1007,14 @@ export class IncrementalTreeIndex {
     ancestorSet: Set<string>,
     fragmentIdSet: Set<string>,
     fragment: VisibleFragment,
-    checkExistingVisible: boolean
+    checkExistingVisible: boolean,
+    recursionDepth = 0
   ) {
+    if (recursionDepth > 2048) {
+      throw new Error(
+        `appendVisibleChildren exceeded recursion depth at ${parentId}`
+      );
+    }
     const children = this.readAndSyncChildren(parentId, expandedItems);
     const setSize = children.length;
 
@@ -822,7 +1056,8 @@ export class IncrementalTreeIndex {
         ancestorSet,
         fragmentIdSet,
         fragment,
-        checkExistingVisible
+        checkExistingVisible,
+        recursionDepth + 1
       );
       ancestorSet.delete(childId);
     }
@@ -941,6 +1176,8 @@ export class IncrementalTreeIndex {
     }
 
     const dirtyIds = [...this.dirtyParents];
+    const hasRoot = this.dirtyParents.has(rootId);
+
     dirtyIds.sort(
       (leftId, rightId) =>
         this.getNodeLevel(leftId) - this.getNodeLevel(rightId)
@@ -953,14 +1190,14 @@ export class IncrementalTreeIndex {
       const dirtyId = dirtyIds[index];
 
       if (dirtyId === rootId) {
-        return [rootId];
+        continue;
       }
 
       let ancestorId = this.nodes.get(dirtyId)?.parentId ?? null;
       let shouldSkip = false;
 
       while (ancestorId != null) {
-        if (selectedSet.has(ancestorId)) {
+        if (ancestorId !== rootId && selectedSet.has(ancestorId)) {
           shouldSkip = true;
           break;
         }
@@ -973,6 +1210,10 @@ export class IncrementalTreeIndex {
 
       selectedSet.add(dirtyId);
       selectedIds.push(dirtyId);
+    }
+
+    if (hasRoot) {
+      selectedIds.unshift(rootId);
     }
 
     return selectedIds;

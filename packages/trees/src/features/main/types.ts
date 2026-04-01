@@ -19,6 +19,10 @@ export interface TreeDataRef {
    * item instance up front.
    */
   visibleItemIds?: string[];
+  /**
+   * Visible row count from the latest rebuild.
+   */
+  visibleItemCount?: number;
   /** Internal rebuild telemetry for profiling/debugging incremental behavior. */
   lastRebuildMode?: 'full' | 'incremental' | 'noop';
   rebuildModeCounts?: Record<'full' | 'incremental' | 'noop', number>;
@@ -62,6 +66,10 @@ export type MainFeatureDef<T = any> = {
     getConfig: () => TreeConfig<T>;
     getItemInstance: (itemId: string) => ItemInstance<T>;
     getItems: () => ItemInstance<T>[];
+    /** @internal */
+    getVisibleItemCount: () => number;
+    /** @internal */
+    getVisibleItemIdAt: (index: number) => string | undefined;
     registerElement: (element: HTMLElement | null) => void;
     getElement: () => HTMLElement | undefined | null;
     /** @internal */
