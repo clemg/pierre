@@ -1,5 +1,6 @@
 import {
   getPreparedInputEntries,
+  getPreparedInputPresortedPaths,
   PathStoreBuilder,
   prepareInput as prepareCanonicalInput,
   preparePaths as prepareCanonicalPaths,
@@ -156,12 +157,20 @@ export class PathStore {
       () => new PathStoreBuilder(options)
     );
     if (options.preparedInput != null) {
-      // preparedInput is the caller's explicit fast path, so skip the builder's
-      // redundant monotonic-order validation and only keep duplicate checks.
-      builder.appendPreparedPaths(
-        getPreparedInputEntries(options.preparedInput),
-        false
+      const presortedPaths = getPreparedInputPresortedPaths(
+        options.preparedInput
       );
+      if (presortedPaths != null) {
+        builder.appendPresortedPaths(presortedPaths);
+      } else {
+        // preparedInput is the caller's explicit fast path, so skip the
+        // builder's redundant monotonic-order validation and only keep
+        // duplicate checks.
+        builder.appendPreparedPaths(
+          getPreparedInputEntries(options.preparedInput),
+          false
+        );
+      }
     } else {
       const inputPaths = options.paths ?? [];
 

@@ -158,6 +158,20 @@ Correctness checks run through:
       - `visible-first/linux-5x/30` p50 = `0.001500 ms`, p95 = `0.002875 ms`
       - `equivalent-presorted-first-render/linux-5x/30` p50 = `128.664 ms`, p95
         = `148.205 ms`
+- Attempt 18 (candidate to keep under the profile-primary target): make
+  `preparePresortedInput()` return a lightweight presorted-path wrapper and let
+  the builder parse those paths on demand during store construction.
+  - Profile primary improved materially:
+    - visible rows ready median: `230.1 ms` → `218.7 ms`
+    - visible rows ready p95: `234.92 ms` → `221.3 ms`
+    - post-paint ready median: `231.1 ms` → `219.7 ms`
+  - Benchmark secondary regressed:
+    - full benchmark p50: `128.664 ms` → `145.336 ms`
+    - prepare became almost free, but build absorbed the parsing work and got
+      much slower in Bun.
+  - Interpretation: this is a real browser-path win, but it is strongly
+    runtime-specific. Since the session now optimizes the browser profile, this
+    trade can still be worth keeping.
 - Attempt 7 (candidate to keep against the corrected full metric): make segment
   sort keys lazy in `internSegment()` so presorted bulk ingest no longer pays to
   precompute natural-sort metadata for every unique segment.

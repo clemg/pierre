@@ -106,6 +106,12 @@ function isPreparedPathArray(value: unknown): value is readonly PreparedPath[] {
   );
 }
 
+function isStringArray(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+  );
+}
+
 export function preparePaths(
   paths: readonly string[],
   options: PathStoreOptions = {}
@@ -127,10 +133,10 @@ export function prepareInput(
 export function preparePresortedInput(
   paths: readonly string[]
 ): InternalPreparedInput {
-  const preparedPaths = paths.map((path) => parseInputPath(path));
+  const presortedPaths = [...paths];
   return {
-    paths: [...paths],
-    preparedPaths,
+    paths: presortedPaths,
+    presortedPaths,
   };
 }
 
@@ -144,6 +150,15 @@ export function getPreparedInputEntries(
   }
 
   return preparedPaths;
+}
+
+export function getPreparedInputPresortedPaths(
+  preparedInput: import('./public-types').PathStorePreparedInput
+): readonly string[] | null {
+  const internalPreparedInput = preparedInput as Partial<InternalPreparedInput>;
+  return isStringArray(internalPreparedInput.presortedPaths)
+    ? internalPreparedInput.presortedPaths
+    : null;
 }
 
 export function preparePathEntries(
@@ -202,6 +217,20 @@ export class PathStoreBuilder {
       () => {
         for (const preparedPath of preparedPaths) {
           this.appendPreparedPath(preparedPath, validateOrder);
+        }
+      }
+    );
+
+    return this;
+  }
+
+  public appendPresortedPaths(paths: readonly string[]): this {
+    withBenchmarkPhase(
+      this.instrumentation,
+      'store.builder.appendPresortedPaths',
+      () => {
+        for (const path of paths) {
+          this.appendPreparedPath(parseInputPath(path), false);
         }
       }
     );

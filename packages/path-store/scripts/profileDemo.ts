@@ -1964,6 +1964,8 @@ function formatPhaseLabel(name: string): string {
       return '  - Parse presorted paths';
     case 'store.builder.appendPreparedPaths':
       return '  - Append prepared paths';
+    case 'store.builder.appendPresortedPaths':
+      return '  - Append presorted paths';
     case 'store.builder.computeSubtreeCounts':
       return '  - Compute subtree counts';
     case 'store.builder.finish':
