@@ -1,6 +1,7 @@
 import {
   applyChildAggregateDelta,
   createDirectoryChildIndex,
+  ensureChildIdByNameId,
   ensureChildPositions,
   rebuildDirectoryChildAggregates,
   rebuildVisibleChildChunks,
@@ -179,10 +180,10 @@ export function movePath(
     throw new Error('Cannot move a directory into one of its descendants');
   }
 
-  const siblingCollisionId = getDirectoryIndex(
-    state,
-    moveTarget.parentId
-  ).childIdByNameId.get(targetNameId);
+  const siblingCollisionId = ensureChildIdByNameId(
+    state.snapshot.nodes,
+    getDirectoryIndex(state, moveTarget.parentId)
+  ).get(targetNameId);
   const collisionNodeId =
     moveTarget.existingNodeId ?? siblingCollisionId ?? null;
   if (collisionNodeId != null && collisionNodeId !== sourceNodeId) {
@@ -346,7 +347,10 @@ export function findNodeIdBySegments(
     }
 
     const currentIndex = getDirectoryIndex(state, currentNodeId);
-    const nextNodeId = currentIndex.childIdByNameId.get(segmentId);
+    const nextNodeId = ensureChildIdByNameId(
+      state.snapshot.nodes,
+      currentIndex
+    ).get(segmentId);
     if (nextNodeId === undefined) {
       return null;
     }
@@ -475,7 +479,10 @@ function ensureDirectoryChain(
   for (const segment of directorySegments) {
     const segmentId = internSegment(state.snapshot.segmentTable, segment);
     const currentIndex = getDirectoryIndex(state, currentDirectoryId);
-    const existingChildId = currentIndex.childIdByNameId.get(segmentId);
+    const existingChildId = ensureChildIdByNameId(
+      state.snapshot.nodes,
+      currentIndex
+    ).get(segmentId);
 
     if (existingChildId !== undefined) {
       const existingChild = requireNode(state, existingChildId);
@@ -532,7 +539,7 @@ function createFileNode(
 ): NodeId {
   const nameId = internSegment(state.snapshot.segmentTable, basename);
   const parentIndex = getDirectoryIndex(state, parentId);
-  if (parentIndex.childIdByNameId.has(nameId)) {
+  if (ensureChildIdByNameId(state.snapshot.nodes, parentIndex).has(nameId)) {
     throw new Error(
       `Path already exists: "${buildPathPreview(state, parentId, basename)}"`
     );
@@ -591,7 +598,10 @@ function insertChildReference(
 ): void {
   const parentIndex = getDirectoryIndex(state, parentId);
   const childNode = requireNode(state, childId);
-  parentIndex.childIdByNameId.set(childNode.nameId, childId);
+  ensureChildIdByNameId(state.snapshot.nodes, parentIndex).set(
+    childNode.nameId,
+    childId
+  );
   applyChildAggregateDelta(
     parentIndex,
     childId,
@@ -614,7 +624,7 @@ function removeChildReference(
   const parentIndex = getDirectoryIndex(state, parentId);
   const positions = ensureChildPositions(parentIndex);
   const childIndex = positions.get(childId) ?? -1;
-  parentIndex.childIdByNameId.delete(childNameId);
+  ensureChildIdByNameId(state.snapshot.nodes, parentIndex).delete(childNameId);
   positions.delete(childId);
   const childNode = state.snapshot.nodes[childId];
   if (childNode != null) {

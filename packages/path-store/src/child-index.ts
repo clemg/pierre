@@ -27,7 +27,7 @@ export function createDirectoryChildIndex(): DirectoryChildIndex {
 // visible-window projection.  The map is rebuilt lazily on first use.
 export function createPresortedDirectoryChildIndex(): DirectoryChildIndex {
   return {
-    childIdByNameId: new Map<SegmentId, NodeId>(),
+    childIdByNameId: null,
     childIds: [],
     childPositionById: null,
     childVisibleChunkSums: null,
@@ -40,6 +40,30 @@ export function createPresortedDirectoryChildIndex(): DirectoryChildIndex {
 // called on first mutation or sibling lookup after presorted bulk ingest,
 // which defers position-map population to avoid per-child Map.set overhead
 // during construction.
+// Lazily rebuilds the child-name-id lookup map from the childIds array and
+// the stored nameId on each node.  Called on first path lookup or mutation
+// after presorted bulk ingest, which defers map population to avoid per-child
+// Map.set overhead during construction.
+export function ensureChildIdByNameId(
+  nodes: readonly PathStoreNode[],
+  index: DirectoryChildIndex
+): Map<SegmentId, NodeId> {
+  if (index.childIdByNameId != null) {
+    return index.childIdByNameId;
+  }
+
+  const map = new Map<SegmentId, NodeId>();
+  for (const childId of index.childIds) {
+    const childNode = nodes[childId];
+    if (childNode != null) {
+      map.set(childNode.nameId, childId);
+    }
+  }
+
+  index.childIdByNameId = map;
+  return map;
+}
+
 export function ensureChildPositions(
   index: DirectoryChildIndex
 ): Map<NodeId, number> {

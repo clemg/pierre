@@ -530,9 +530,12 @@ export class PathStoreBuilder {
   ): NodeId {
     const nameId = internSegment(this.segmentTable, basename);
     const parentIndex = this.getDirectoryIndex(parentId);
-    const existingChildId = parentIndex.childIdByNameId.get(nameId);
-    if (existingChildId !== undefined) {
-      throw new Error(`Path collides with an existing entry: "${path}"`);
+    const nameMap = parentIndex.childIdByNameId;
+    if (nameMap != null) {
+      const existingChildId = nameMap.get(nameId);
+      if (existingChildId !== undefined) {
+        throw new Error(`Path collides with an existing entry: "${path}"`);
+      }
     }
 
     const parentNode = this.nodes[parentId];
@@ -554,7 +557,9 @@ export class PathStoreBuilder {
       visibleSubtreeCount: 1,
     });
 
-    parentIndex.childIdByNameId.set(nameId, nodeId);
+    if (nameMap != null) {
+      nameMap.set(nameId, nodeId);
+    }
     appendChildReference(parentIndex, nodeId);
     return nodeId;
   }
@@ -584,7 +589,9 @@ export class PathStoreBuilder {
       visibleSubtreeCount: 1,
     });
 
-    parentIndex.childIdByNameId.set(nameId, nodeId);
+    if (parentIndex.childIdByNameId != null) {
+      parentIndex.childIdByNameId.set(nameId, nodeId);
+    }
     appendChildReference(parentIndex, nodeId);
     return nodeId;
   }
@@ -592,16 +599,18 @@ export class PathStoreBuilder {
   private getOrCreateDirectoryChild(parentId: NodeId, segment: string): NodeId {
     const nameId = internSegment(this.segmentTable, segment);
     const parentIndex = this.getDirectoryIndex(parentId);
-    const existingChildId = parentIndex.childIdByNameId.get(nameId);
-    if (existingChildId !== undefined) {
-      const existingNode = this.nodes[existingChildId];
-      if (existingNode?.kind !== PATH_STORE_NODE_KIND_DIRECTORY) {
-        throw new Error(
-          `Path collides with an existing file while creating directory "${segment}"`
-        );
-      }
+    if (parentIndex.childIdByNameId != null) {
+      const existingChildId = parentIndex.childIdByNameId.get(nameId);
+      if (existingChildId !== undefined) {
+        const existingNode = this.nodes[existingChildId];
+        if (existingNode?.kind !== PATH_STORE_NODE_KIND_DIRECTORY) {
+          throw new Error(
+            `Path collides with an existing file while creating directory "${segment}"`
+          );
+        }
 
-      return existingChildId;
+        return existingChildId;
+      }
     }
 
     const parentNode = this.nodes[parentId];
@@ -623,7 +632,9 @@ export class PathStoreBuilder {
       visibleSubtreeCount: 1,
     });
 
-    parentIndex.childIdByNameId.set(nameId, nodeId);
+    if (parentIndex.childIdByNameId != null) {
+      parentIndex.childIdByNameId.set(nameId, nodeId);
+    }
     appendChildReference(parentIndex, nodeId);
     this.directories.set(nodeId, createDirectoryChildIndex());
     return nodeId;
@@ -654,7 +665,9 @@ export class PathStoreBuilder {
       visibleSubtreeCount: 1,
     });
 
-    parentIndex.childIdByNameId.set(nameId, nodeId);
+    if (parentIndex.childIdByNameId != null) {
+      parentIndex.childIdByNameId.set(nameId, nodeId);
+    }
     appendChildReference(parentIndex, nodeId);
     this.directories.set(nodeId, createDirectoryChildIndex());
     return nodeId;
@@ -719,7 +732,6 @@ export class PathStoreBuilder {
 
       const parentIndex = directories.get(node.parentId);
       if (parentIndex != null) {
-        parentIndex.childIdByNameId.set(node.nameId, nodeId);
         parentIndex.childIds.push(nodeId);
       }
     }
@@ -773,7 +785,9 @@ export class PathStoreBuilder {
 
       const parentIndex = this.directories.get(node.parentId);
       if (parentIndex != null) {
-        parentIndex.childIdByNameId.set(node.nameId, nodeId);
+        if (parentIndex.childIdByNameId != null) {
+          parentIndex.childIdByNameId.set(node.nameId, nodeId);
+        }
         appendChildReference(parentIndex, nodeId);
       }
     }
