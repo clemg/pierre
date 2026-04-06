@@ -1,8 +1,9 @@
-import { appendChildReference, createDirectoryChildIndex } from './child-index';
 import {
-  rebuildDirectoryChildAggregates,
-  rebuildVisibleChildChunks,
+  appendChildReference,
+  createDirectoryChildIndex,
+  createPresortedDirectoryChildIndex,
 } from './child-index';
+import { rebuildDirectoryChildAggregates } from './child-index';
 import type {
   DirectoryChildIndex,
   InternalPreparedInput,
@@ -696,9 +697,16 @@ export class PathStoreBuilder {
     const nodes = this.nodes;
     const directories = this.directories;
 
+    // Replace the root's directory index with a presorted-lightweight version
+    // so it also skips child-position-map population like all other directories
+    // created in this pass.
+    directories.set(0, createPresortedDirectoryChildIndex());
+
     // Forward pass: create directory indexes and register children.  Node IDs
     // are assigned sequentially during presorted construction, so iterating in
-    // ID order preserves the canonical sorted child order.
+    // ID order preserves the canonical sorted child order.  Child-position maps
+    // are left null to avoid per-child Map.set overhead; they are rebuilt lazily
+    // on the first mutation or sibling lookup.
     for (let nodeId = 1; nodeId < nodes.length; nodeId++) {
       const node = nodes[nodeId];
       if (node == null) {
@@ -706,13 +714,12 @@ export class PathStoreBuilder {
       }
 
       if (node.kind === PATH_STORE_NODE_KIND_DIRECTORY) {
-        directories.set(nodeId, createDirectoryChildIndex());
+        directories.set(nodeId, createPresortedDirectoryChildIndex());
       }
 
       const parentIndex = directories.get(node.parentId);
       if (parentIndex != null) {
         parentIndex.childIdByNameId.set(node.nameId, nodeId);
-        parentIndex.childPositionById.set(nodeId, parentIndex.childIds.length);
         parentIndex.childIds.push(nodeId);
       }
     }
@@ -720,7 +727,8 @@ export class PathStoreBuilder {
     // Backward pass: accumulate subtree counts and directory child aggregates
     // bottom-up.  Parents always have lower IDs than their children, so
     // iterating backward ensures each child's counts are finalized before its
-    // parent reads them.
+    // parent reads them.  Visible-subtree counts are set equal to subtree
+    // counts here; state initialization adjusts them for root/flatten rules.
     for (let nodeId = nodes.length - 1; nodeId >= 1; nodeId--) {
       const node = nodes[nodeId];
       if (node == null) {
@@ -740,11 +748,11 @@ export class PathStoreBuilder {
       }
     }
 
-    // Final pass: rebuild visible-child chunk summaries for directories with
-    // many children (needed for fast child-index lookups during projection).
-    for (const directoryIndex of directories.values()) {
-      rebuildVisibleChildChunks(nodes, directoryIndex);
-    }
+    // Visible-child chunk summaries are NOT rebuilt here because state
+    // initialization (initializeOpenVisibleCounts or recomputeCountsRecursive)
+    // always rebuilds them after adjusting visible counts for expansion mode
+    // and flatten rules.  Skipping the rebuild avoids a redundant pass through
+    // all directory children.
   }
 
   // Builds directory-child indexes in the same layout as buildPresortedFinish

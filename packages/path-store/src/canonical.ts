@@ -1,6 +1,7 @@
 import {
   applyChildAggregateDelta,
   createDirectoryChildIndex,
+  ensureChildPositions,
   rebuildDirectoryChildAggregates,
   rebuildVisibleChildChunks,
   updateChildPositionsFrom,
@@ -611,9 +612,10 @@ function removeChildReference(
   childNameId: number
 ): void {
   const parentIndex = getDirectoryIndex(state, parentId);
-  const childIndex = parentIndex.childPositionById.get(childId) ?? -1;
+  const positions = ensureChildPositions(parentIndex);
+  const childIndex = positions.get(childId) ?? -1;
   parentIndex.childIdByNameId.delete(childNameId);
-  parentIndex.childPositionById.delete(childId);
+  positions.delete(childId);
   const childNode = state.snapshot.nodes[childId];
   if (childNode != null) {
     applyChildAggregateDelta(

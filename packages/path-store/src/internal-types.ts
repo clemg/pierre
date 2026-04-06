@@ -52,7 +52,7 @@ export interface DirectoryLoadInfo {
 export interface DirectoryChildIndex {
   childIds: NodeId[];
   childIdByNameId: Map<SegmentId, NodeId>;
-  childPositionById: Map<NodeId, number>;
+  childPositionById: Map<NodeId, number> | null;
   childVisibleChunkSums: number[] | null;
   totalChildSubtreeNodeCount: number;
   totalChildVisibleSubtreeCount: number;
