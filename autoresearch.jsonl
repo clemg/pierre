@@ -1,0 +1,1 @@
+{"type":"config","name":"Optimize path-store presorted first render","metricName":"presorted_first_render_p50_ms","metricUnit":"ms","bestDirection":"lower"}
