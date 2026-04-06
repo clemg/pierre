@@ -173,6 +173,23 @@ Correctness checks run through:
   - Interpretation: lazy sort keys help the real end-to-end flow because build
     pays less upfront for segment metadata. The browser win is larger than the
     benchmark win because Chrome seems to benefit more on this path than Bun.
+- Attempt 8 (candidate to keep): replace `splitCanonicalPath()`'s
+  slice-then-split path parser with a single-pass manual scanner.
+  - Full-metric benchmark result: `142.661 ms` p50 / `172.926 ms` p95 on
+    `equivalent-presorted-first-render/linux-5x/30` (~4.3% faster than the
+    corrected full baseline, ~3.0% faster than Attempt 7).
+  - Component movement:
+    - `prepare-presorted-input` improved sharply: `79.374 ms` → `36.007 ms`
+    - `build` regressed: `67.671 ms` → `106.653 ms`
+  - Matching `profile:demo` truth-check improved only slightly:
+    - visible rows ready median: `235.7 ms` → `233.8 ms`
+    - post-paint ready median: `236.7 ms` → `234.9 ms`
+  - Interpretation: this appears to trade a much faster prepare step for a
+    slower build step, probably because the new segment strings are cheaper to
+    parse up front but less friendly for later build-time interning/hash work.
+    It is still a real full-metric win, but it is less attractive than the
+    earlier changes because the browser truth-check barely moved and p95 got
+    worse.
 - Baseline checks passed:
   - `bun run lint`
   - `cd packages/path-store && bun run tsc`
