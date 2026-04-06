@@ -720,6 +720,12 @@ export class PathStoreBuilder {
     // ID order preserves the canonical sorted child order.  Child-position maps
     // are left null to avoid per-child Map.set overhead; they are rebuilt lazily
     // on the first mutation or sibling lookup.
+    //
+    // A single-entry parent cache avoids repeated Map.get lookups for
+    // consecutive children that share the same parent directory.
+    let cachedParentId = -1;
+    let cachedParentIndex: DirectoryChildIndex | null = null;
+
     for (let nodeId = 1; nodeId < nodes.length; nodeId++) {
       const node = nodes[nodeId];
       if (node == null) {
@@ -727,10 +733,24 @@ export class PathStoreBuilder {
       }
 
       if (node.kind === PATH_STORE_NODE_KIND_DIRECTORY) {
-        directories.set(nodeId, createPresortedDirectoryChildIndex());
+        const dirIndex = createPresortedDirectoryChildIndex();
+        directories.set(nodeId, dirIndex);
+
+        // If the next node shares this directory as its parent, the cache
+        // will hit immediately.
+        cachedParentId = nodeId;
+        cachedParentIndex = dirIndex;
       }
 
-      const parentIndex = directories.get(node.parentId);
+      let parentIndex: DirectoryChildIndex | null | undefined;
+      if (node.parentId === cachedParentId) {
+        parentIndex = cachedParentIndex;
+      } else {
+        parentIndex = directories.get(node.parentId);
+        cachedParentId = node.parentId;
+        cachedParentIndex = parentIndex ?? null;
+      }
+
       if (parentIndex != null) {
         parentIndex.childIds.push(nodeId);
       }
