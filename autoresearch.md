@@ -158,6 +158,21 @@ Correctness checks run through:
       `159.606 ms`
     - `profile:demo` visible rows ready median = `246.8 ms`, post-paint ready
       median = `247.9 ms`
+- Attempt 7 (candidate to keep against the corrected full metric): make segment
+  sort keys lazy in `internSegment()` so presorted bulk ingest no longer pays to
+  precompute natural-sort metadata for every unique segment.
+  - Full-metric benchmark result: `147.046 ms` p50 / `152.294 ms` p95 on
+    `equivalent-presorted-first-render/linux-5x/30` (~1.3% faster than the
+    corrected full baseline).
+  - Component movement:
+    - `prepare-presorted-input` regressed slightly: `78.513 ms` → `79.374 ms`
+    - `build` improved more: `70.542 ms` → `67.671 ms`
+  - Matching `profile:demo` truth-check also improved:
+    - visible rows ready median: `246.8 ms` → `235.7 ms`
+    - post-paint ready median: `247.9 ms` → `236.7 ms`
+  - Interpretation: lazy sort keys help the real end-to-end flow because build
+    pays less upfront for segment metadata. The browser win is larger than the
+    benchmark win because Chrome seems to benefit more on this path than Bun.
 - Baseline checks passed:
   - `bun run lint`
   - `cd packages/path-store && bun run tsc`

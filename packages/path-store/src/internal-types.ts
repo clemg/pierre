@@ -26,7 +26,7 @@ export interface SegmentSortKey {
 export interface SegmentTable {
   idByValue: Map<string, SegmentId>;
   valueById: string[];
-  sortKeyById: SegmentSortKey[];
+  sortKeyById: Array<SegmentSortKey | undefined>;
 }
 
 export interface PathStoreNode {

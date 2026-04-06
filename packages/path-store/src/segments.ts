@@ -11,6 +11,9 @@ export function createSegmentTable(): SegmentTable {
   };
 }
 
+// Bulk ingest touches every segment name, but most startup paths never compare
+// every segment naturally. Defer sort-key construction until a caller actually
+// needs ordering metadata for that segment.
 export function internSegment(
   segmentTable: SegmentTable,
   value: string
@@ -23,7 +26,7 @@ export function internSegment(
   const nextId = segmentTable.valueById.length;
   segmentTable.idByValue.set(value, nextId);
   segmentTable.valueById.push(value);
-  segmentTable.sortKeyById.push(createSegmentSortKey(value));
+  segmentTable.sortKeyById.push(undefined);
   return nextId;
 }
 
