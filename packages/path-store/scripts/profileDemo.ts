@@ -1972,6 +1972,8 @@ function formatPhaseLabel(name: string): string {
       return '  - Create store state';
     case 'store.state.initializeExpandedPaths':
       return '  - Apply expanded paths';
+    case 'store.state.initializeOpenVisibleCounts':
+      return '  - Initialize open visible counts';
     case 'store.state.recomputeCounts':
       return '  - Recompute visible counts';
     case 'store.getVisibleCount':

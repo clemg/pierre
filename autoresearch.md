@@ -133,15 +133,39 @@ Correctness checks run through:
 
 ## What's Been Tried
 
-- Baseline setup completed on branch `autoresearch/path-store-presorted-render-2026-04-06`.
+- Baseline setup completed on branch
+  `autoresearch/path-store-presorted-render-2026-04-06`.
 - Baseline benchmark via `./autoresearch.sh`:
   - `build/linux-5x` p50 = `501.940 ms`, p95 = `506.895 ms`
   - `visible-first/linux-5x/30` p50 = `0.001459 ms`, p95 = `0.002250 ms`
-  - `equivalent-presorted-warm-first-render/linux-5x/30` p50 = `501.942 ms`, p95 = `506.897 ms`
+  - `equivalent-presorted-warm-first-render/linux-5x/30` p50 = `501.942 ms`, p95
+    = `506.897 ms`
 - Baseline checks passed:
   - `bun run lint`
   - `cd packages/path-store && bun run tsc`
   - `cd packages/path-store && bun test`
+- Attempt 1 (reverted by `checks_failed`): specialized constructor fast path for
+  `initialExpansion: 'open'` that initialized visible counts without rerunning
+  the generic full-tree count-repair walk.
+  - Benchmark result before revert: `473.521 ms` p50 / `477.416 ms` p95 on
+    `equivalent-presorted-warm-first-render/linux-5x/30` (~5.7% faster than
+    baseline).
+  - The failure was not a benchmark regression. A newly added test fixture used
+    a path array that was not actually sorted for `preparePresortedInput()`, so
+    checks failed for the test, not for the optimization idea itself.
+- Attempt 2 (candidate to keep): reapply the open-startup visible-count fast
+  path, plus a corrected regression test that compares prepared-input startup
+  with the generic presorted constructor path under open+flattened visibility.
+  - Benchmark result: `474.797 ms` p50 / `481.526 ms` p95 on
+    `equivalent-presorted-warm-first-render/linux-5x/30` (~5.4% faster than
+    baseline).
+  - Matching `profile:demo` truth-check also improved materially:
+    - visible rows ready median: `601.7 ms` → `414.7 ms`
+    - post-paint ready median: `602.8 ms` → `415.8 ms`
+  - Interpretation: this is a real first-render improvement, not a benchmark
+    boundary trick. The saved work comes from avoiding the generic startup
+    visible-count recomputation when the constructor already knows every
+    directory starts open and there are no explicit expansion overrides.
 - Early read-through notes:
   - The first-render target is overwhelmingly dominated by build time, not the
     visible-window read itself.
