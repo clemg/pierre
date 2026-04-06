@@ -4,22 +4,23 @@
 
 Optimize the real `@pierre/path-store` presorted 0→1 render path represented by:
 
-- `bun ws path-store benchmark -- --preset presorted-render`
+- `bun ws path-store benchmark -- --preset full --filter '^(prepare-presorted-input/linux-5x|build/linux-5x|visible-first/linux-5x/30)$'`
 
-The benchmark preset currently measures two component scenarios against the
-`linux-5x` workload:
+The benchmark command used by the autoresearch loop measures three component
+scenarios against the `linux-5x` workload:
 
+- `prepare-presorted-input/linux-5x`
 - `build/linux-5x`
 - `visible-first/linux-5x/30`
 
-and the main optimization target is the derived summary that sums those two
+and the main optimization target is the derived summary that sums those three
 measured components:
 
-- `equivalent-presorted-warm-first-render/linux-5x/30`
+- `equivalent-presorted-first-render/linux-5x/30`
 
-This is the best primary metric because it matches the intended workload: start
-from a presorted path array, build the store, and render the first visible 30
-rows.
+This is the best primary metric because it matches the intended workload more
+closely than the earlier warm-start target: start from a presorted string array,
+prepare the input object, build the store, and render the first visible 30 rows.
 
 The nearby truth-check is:
 
@@ -33,10 +34,12 @@ measurement mistake until proven otherwise.
 
 ## Metrics
 
-- **Primary**: `presorted_first_render_p50_ms` (ms, lower is better) — p50 of
-  `equivalent-presorted-warm-first-render/linux-5x/30`
+- **Primary**: `presorted_full_first_render_p50_ms` (ms, lower is better) — p50
+  of `equivalent-presorted-first-render/linux-5x/30`
 - **Secondary**:
-  - `presorted_first_render_p95_ms`
+  - `presorted_full_first_render_p95_ms`
+  - `prepare_presorted_input_p50_ms`
+  - `prepare_presorted_input_p95_ms`
   - `build_p50_ms`
   - `build_p95_ms`
   - `visible_first_p50_ms`
@@ -135,11 +138,26 @@ Correctness checks run through:
 
 - Baseline setup completed on branch
   `autoresearch/path-store-presorted-render-2026-04-06`.
-- Baseline benchmark via `./autoresearch.sh`:
+- Original warm-start benchmark baseline via `./autoresearch.sh` before the
+  target correction:
   - `build/linux-5x` p50 = `501.940 ms`, p95 = `506.895 ms`
   - `visible-first/linux-5x/30` p50 = `0.001459 ms`, p95 = `0.002250 ms`
   - `equivalent-presorted-warm-first-render/linux-5x/30` p50 = `501.942 ms`, p95
     = `506.897 ms`
+- Target correction after user review:
+  - The profile truth-check includes `page.preparePresortedInput`, but the old
+    warm-start benchmark target did not include `prepare-presorted-input`.
+  - The loop now uses the fuller benchmark target
+    `equivalent-presorted-first-render/linux-5x/30` so benchmark percentages
+    line up more honestly with `profile:demo`.
+  - New corrected baseline on current code:
+    - `prepare-presorted-input/linux-5x` p50 = `78.513 ms`, p95 = `85.899 ms`
+    - `build/linux-5x` p50 = `70.542 ms`, p95 = `73.703 ms`
+    - `visible-first/linux-5x/30` p50 = `0.001459 ms`, p95 = `0.004042 ms`
+    - `equivalent-presorted-first-render/linux-5x/30` p50 = `149.057 ms`, p95 =
+      `159.606 ms`
+    - `profile:demo` visible rows ready median = `246.8 ms`, post-paint ready
+      median = `247.9 ms`
 - Baseline checks passed:
   - `bun run lint`
   - `cd packages/path-store && bun run tsc`
@@ -221,6 +239,20 @@ Correctness checks run through:
     canonical order inside the builder was a major chunk of startup cost. This
     is a real workload win, not a benchmark trick, because the browser profile
     moved strongly in the same direction.
+  - Post-keep verification after user concern about benchmark drift:
+    - Bun-side constructor instrumentation on current HEAD (same measured region
+      as the benchmark's build scenario) reports roughly:
+      - total constructor + first read median: `85.5 ms`
+      - `store.builder.appendPreparedPaths` median: `71.9 ms`
+      - `store.builder.computeSubtreeCounts` median: `5.9 ms`
+      - `store.state.initializeOpenVisibleCounts` median: `4.5 ms`
+    - Current browser `profile:demo` still shows matching directional wins:
+      - `page.createStore` median ≈ `174.7 ms`
+      - visible rows ready median ≈ `256.9 ms`
+    - Conclusion: Bun benefits much more than Chrome from these changes, but the
+      benchmark is still measuring the same constructor work. The only mismatch
+      was that the old primary target excluded `prepare-presorted-input`, which
+      is now corrected in the loop.
 - Early read-through notes:
   - The first-render target is overwhelmingly dominated by build time, not the
     visible-window read itself.

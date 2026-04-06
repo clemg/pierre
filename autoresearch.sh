@@ -34,7 +34,7 @@ trap cleanup EXIT
 bun ws path-store benchmark -- --help >/dev/null 2>&1
 bun ws path-store profile:demo -- --help >/dev/null 2>&1
 
-if ! bun ws path-store benchmark -- --preset presorted-render --json >"$BENCHMARK_JSON" 2>"$BENCHMARK_ERR"; then
+if ! bun ws path-store benchmark -- --preset full --filter '^(prepare-presorted-input/linux-5x|build/linux-5x|visible-first/linux-5x/30)$' --json >"$BENCHMARK_JSON" 2>"$BENCHMARK_ERR"; then
   tail -80 "$BENCHMARK_ERR" >&2
   exit 1
 fi
@@ -62,7 +62,7 @@ function formatHumanMs(value) {
 const benchmarkPath = process.argv[1];
 const run = JSON.parse(readFileSync(benchmarkPath, "utf8"));
 const derived = run.derivedSummaries?.find(
-  (summary) => summary.name === "equivalent-presorted-warm-first-render/linux-5x/30"
+  (summary) => summary.name === "equivalent-presorted-first-render/linux-5x/30"
 );
 if (derived == null) {
   fail(
@@ -78,9 +78,10 @@ const benchmarkByAlias = new Map(
     benchmark.runs?.[0]?.stats ?? null,
   ])
 );
+const prepare = benchmarkByAlias.get("prepare-presorted-input/linux-5x");
 const build = benchmarkByAlias.get("build/linux-5x");
 const visible = benchmarkByAlias.get("visible-first/linux-5x/30");
-if (build == null || visible == null) {
+if (prepare == null || build == null || visible == null) {
   fail(
     `Missing component stats. Available benchmarks: ${JSON.stringify(
       [...benchmarkByAlias.keys()]
@@ -92,11 +93,13 @@ console.log(
   `primary target: ${derived.name} p50=${formatHumanMs(derived.stats.p50)} p95=${formatHumanMs(derived.stats.p95)}`
 );
 console.log(
-  `components: build p50=${formatHumanMs(build.p50)} p95=${formatHumanMs(build.p95)}, visible-first p50=${formatHumanMs(visible.p50)} p95=${formatHumanMs(visible.p95)}`
+  `components: prepare p50=${formatHumanMs(prepare.p50)} p95=${formatHumanMs(prepare.p95)}, build p50=${formatHumanMs(build.p50)} p95=${formatHumanMs(build.p95)}, visible-first p50=${formatHumanMs(visible.p50)} p95=${formatHumanMs(visible.p95)}`
 );
 
-console.log(`METRIC presorted_first_render_p50_ms=${formatMetric(nsToMs(derived.stats.p50))}`);
-console.log(`METRIC presorted_first_render_p95_ms=${formatMetric(nsToMs(derived.stats.p95))}`);
+console.log(`METRIC presorted_full_first_render_p50_ms=${formatMetric(nsToMs(derived.stats.p50))}`);
+console.log(`METRIC presorted_full_first_render_p95_ms=${formatMetric(nsToMs(derived.stats.p95))}`);
+console.log(`METRIC prepare_presorted_input_p50_ms=${formatMetric(nsToMs(prepare.p50))}`);
+console.log(`METRIC prepare_presorted_input_p95_ms=${formatMetric(nsToMs(prepare.p95))}`);
 console.log(`METRIC build_p50_ms=${formatMetric(nsToMs(build.p50))}`);
 console.log(`METRIC build_p95_ms=${formatMetric(nsToMs(build.p95))}`);
 console.log(`METRIC visible_first_p50_ms=${formatMetric(nsToMs(visible.p50))}`);
