@@ -21,7 +21,7 @@ import {
 } from './internal/benchmarkInstrumentation';
 import type { BenchmarkInstrumentation } from './internal/benchmarkInstrumentation';
 import { resolvePathStoreOptions } from './options';
-import { parseInputPath, splitCanonicalPath } from './path';
+import { parseInputPath } from './path';
 import type {
   PathStoreCompareEntry,
   PathStoreOptions,
@@ -83,6 +83,59 @@ function computeSharedPrefixLength(
   }
 
   return maxLength;
+}
+
+// The presorted builder path can compute segment splits and shared-prefix depth
+// together so it does not need a second pass over the parsed segment array.
+function splitPresortedInputPath(
+  inputPath: string,
+  previousSegments: readonly string[]
+): {
+  hasTrailingSlash: boolean;
+  segments: readonly string[];
+  sharedPrefixLength: number;
+} {
+  const hasTrailingSlash =
+    inputPath.length > 0 && inputPath.charCodeAt(inputPath.length - 1) === 47;
+  const endIndex = hasTrailingSlash ? inputPath.length - 1 : inputPath.length;
+  const segments: string[] = [];
+  let segmentStart = 0;
+  let sharedPrefixLength = 0;
+  let segmentIndex = 0;
+  let prefixStillShared = true;
+
+  for (let index = 0; index < endIndex; index++) {
+    if (inputPath.charCodeAt(index) !== 47) {
+      continue;
+    }
+
+    const segment = inputPath.slice(segmentStart, index);
+    segments.push(segment);
+    if (prefixStillShared) {
+      if (previousSegments[segmentIndex] === segment) {
+        sharedPrefixLength++;
+      } else {
+        prefixStillShared = false;
+      }
+    }
+
+    segmentIndex++;
+    segmentStart = index + 1;
+  }
+
+  const finalSegment = inputPath.slice(segmentStart, endIndex);
+  segments.push(finalSegment);
+  if (prefixStillShared) {
+    if (previousSegments[segmentIndex] === finalSegment) {
+      sharedPrefixLength++;
+    }
+  }
+
+  return {
+    hasTrailingSlash,
+    segments,
+    sharedPrefixLength,
+  };
 }
 
 function getDirectoryDepth(preparedPath: PreparedPath): number {
@@ -238,7 +291,8 @@ export class PathStoreBuilder {
             throw new Error(`Duplicate path: "${path}"`);
           }
 
-          const { hasTrailingSlash, segments } = splitCanonicalPath(path);
+          const { hasTrailingSlash, segments, sharedPrefixLength } =
+            splitPresortedInputPath(path, previousSegments);
           const currentDirectoryDepth = hasTrailingSlash
             ? segments.length
             : segments.length - 1;
@@ -246,7 +300,7 @@ export class PathStoreBuilder {
             previousPath == null
               ? 0
               : Math.min(
-                  computeSharedPrefixLength(previousSegments, segments),
+                  sharedPrefixLength,
                   previousDirectoryDepth,
                   currentDirectoryDepth
                 );

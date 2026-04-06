@@ -187,6 +187,27 @@ Correctness checks run through:
   - Interpretation: this is a cleaner version of the browser-first strategy.
     Fusing parse+append for presorted input reduces the browser-visible cost of
     on-demand parsing enough to justify keeping it under the new target.
+- Attempt 20 (reverted by `discard`): inline more of the presorted fast path
+  inside `appendPresortedPaths()` to avoid helper-function overhead for node
+  creation and child-index updates.
+  - Profile median improved only slightly (`213.4 ms` → `212.6 ms`), but p95 did
+    not improve and the Bun benchmark regressed badly (`144.597 ms` →
+    `162.843 ms`).
+  - Conclusion: the extra inlining is not worth the much larger Bun regression
+    for such a tiny browser win.
+- Attempt 21 (candidate to keep under the profile-primary target): compute
+  shared-prefix depth while splitting presorted paths so the browser-first fast
+  path avoids a second pass through `computeSharedPrefixLength()`.
+  - Profile primary improved dramatically:
+    - visible rows ready median: `213.4 ms` → `182.1 ms`
+    - visible rows ready p95: `219.32 ms` → `190.84 ms`
+    - post-paint ready median: `214.3 ms` → `183.1 ms`
+  - Benchmark secondary regressed again:
+    - full benchmark p50: `144.597 ms` → `152.204 ms`
+    - build absorbed the change and got slower in Bun.
+  - Interpretation: fusing path splitting and shared-prefix detection appears to
+    be a major browser win on the new presorted builder path, even though Bun
+    dislikes the same trade.
 - Attempt 7 (candidate to keep against the corrected full metric): make segment
   sort keys lazy in `internSegment()` so presorted bulk ingest no longer pays to
   precompute natural-sort metadata for every unique segment.
