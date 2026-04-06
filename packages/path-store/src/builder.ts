@@ -85,56 +85,61 @@ function computeSharedPrefixLength(
   return maxLength;
 }
 
-// The presorted builder path can compute segment splits and shared-prefix depth
-// together so it does not need a second pass over the parsed segment array.
-function splitPresortedInputPath(
+// Compare adjacent canonical path strings directly so the presorted fast path
+// can skip the shared directory prefix without allocating a full segment array.
+function getPresortedPathPrefixInfo(
   inputPath: string,
-  previousSegments: readonly string[]
+  previousPath: string | null
 ): {
   hasTrailingSlash: boolean;
-  segments: readonly string[];
-  sharedPrefixLength: number;
+  sharedDirectoryDepth: number;
+  unsharedSegmentStart: number;
 } {
   const hasTrailingSlash =
     inputPath.length > 0 && inputPath.charCodeAt(inputPath.length - 1) === 47;
-  const endIndex = hasTrailingSlash ? inputPath.length - 1 : inputPath.length;
-  const segments: string[] = [];
-  let segmentStart = 0;
-  let sharedPrefixLength = 0;
-  let segmentIndex = 0;
-  let prefixStillShared = true;
-
-  for (let index = 0; index < endIndex; index++) {
-    if (inputPath.charCodeAt(index) !== 47) {
-      continue;
-    }
-
-    const segment = inputPath.slice(segmentStart, index);
-    segments.push(segment);
-    if (prefixStillShared) {
-      if (previousSegments[segmentIndex] === segment) {
-        sharedPrefixLength++;
-      } else {
-        prefixStillShared = false;
-      }
-    }
-
-    segmentIndex++;
-    segmentStart = index + 1;
+  if (previousPath == null) {
+    return {
+      hasTrailingSlash,
+      sharedDirectoryDepth: 0,
+      unsharedSegmentStart: 0,
+    };
   }
 
-  const finalSegment = inputPath.slice(segmentStart, endIndex);
-  segments.push(finalSegment);
-  if (prefixStillShared) {
-    if (previousSegments[segmentIndex] === finalSegment) {
-      sharedPrefixLength++;
+  const endIndex = hasTrailingSlash ? inputPath.length - 1 : inputPath.length;
+  const compareLength = Math.min(endIndex, previousPath.length);
+  let sharedDirectoryDepth = 0;
+  let unsharedSegmentStart = 0;
+
+  for (let index = 0; index < compareLength; index++) {
+    const charCode = inputPath.charCodeAt(index);
+    if (charCode !== previousPath.charCodeAt(index)) {
+      return {
+        hasTrailingSlash,
+        sharedDirectoryDepth,
+        unsharedSegmentStart,
+      };
     }
+
+    if (charCode === 47) {
+      sharedDirectoryDepth++;
+      unsharedSegmentStart = index + 1;
+    }
+  }
+
+  if (
+    hasTrailingSlash &&
+    compareLength === endIndex &&
+    previousPath.length > endIndex &&
+    previousPath.charCodeAt(endIndex) === 47
+  ) {
+    sharedDirectoryDepth++;
+    unsharedSegmentStart = endIndex + 1;
   }
 
   return {
     hasTrailingSlash,
-    segments,
-    sharedPrefixLength,
+    sharedDirectoryDepth,
+    unsharedSegmentStart,
   };
 }
 
@@ -282,36 +287,28 @@ export class PathStoreBuilder {
       this.instrumentation,
       'store.builder.appendPresortedPaths',
       () => {
-        let previousDirectoryDepth = 0;
         let previousPath: string | null = null;
-        let previousSegments: readonly string[] = [];
 
         for (const path of paths) {
           if (previousPath === path) {
             throw new Error(`Duplicate path: "${path}"`);
           }
 
-          const { hasTrailingSlash, segments, sharedPrefixLength } =
-            splitPresortedInputPath(path, previousSegments);
-          const currentDirectoryDepth = hasTrailingSlash
-            ? segments.length
-            : segments.length - 1;
-          const sharedDirectoryDepth =
-            previousPath == null
-              ? 0
-              : Math.min(
-                  sharedPrefixLength,
-                  previousDirectoryDepth,
-                  currentDirectoryDepth
-                );
+          const {
+            hasTrailingSlash,
+            sharedDirectoryDepth,
+            unsharedSegmentStart,
+          } = getPresortedPathPrefixInfo(path, previousPath);
+          const endIndex = hasTrailingSlash ? path.length - 1 : path.length;
 
           this.directoryStack.length = sharedDirectoryDepth + 1;
 
-          for (
-            let segmentIndex = sharedDirectoryDepth;
-            segmentIndex < currentDirectoryDepth;
-            segmentIndex++
-          ) {
+          let segmentStart = unsharedSegmentStart;
+          for (let index = unsharedSegmentStart; index < endIndex; index++) {
+            if (path.charCodeAt(index) !== 47) {
+              continue;
+            }
+
             const parentId =
               this.directoryStack[this.directoryStack.length - 1];
             if (parentId === undefined) {
@@ -322,12 +319,29 @@ export class PathStoreBuilder {
 
             const childId = this.createDirectoryChild(
               parentId,
-              segments[segmentIndex]
+              path.slice(segmentStart, index)
             );
             this.directoryStack.push(childId);
+            segmentStart = index + 1;
           }
 
           if (hasTrailingSlash) {
+            if (segmentStart < endIndex) {
+              const parentId =
+                this.directoryStack[this.directoryStack.length - 1];
+              if (parentId === undefined) {
+                throw new Error(
+                  `Unable to resolve directory parent for "${path}"`
+                );
+              }
+
+              const childId = this.createDirectoryChild(
+                parentId,
+                path.slice(segmentStart, endIndex)
+              );
+              this.directoryStack.push(childId);
+            }
+
             const directoryId =
               this.directoryStack[this.directoryStack.length - 1];
             if (directoryId === undefined) {
@@ -342,13 +356,10 @@ export class PathStoreBuilder {
               throw new Error(`Unable to resolve file parent for "${path}"`);
             }
 
-            const basename = segments[segments.length - 1] ?? '';
-            this.createFileChildUnchecked(parentId, basename);
+            this.createFileChildUnchecked(parentId, path.slice(segmentStart));
           }
 
-          previousDirectoryDepth = currentDirectoryDepth;
           previousPath = path;
-          previousSegments = segments;
         }
 
         if (previousPath != null) {
