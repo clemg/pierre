@@ -7,7 +7,9 @@ import { PATH_STORE_NODE_KIND_DIRECTORY } from './internal-types';
 import { PATH_STORE_NODE_KIND_FILE } from './internal-types';
 import type { PathStoreCompareEntry } from './public-types';
 
-const DIGIT_SEQUENCE_REGEX = /\d+/g;
+function isDigitCode(characterCode: number): boolean {
+  return characterCode >= 48 && characterCode <= 57;
+}
 
 function splitIntoNaturalTokens(value: string): readonly (number | string)[] {
   const tokens: (number | string)[] = [];
@@ -15,19 +17,25 @@ function splitIntoNaturalTokens(value: string): readonly (number | string)[] {
   let index = 0;
 
   while (index < value.length) {
-    DIGIT_SEQUENCE_REGEX.lastIndex = index;
-    const match = DIGIT_SEQUENCE_REGEX.exec(value);
-    if (match == null) {
+    while (index < value.length && !isDigitCode(value.charCodeAt(index))) {
+      index += 1;
+    }
+
+    if (index >= value.length) {
       break;
     }
 
-    const matchIndex = match.index;
-    if (matchIndex > tokenStart) {
-      tokens.push(value.slice(tokenStart, matchIndex));
+    if (index > tokenStart) {
+      tokens.push(value.slice(tokenStart, index));
     }
 
-    tokens.push(Number.parseInt(match[0], 10));
-    index = matchIndex + match[0].length;
+    let numberValue = 0;
+    while (index < value.length && isDigitCode(value.charCodeAt(index))) {
+      numberValue = numberValue * 10 + (value.charCodeAt(index) - 48);
+      index += 1;
+    }
+
+    tokens.push(numberValue);
     tokenStart = index;
   }
 
@@ -35,7 +43,6 @@ function splitIntoNaturalTokens(value: string): readonly (number | string)[] {
     tokens.push(value.slice(tokenStart));
   }
 
-  DIGIT_SEQUENCE_REGEX.lastIndex = 0;
   return tokens;
 }
 

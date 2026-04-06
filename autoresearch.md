@@ -185,6 +185,18 @@ Correctness checks run through:
     profiling should inspect `page.createStore`/builder phase deltas to confirm
     how much of the gain is builder-order validation overhead vs. broader sort
     key creation work.
+- Attempt 4 (candidate to keep): replace the remaining regex-based digit walk
+  in `splitIntoNaturalTokens()` with a manual char-code scanner.
+  - Benchmark result: `141.605 ms` p50 / `146.730 ms` p95 on
+    `equivalent-presorted-warm-first-render/linux-5x/30` (~71.8% faster than
+    baseline, ~14.3% faster than Attempt 3).
+  - Matching `profile:demo` truth-check still improved, though modestly:
+    - visible rows ready median: `360.2 ms` → `354.2 ms`
+    - post-paint ready median: `361.2 ms` → `355.7 ms`
+  - Interpretation: the manual scan continues to help the same natural-sort hot
+    path, but the biggest gains are still Bun-specific. This is likely a valid
+    benchmark win because the browser truth-check also moved in the right
+    direction, just by a smaller amount.
 - Early read-through notes:
   - The first-render target is overwhelmingly dominated by build time, not the
     visible-window read itself.
