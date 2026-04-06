@@ -1,8 +1,4 @@
-import {
-  getPreparedInputEntries,
-  PathStoreBuilder,
-  preparePathEntries,
-} from './builder';
+import { PathStoreBuilder, preparePathEntries } from './builder';
 import {
   PATH_STORE_NODE_FLAG_EXPLICIT,
   PATH_STORE_NODE_FLAG_ROOT,
@@ -831,9 +827,7 @@ export class StaticPathStore {
   public constructor(options: PathStoreConstructorOptions = {}) {
     const builder = new PathStoreBuilder(options);
     if (options.preparedInput != null) {
-      builder.appendPreparedPaths(
-        getPreparedInputEntries(options.preparedInput)
-      );
+      builder.appendPreparedInput(options.preparedInput);
     } else {
       const inputPaths = options.paths ?? [];
       if (options.presorted === true) {

@@ -1,5 +1,4 @@
 import {
-  getPreparedInputEntries,
   PathStoreBuilder,
   prepareInput as prepareCanonicalInput,
   preparePaths as prepareCanonicalPaths,
@@ -85,9 +84,7 @@ export class PathStore {
       () => new PathStoreBuilder(options)
     );
     if (options.preparedInput != null) {
-      builder.appendPreparedPaths(
-        getPreparedInputEntries(options.preparedInput)
-      );
+      builder.appendPreparedInput(options.preparedInput);
     } else {
       const inputPaths = options.paths ?? [];
 

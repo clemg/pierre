@@ -52,6 +52,130 @@ function compareWithSortOption(
   return sort(createCompareEntry(left), createCompareEntry(right));
 }
 
+interface PreparedPathAppendPlanEntry {
+  currentDirectoryDepth: number;
+  sharedDirectoryDepth: number;
+}
+
+interface PreparedInputAppendPlanCache {
+  customSortPlans?: WeakMap<
+    PathStorePathComparator,
+    readonly PreparedPathAppendPlanEntry[]
+  >;
+  defaultSortPlan?: readonly PreparedPathAppendPlanEntry[];
+}
+
+const PREPARED_INPUT_APPEND_PLAN_CACHE = Symbol('preparedInputAppendPlanCache');
+
+type InternalPreparedInputWithAppendPlanCache = InternalPreparedInput & {
+  [PREPARED_INPUT_APPEND_PLAN_CACHE]?: PreparedInputAppendPlanCache;
+};
+
+function createPreparedPathAppendPlan(
+  preparedPaths: readonly PreparedPath[],
+  sort: 'default' | PathStorePathComparator
+): PreparedPathAppendPlanEntry[] {
+  const appendPlan = new Array<PreparedPathAppendPlanEntry>(
+    preparedPaths.length
+  );
+  let previousPath: PreparedPath | null = null;
+
+  for (let index = 0; index < preparedPaths.length; index++) {
+    const preparedPath = preparedPaths[index];
+    if (preparedPath == null) {
+      continue;
+    }
+
+    if (previousPath != null) {
+      const orderComparison = compareWithSortOption(
+        previousPath,
+        preparedPath,
+        sort
+      );
+      if (orderComparison > 0) {
+        throw new Error(
+          `Builder input must be sorted before appendPaths(): "${preparedPath.path}"`
+        );
+      }
+
+      if (orderComparison === 0 && preparedPath.path === previousPath.path) {
+        throw new Error(`Duplicate path: "${preparedPath.path}"`);
+      }
+    }
+
+    const currentDirectoryDepth = getDirectoryDepth(preparedPath);
+    const previousDirectoryDepth =
+      previousPath == null ? 0 : getDirectoryDepth(previousPath);
+    const sharedPrefixLength =
+      previousPath == null
+        ? 0
+        : computeSharedPrefixLength(
+            previousPath.segments,
+            preparedPath.segments
+          );
+
+    appendPlan[index] = {
+      currentDirectoryDepth,
+      sharedDirectoryDepth: Math.min(
+        sharedPrefixLength,
+        currentDirectoryDepth,
+        previousDirectoryDepth
+      ),
+    };
+    previousPath = preparedPath;
+  }
+
+  return appendPlan;
+}
+
+function getPreparedInputAppendPlanCache(
+  preparedInput: InternalPreparedInputWithAppendPlanCache
+): PreparedInputAppendPlanCache {
+  const existingCache = preparedInput[PREPARED_INPUT_APPEND_PLAN_CACHE];
+  if (existingCache != null) {
+    return existingCache;
+  }
+
+  const nextCache: PreparedInputAppendPlanCache = {};
+
+  try {
+    Object.defineProperty(preparedInput, PREPARED_INPUT_APPEND_PLAN_CACHE, {
+      configurable: true,
+      enumerable: false,
+      value: nextCache,
+      writable: true,
+    });
+    return preparedInput[PREPARED_INPUT_APPEND_PLAN_CACHE] ?? nextCache;
+  } catch {
+    return nextCache;
+  }
+}
+
+function getPreparedInputAppendPlan(
+  preparedInput: import('./public-types').PathStorePreparedInput,
+  preparedPaths: readonly PreparedPath[],
+  sort: 'default' | PathStorePathComparator
+): readonly PreparedPathAppendPlanEntry[] {
+  const internalPreparedInput =
+    preparedInput as InternalPreparedInputWithAppendPlanCache;
+  const cache = getPreparedInputAppendPlanCache(internalPreparedInput);
+
+  if (sort === 'default') {
+    cache.defaultSortPlan ??= createPreparedPathAppendPlan(preparedPaths, sort);
+    return cache.defaultSortPlan;
+  }
+
+  cache.customSortPlans ??= new WeakMap();
+  const existingPlan = cache.customSortPlans.get(sort);
+  if (existingPlan != null) {
+    return existingPlan;
+  }
+
+  const nextPlan = createPreparedPathAppendPlan(preparedPaths, sort);
+  cache.customSortPlans.set(sort, nextPlan);
+  return nextPlan;
+}
+
 function createRootNode(): PathStoreNode {
   return {
     depth: 0,
@@ -187,13 +311,44 @@ export class PathStoreBuilder {
     );
   }
 
-  public appendPreparedPaths(preparedPaths: readonly PreparedPath[]): this {
+  public appendPreparedInput(
+    preparedInput: import('./public-types').PathStorePreparedInput
+  ): this {
+    const preparedPaths = getPreparedInputEntries(preparedInput);
+    const appendPlan = getPreparedInputAppendPlan(
+      preparedInput,
+      preparedPaths,
+      this.options.sort
+    );
+    return this.appendPreparedPaths(preparedPaths, appendPlan);
+  }
+
+  public appendPreparedPaths(
+    preparedPaths: readonly PreparedPath[],
+    appendPlan?: readonly PreparedPathAppendPlanEntry[]
+  ): this {
     withBenchmarkPhase(
       this.instrumentation,
       'store.builder.appendPreparedPaths',
       () => {
-        for (const preparedPath of preparedPaths) {
-          this.appendPreparedPath(preparedPath);
+        const shouldUseAppendPlan =
+          appendPlan != null && this.lastPreparedPath == null;
+        if (shouldUseAppendPlan && appendPlan.length !== preparedPaths.length) {
+          throw new Error(
+            'Prepared append plan length must match prepared path count.'
+          );
+        }
+
+        for (let index = 0; index < preparedPaths.length; index++) {
+          const preparedPath = preparedPaths[index];
+          if (preparedPath == null) {
+            continue;
+          }
+
+          this.appendPreparedPath(
+            preparedPath,
+            shouldUseAppendPlan ? appendPlan?.[index] : undefined
+          );
         }
       }
     );
@@ -216,43 +371,51 @@ export class PathStoreBuilder {
     };
   }
 
-  private appendPreparedPath(preparedPath: PreparedPath): void {
-    if (this.lastPreparedPath != null) {
-      const orderComparison = compareWithSortOption(
-        this.lastPreparedPath,
-        preparedPath,
-        this.options.sort
-      );
-      if (orderComparison > 0) {
-        throw new Error(
-          `Builder input must be sorted before appendPaths(): "${preparedPath.path}"`
+  private appendPreparedPath(
+    preparedPath: PreparedPath,
+    appendPlanEntry: PreparedPathAppendPlanEntry | undefined
+  ): void {
+    let currentDirectoryDepth: number;
+    let sharedDirectoryDepth: number;
+
+    if (appendPlanEntry == null) {
+      const previousPath = this.lastPreparedPath;
+      if (previousPath != null) {
+        const orderComparison = compareWithSortOption(
+          previousPath,
+          preparedPath,
+          this.options.sort
         );
-      }
-
-      if (
-        orderComparison === 0 &&
-        preparedPath.path === this.lastPreparedPath.path
-      ) {
-        throw new Error(`Duplicate path: "${preparedPath.path}"`);
-      }
-    }
-
-    const previousPath = this.lastPreparedPath;
-    const currentDirectoryDepth = getDirectoryDepth(preparedPath);
-    const previousDirectoryDepth =
-      previousPath == null ? 0 : getDirectoryDepth(previousPath);
-    const sharedPrefixLength =
-      previousPath == null
-        ? 0
-        : computeSharedPrefixLength(
-            previousPath.segments,
-            preparedPath.segments
+        if (orderComparison > 0) {
+          throw new Error(
+            `Builder input must be sorted before appendPaths(): "${preparedPath.path}"`
           );
-    const sharedDirectoryDepth = Math.min(
-      sharedPrefixLength,
-      currentDirectoryDepth,
-      previousDirectoryDepth
-    );
+        }
+
+        if (orderComparison === 0 && preparedPath.path === previousPath.path) {
+          throw new Error(`Duplicate path: "${preparedPath.path}"`);
+        }
+      }
+
+      currentDirectoryDepth = getDirectoryDepth(preparedPath);
+      const previousDirectoryDepth =
+        previousPath == null ? 0 : getDirectoryDepth(previousPath);
+      const sharedPrefixLength =
+        previousPath == null
+          ? 0
+          : computeSharedPrefixLength(
+              previousPath.segments,
+              preparedPath.segments
+            );
+      sharedDirectoryDepth = Math.min(
+        sharedPrefixLength,
+        currentDirectoryDepth,
+        previousDirectoryDepth
+      );
+    } else {
+      currentDirectoryDepth = appendPlanEntry.currentDirectoryDepth;
+      sharedDirectoryDepth = appendPlanEntry.sharedDirectoryDepth;
+    }
 
     this.directoryStack.length = sharedDirectoryDepth + 1;
 
