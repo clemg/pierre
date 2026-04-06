@@ -214,8 +214,8 @@ Correctness checks run through:
     - mutation guardrails remained healthy:
       - `rename-leaf` p50 ≈ `0.013 ms`, p95 ≈ `0.016 ms`
       - `rename-root-directory` p50 ≈ `0.735 ms`, p95 ≈ `0.766 ms`
-- Attempt 22 (candidate to keep under the profile-primary target): stop
-  eagerly caching full file-path strings for bulk-ingested files on the trusted
+- Attempt 22 (candidate to keep under the profile-primary target): stop eagerly
+  caching full file-path strings for bulk-ingested files on the trusted
   presorted builder path so first render only materializes the visible window's
   paths lazily.
   - Profile primary improved again:

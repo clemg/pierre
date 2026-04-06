@@ -250,6 +250,7 @@ export class PathStoreBuilder {
   private readonly instrumentation: BenchmarkInstrumentation | null;
   private readonly segmentSortKeyCache = new Map<string, SegmentSortKey>();
   private readonly segmentTable = createSegmentTable();
+  private hasDeferredDirectoryIndexes = false;
 
   public constructor(options: PathStoreOptions = {}) {
     this.instrumentation = getBenchmarkInstrumentation(options);
@@ -288,6 +289,9 @@ export class PathStoreBuilder {
       'store.builder.appendPresortedPaths',
       () => {
         let previousPath: string | null = null;
+        let currentDepth = 0;
+        const nodes = this.nodes;
+        const segmentTable = this.segmentTable;
 
         for (const path of paths) {
           if (previousPath === path) {
@@ -302,6 +306,7 @@ export class PathStoreBuilder {
           const endIndex = hasTrailingSlash ? path.length - 1 : path.length;
 
           this.directoryStack.length = sharedDirectoryDepth + 1;
+          currentDepth = sharedDirectoryDepth;
 
           let segmentStart = unsharedSegmentStart;
           for (let index = unsharedSegmentStart; index < endIndex; index++) {
@@ -317,11 +322,24 @@ export class PathStoreBuilder {
               );
             }
 
-            const childId = this.createDirectoryChild(
+            currentDepth++;
+            const nodeId = nodes.length;
+            nodes.push({
+              depth: currentDepth,
+              flags: 0,
+              id: nodeId,
+              kind: PATH_STORE_NODE_KIND_DIRECTORY,
+              nameId: internSegment(
+                segmentTable,
+                path.slice(segmentStart, index)
+              ),
               parentId,
-              path.slice(segmentStart, index)
-            );
-            this.directoryStack.push(childId);
+              pathCache: null,
+              pathCacheVersion: 0,
+              subtreeNodeCount: 1,
+              visibleSubtreeCount: 1,
+            });
+            this.directoryStack.push(nodeId);
             segmentStart = index + 1;
           }
 
@@ -335,11 +353,24 @@ export class PathStoreBuilder {
                 );
               }
 
-              const childId = this.createDirectoryChild(
+              currentDepth++;
+              const nodeId = nodes.length;
+              nodes.push({
+                depth: currentDepth,
+                flags: 0,
+                id: nodeId,
+                kind: PATH_STORE_NODE_KIND_DIRECTORY,
+                nameId: internSegment(
+                  segmentTable,
+                  path.slice(segmentStart, endIndex)
+                ),
                 parentId,
-                path.slice(segmentStart, endIndex)
-              );
-              this.directoryStack.push(childId);
+                pathCache: null,
+                pathCacheVersion: 0,
+                subtreeNodeCount: 1,
+                visibleSubtreeCount: 1,
+              });
+              this.directoryStack.push(nodeId);
             }
 
             const directoryId =
@@ -356,7 +387,19 @@ export class PathStoreBuilder {
               throw new Error(`Unable to resolve file parent for "${path}"`);
             }
 
-            this.createFileChildUnchecked(parentId, path.slice(segmentStart));
+            const nodeId = nodes.length;
+            nodes.push({
+              depth: currentDepth + 1,
+              flags: 0,
+              id: nodeId,
+              kind: PATH_STORE_NODE_KIND_FILE,
+              nameId: internSegment(segmentTable, path.slice(segmentStart)),
+              parentId,
+              pathCache: null,
+              pathCacheVersion: -1,
+              subtreeNodeCount: 1,
+              visibleSubtreeCount: 1,
+            });
           }
 
           previousPath = path;
@@ -365,6 +408,8 @@ export class PathStoreBuilder {
         if (previousPath != null) {
           this.lastPreparedPath = parseInputPath(previousPath);
         }
+
+        this.hasDeferredDirectoryIndexes = true;
       }
     );
 
@@ -372,6 +417,15 @@ export class PathStoreBuilder {
   }
 
   public finish(): PathStoreSnapshot {
+    if (this.hasDeferredDirectoryIndexes) {
+      withBenchmarkPhase(
+        this.instrumentation,
+        'store.builder.buildDirectoryIndexes',
+        () => this.buildDirectoryIndexes()
+      );
+      this.hasDeferredDirectoryIndexes = false;
+    }
+
     withBenchmarkPhase(
       this.instrumentation,
       'store.builder.computeSubtreeCounts',
@@ -390,6 +444,11 @@ export class PathStoreBuilder {
     preparedPath: PreparedPath,
     validateOrder: boolean
   ): void {
+    if (this.hasDeferredDirectoryIndexes) {
+      this.buildDirectoryIndexes();
+      this.hasDeferredDirectoryIndexes = false;
+    }
+
     if (this.lastPreparedPath != null) {
       if (preparedPath.path === this.lastPreparedPath.path) {
         throw new Error(`Duplicate path: "${preparedPath.path}"`);
@@ -651,6 +710,35 @@ export class PathStoreBuilder {
     throw new Error(
       `Unknown directory child index for node ${String(directoryId)}`
     );
+  }
+
+  // Builds full directory-child indexes for all nodes created during the
+  // presorted fast path, which defers index creation to avoid per-child Map
+  // operations during the hot ingest loop.
+  private buildDirectoryIndexes(): void {
+    const nodes = this.nodes;
+
+    for (let nodeId = 1; nodeId < nodes.length; nodeId++) {
+      const node = nodes[nodeId];
+      if (node == null) {
+        continue;
+      }
+
+      // Create a directory-child index for every directory that does not
+      // already have one (root is set up in the constructor).
+      if (node.kind === PATH_STORE_NODE_KIND_DIRECTORY) {
+        this.directories.set(nodeId, createDirectoryChildIndex());
+      }
+
+      // Register this node as a child of its parent.  Node IDs are assigned
+      // sequentially during presorted construction, so iterating in ID order
+      // preserves the canonical sorted child order.
+      const parentIndex = this.directories.get(node.parentId);
+      if (parentIndex != null) {
+        parentIndex.childIdByNameId.set(node.nameId, nodeId);
+        appendChildReference(parentIndex, nodeId);
+      }
+    }
   }
 
   // Computes subtree counts after bulk ingest so later phases can add
