@@ -403,7 +403,7 @@ export class UnresolvedFile<
   override render(
     props: UnresolvedFileRenderProps<LAnnotation, LDecoration> = {}
   ): boolean {
-    let {
+    const {
       file,
       fileDiff,
       actions,
