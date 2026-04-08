@@ -1,4 +1,5 @@
 /** @jsxImportSource preact */
+import { Fragment } from 'preact';
 import type { JSX } from 'preact';
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
@@ -28,7 +29,7 @@ function focusElement(element: HTMLElement | null): boolean {
     return false;
   }
 
-  element.focus();
+  element.focus({ preventScroll: true });
   const rootNode = element.getRootNode();
   if (rootNode instanceof ShadowRoot) {
     return rootNode.activeElement === element;
@@ -67,12 +68,12 @@ function formatFlattenedSegments(
   return (
     <span data-item-flattened-subitems>
       {segments.map((segment, index) => (
-        <span key={segment.path}>
+        <Fragment key={segment.path}>
           <span data-item-flattened-subitem={segment.path}>
             <Truncate>{segment.name}</Truncate>
           </span>
           {index < segments.length - 1 ? ' / ' : ''}
-        </span>
+        </Fragment>
       ))}
     </span>
   );
@@ -137,17 +138,39 @@ function scrollFocusedRowIntoView(
   return true;
 }
 
+function getParkedFocusedRowOffset(
+  focusedIndex: number,
+  itemHeight: number,
+  range: { start: number; end: number },
+  windowHeight: number
+): number | null {
+  if (focusedIndex < range.start) {
+    return -itemHeight;
+  }
+
+  if (focusedIndex > range.end) {
+    return windowHeight;
+  }
+
+  return null;
+}
+
 function renderStyledRow(
   controller: PathStoreTreesController,
   row: PathStoreTreesVisibleRow,
   activeItemPath: string | null,
   itemHeight: number,
   registerButton: (path: string, element: HTMLButtonElement | null) => void,
-  onKeyDown: (event: KeyboardEvent) => void
+  onKeyDown: (event: KeyboardEvent) => void,
+  options: {
+    isParked?: boolean;
+    style?: Record<string, string | undefined>;
+  } = {}
 ): JSX.Element {
   const targetPath = getPathStoreTreesRowPath(row);
   const item = controller.getItem(targetPath);
   const directoryItem = isPathStoreTreesDirectoryHandle(item) ? item : null;
+  const { isParked = false, style } = options;
   const focusedProps =
     row.isFocused && activeItemPath === targetPath
       ? { 'data-item-focused': true }
@@ -162,6 +185,7 @@ function renderStyledRow(
       type="button"
       data-type="item"
       data-item-path={targetPath}
+      data-item-parked={isParked ? 'true' : undefined}
       data-item-type={row.hasChildren ? 'folder' : 'file'}
       aria-expanded={row.hasChildren ? row.isExpanded : undefined}
       aria-label={getPathStoreTreesRowAriaLabel(row)}
@@ -183,7 +207,7 @@ function renderStyledRow(
       onKeyDown={onKeyDown}
       role="treeitem"
       tabIndex={row.isFocused ? 0 : -1}
-      style={{ minHeight: `${itemHeight}px` }}
+      style={{ minHeight: `${itemHeight}px`, ...style }}
       {...focusedProps}
     >
       {row.depth > 0 ? (
@@ -350,8 +374,8 @@ export function PathStoreTreesView({
     const onFocusOut = (event: FocusEvent): void => {
       const nextTarget = event.relatedTarget;
       if (nextTarget == null) {
-        // Virtualization can unmount the focused row before the fallback root
-        // takes focus, so keep keyboard ownership through the null handoff.
+        // Virtualization can swap the focused row between rendered and parked
+        // states before the replacement element receives focus.
         return;
       }
 
@@ -459,6 +483,7 @@ export function PathStoreTreesView({
         ? null
         : (rowButtonRefs.current.get(focusedPath) ?? null);
     const activeTreeElement = getActiveTreeElement(rootElement);
+    const activeTreeElementPath = activeTreeElement?.dataset.itemPath ?? null;
     const focusWithinTree = activeTreeElement != null;
     const shouldOwnDomFocus = domFocusOwnerRef.current || focusWithinTree;
     const focusedPathChanged = previousFocusedPathRef.current !== focusedPath;
@@ -482,12 +507,15 @@ export function PathStoreTreesView({
     }
 
     if (focusedButton == null) {
-      focusElement(rootElement);
       previousFocusedPathRef.current = focusedPath;
       return;
     }
 
-    if (focusedPathChanged || activeTreeElement === rootElement) {
+    if (
+      focusedPathChanged ||
+      activeTreeElementPath == null ||
+      activeTreeElementPath !== focusedPath
+    ) {
       focusElement(focusedButton);
     }
     previousFocusedPathRef.current = focusedPath;
@@ -511,6 +539,22 @@ export function PathStoreTreesView({
       }),
     [itemCount, itemHeight, range, resolvedViewportHeight]
   );
+  const parkedFocusedRow =
+    focusedPath != null &&
+    activeItemPath === focusedPath &&
+    !focusedRowIsMounted &&
+    focusedIndex >= 0
+      ? (controller.getVisibleRows(focusedIndex, focusedIndex)[0] ?? null)
+      : null;
+  const parkedFocusedRowOffset =
+    parkedFocusedRow == null
+      ? null
+      : getParkedFocusedRowOffset(
+          focusedIndex,
+          itemHeight,
+          range,
+          stickyLayout.windowHeight
+        );
 
   return (
     <div
@@ -518,7 +562,7 @@ export function PathStoreTreesView({
       data-file-tree-virtualized-root="true"
       onKeyDown={handleTreeKeyDown}
       role="tree"
-      tabIndex={focusedRowIsMounted ? -1 : 0}
+      tabIndex={-1}
       style={{ height: `${viewportHeight}px`, outline: 'none' }}
     >
       <div ref={scrollRef} data-file-tree-virtualized-scroll="true">
@@ -554,6 +598,32 @@ export function PathStoreTreesView({
               },
               handleTreeKeyDown
             )}
+            {parkedFocusedRow != null && parkedFocusedRowOffset != null
+              ? renderStyledRow(
+                  controller,
+                  parkedFocusedRow,
+                  activeItemPath,
+                  itemHeight,
+                  (path, element) => {
+                    if (element == null) {
+                      rowButtonRefs.current.delete(path);
+                      return;
+                    }
+
+                    rowButtonRefs.current.set(path, element);
+                  },
+                  handleTreeKeyDown,
+                  {
+                    isParked: true,
+                    style: {
+                      left: '0',
+                      position: 'absolute',
+                      right: '0',
+                      top: `${parkedFocusedRowOffset}px`,
+                    },
+                  }
+                )
+              : null}
           </div>
         </div>
       </div>

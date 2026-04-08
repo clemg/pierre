@@ -13,6 +13,7 @@ import {
 import { createCollapseEvent, createExpandEvent } from './events';
 import {
   collectFlattenedDirectoryChainIds,
+  getFlattenedChildDirectoryId,
   getFlattenedTerminalDirectoryId,
 } from './flatten';
 import type { NodeId } from './internal-types';
@@ -309,6 +310,20 @@ function createVisibleRowCursor(
   };
 }
 
+function isVisibleRowHeadNode(state: PathStoreState, nodeId: NodeId): boolean {
+  const node = requireNode(state, nodeId);
+  if (node.kind !== PATH_STORE_NODE_KIND_DIRECTORY) {
+    return true;
+  }
+
+  const parentId = node.parentId;
+  if (parentId === state.snapshot.rootId) {
+    return true;
+  }
+
+  return getFlattenedChildDirectoryId(state, parentId) !== nodeId;
+}
+
 // Walks the visible preorder sequence without materializing the full row list.
 function getNextVisibleRowCursor(
   state: PathStoreState,
@@ -361,10 +376,9 @@ function getNextVisibleRowCursor(
       );
     }
 
-    if (currentNodeId === currentCursor.headNodeId) {
+    if (isVisibleRowHeadNode(state, currentNodeId)) {
       currentVisibleDepth--;
     }
-
     currentNodeId = parentId;
   }
 }

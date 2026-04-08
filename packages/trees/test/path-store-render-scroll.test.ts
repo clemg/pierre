@@ -582,18 +582,16 @@ describe('path-store render + scroll', () => {
       await flushDom();
       await flushDom();
 
-      expect(shadowRoot?.innerHTML).not.toContain('item050.ts');
+      expect(viewport.scrollTop).toBe(3000);
       expect(shadowRoot?.innerHTML).toContain('item100.ts');
       expect(
-        getFocusedTreeElement(shadowRoot, dom)?.dataset.fileTreeVirtualizedRoot
+        getItemButton(shadowRoot, dom, 'item050.ts').dataset.itemParked
       ).toBe('true');
+      expect(getFocusedTreeElement(shadowRoot, dom)?.dataset.itemPath).toBe(
+        'item050.ts'
+      );
 
-      const fallbackOwner = getFocusedTreeElement(shadowRoot, dom);
-      if (!(fallbackOwner instanceof dom.window.HTMLElement)) {
-        throw new Error('missing fallback keyboard owner');
-      }
-
-      pressKey(fallbackOwner as HTMLElement, dom, 'ArrowDown');
+      pressKey(getItemButton(shadowRoot, dom, 'item050.ts'), dom, 'ArrowDown');
       await flushDom();
       await flushDom();
 
@@ -641,6 +639,44 @@ describe('path-store render + scroll', () => {
       pressKey(getItemButton(shadowRoot, dom, 'src/lib/'), dom, 'ArrowRight');
       await flushDom();
       expect(fileTree.getItem('src/lib/util.ts')?.isFocused()).toBe(true);
+
+      fileTree.cleanUp();
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('flattened row markup does not wrap separators in extra spans', async () => {
+    const { cleanup, dom } = installDom();
+    try {
+      const { PathStoreFileTree } = await import('../src/path-store');
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+
+      const fileTree = new PathStoreFileTree({
+        flattenEmptyDirectories: true,
+        initialExpandedPaths: ['src/'],
+        paths: ['src/lib/util.ts'],
+        viewportHeight: 120,
+      });
+
+      fileTree.render({ containerWrapper });
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const flattenedContainer = shadowRoot?.querySelector(
+        '[data-item-flattened-subitems]'
+      );
+
+      expect(flattenedContainer?.innerHTML).toContain(' / ');
+      expect(
+        flattenedContainer?.querySelectorAll(
+          ':scope > [data-item-flattened-subitem]'
+        ).length
+      ).toBe(2);
+      expect(
+        flattenedContainer?.querySelector(
+          ':scope > span:not([data-item-flattened-subitem])'
+        )
+      ).toBeNull();
 
       fileTree.cleanUp();
     } finally {
