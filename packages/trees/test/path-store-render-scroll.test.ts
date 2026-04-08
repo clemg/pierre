@@ -399,6 +399,59 @@ describe('path-store render + scroll', () => {
     }
   });
 
+  test('marks the virtualized list as scrolling to suppress hover styles', async () => {
+    const { cleanup, dom } = installDom();
+    try {
+      const { PathStoreFileTree } = await import('../src/path-store');
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+
+      const paths = Array.from(
+        { length: 120 },
+        (_, index) => `item${String(index).padStart(3, '0')}.ts`
+      );
+      const fileTree = new PathStoreFileTree({
+        flattenEmptyDirectories: false,
+        paths,
+        viewportHeight: 120,
+      });
+
+      fileTree.render({ containerWrapper });
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const scrollElement = shadowRoot?.querySelector(
+        '[data-file-tree-virtualized-scroll="true"]'
+      );
+      const listElement = shadowRoot?.querySelector(
+        '[data-file-tree-virtualized-list="true"]'
+      );
+
+      if (!(scrollElement instanceof dom.window.HTMLElement)) {
+        throw new Error('missing scroll element');
+      }
+      if (!(listElement instanceof dom.window.HTMLDivElement)) {
+        throw new Error('missing list element');
+      }
+
+      const viewport = scrollElement as HTMLElement;
+      const list = listElement as HTMLDivElement;
+
+      expect(list.dataset.isScrolling).toBeUndefined();
+
+      viewport.scrollTop = 1500;
+      viewport.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+
+      expect(list.dataset.isScrolling).toBe('');
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(list.dataset.isScrolling).toBeUndefined();
+
+      fileTree.cleanUp();
+    } finally {
+      cleanup();
+    }
+  });
+
   test('renders roving tabindex and baseline accessibility attributes', async () => {
     const { cleanup, dom } = installDom();
     try {
@@ -436,6 +489,48 @@ describe('path-store render + scroll', () => {
       sourceButton.focus();
       await flushDom();
       expect(sourceButton.dataset.itemFocused).toBe('true');
+
+      fileTree.cleanUp();
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('focused rows keep the matching separator line prominent', async () => {
+    const { cleanup, dom } = installDom();
+    try {
+      const { PathStoreFileTree } = await import('../src/path-store');
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+
+      const fileTree = new PathStoreFileTree({
+        flattenEmptyDirectories: false,
+        initialExpandedPaths: ['src/lib/'],
+        paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
+        viewportHeight: 120,
+      });
+
+      fileTree.render({ containerWrapper });
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const fileButton = getItemButton(shadowRoot, dom, 'src/lib/util.ts');
+
+      fileButton.focus();
+      await flushDom();
+
+      const guideStyle = shadowRoot?.querySelector(
+        '[data-path-store-guide-style="true"]'
+      );
+      const spacingItems = fileButton.querySelectorAll(
+        '[data-item-section="spacing-item"]'
+      );
+
+      expect(spacingItems[0]?.getAttribute('data-ancestor-path')).toBe('src/');
+      expect(spacingItems[1]?.getAttribute('data-ancestor-path')).toBe(
+        'src/lib/'
+      );
+      expect(guideStyle?.innerHTML).toContain(
+        '[data-item-section="spacing-item"][data-ancestor-path="src/lib/"]'
+      );
 
       fileTree.cleanUp();
     } finally {

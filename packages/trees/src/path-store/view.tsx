@@ -155,6 +155,17 @@ function getParkedFocusedRowOffset(
   return null;
 }
 
+function getPathStoreGuideStyleText(focusedParentPath: string | null): string {
+  if (focusedParentPath == null) {
+    return '';
+  }
+
+  const escapedPath = focusedParentPath
+    .replaceAll('\\', '\\\\')
+    .replaceAll('"', '\\"');
+  return `[data-item-section="spacing-item"][data-ancestor-path="${escapedPath}"] { opacity: 1; }`;
+}
+
 function renderStyledRow(
   controller: PathStoreTreesController,
   row: PathStoreTreesVisibleRow,
@@ -213,7 +224,11 @@ function renderStyledRow(
       {row.depth > 0 ? (
         <div data-item-section="spacing">
           {Array.from({ length: row.depth }).map((_, index) => (
-            <div key={index} data-item-section="spacing-item" />
+            <div
+              key={index}
+              data-item-section="spacing-item"
+              data-ancestor-path={row.ancestorPaths[index]}
+            />
           ))}
         </div>
       ) : null}
@@ -274,6 +289,7 @@ export function PathStoreTreesView({
   viewportHeight = PATH_STORE_TREES_DEFAULT_VIEWPORT_HEIGHT,
 }: PathStoreTreesViewProps): JSX.Element {
   'use no memo';
+  const listRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowButtonRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -397,7 +413,9 @@ export function PathStoreTreesView({
   }, []);
 
   useLayoutEffect(() => {
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
     const scrollElement = scrollRef.current;
+    const listElement = listRef.current;
     if (scrollElement == null) {
       return;
     }
@@ -450,6 +468,22 @@ export function PathStoreTreesView({
     });
     const onScroll = (): void => {
       update();
+
+      // Mark the list as scrolling to suppress hover styles on items.
+      // Applied to the list (inside the scroll container) so the container
+      // itself still receives scroll events.
+      if (listElement != null) {
+        listElement.dataset.isScrolling ??= '';
+      }
+      if (scrollTimer != null) {
+        clearTimeout(scrollTimer);
+      }
+      scrollTimer = setTimeout(() => {
+        if (listElement != null) {
+          delete listElement.dataset.isScrolling;
+        }
+        scrollTimer = null;
+      }, 50);
     };
 
     scrollElement.addEventListener('scroll', onScroll, { passive: true });
@@ -466,6 +500,12 @@ export function PathStoreTreesView({
       updateViewportRef.current = () => {};
       unsubscribe();
       scrollElement.removeEventListener('scroll', onScroll);
+      if (scrollTimer != null) {
+        clearTimeout(scrollTimer);
+      }
+      if (listElement != null) {
+        delete listElement.dataset.isScrolling;
+      }
       resizeObserver?.disconnect();
     };
   }, [controller, itemHeight, overscan, viewportHeight]);
@@ -555,6 +595,13 @@ export function PathStoreTreesView({
           range,
           stickyLayout.windowHeight
         );
+  const focusedVisibleRow =
+    focusedIndex >= 0
+      ? (controller.getVisibleRows(focusedIndex, focusedIndex)[0] ?? null)
+      : null;
+  const guideStyleText = getPathStoreGuideStyleText(
+    focusedVisibleRow?.ancestorPaths.at(-1) ?? null
+  );
 
   return (
     <div
@@ -565,8 +612,13 @@ export function PathStoreTreesView({
       tabIndex={-1}
       style={{ height: `${viewportHeight}px`, outline: 'none' }}
     >
+      <style
+        data-path-store-guide-style="true"
+        dangerouslySetInnerHTML={{ __html: guideStyleText }}
+      />
       <div ref={scrollRef} data-file-tree-virtualized-scroll="true">
         <div
+          ref={listRef}
           data-file-tree-virtualized-list="true"
           style={{ height: `${stickyLayout.totalHeight}px` }}
         >

@@ -27,6 +27,7 @@ interface PathStoreTreesItemState {
 
 interface PathStoreTreesVisibleProjection {
   focusedPath: string | null;
+  visibleAncestorPaths: Map<string, readonly string[]>;
   parentPaths: Map<string, string | null>;
   visibleIndexByPath: Map<string, number>;
   visibleRows: readonly PathStoreTreesVisibleRow[];
@@ -137,12 +138,19 @@ function createVisibleProjection(
   );
   const siblingCounts = new Map<string, number>();
   const parentPaths = new Map<string, string | null>();
+  const visibleAncestorPaths = new Map<string, readonly string[]>();
 
   for (const path of targetPaths) {
     const parentPath = findNearestVisibleAncestorPath(visibleIndexByPath, path);
     parentPaths.set(path, parentPath);
     const parentKey = parentPath ?? ROOT_VISIBLE_PARENT_KEY;
     siblingCounts.set(parentKey, (siblingCounts.get(parentKey) ?? 0) + 1);
+    visibleAncestorPaths.set(
+      path,
+      parentPath == null
+        ? []
+        : [...(visibleAncestorPaths.get(parentPath) ?? []), parentPath]
+    );
   }
 
   const siblingIndexes = new Map<string, number>();
@@ -154,6 +162,7 @@ function createVisibleProjection(
     siblingIndexes.set(parentKey, posInSet + 1);
 
     return {
+      ancestorPaths: visibleAncestorPaths.get(path) ?? [],
       depth: row.depth,
       flattenedSegments: row.flattenedSegments?.map((segment) => ({
         isTerminal: segment.isTerminal,
@@ -176,6 +185,7 @@ function createVisibleProjection(
 
   return {
     focusedPath,
+    visibleAncestorPaths,
     parentPaths,
     visibleIndexByPath,
     visibleRows,

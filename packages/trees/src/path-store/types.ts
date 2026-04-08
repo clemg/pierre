@@ -17,6 +17,7 @@ export interface PathStoreTreesVisibleSegment {
 }
 
 export interface PathStoreTreesVisibleRow {
+  ancestorPaths: readonly PathStoreTreesPublicId[];
   depth: number;
   flattenedSegments?: readonly PathStoreTreesVisibleSegment[];
   hasChildren: boolean;
