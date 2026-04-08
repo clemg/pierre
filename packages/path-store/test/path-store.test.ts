@@ -4,7 +4,11 @@ import {
 } from '@pierre/tree-test-data';
 import { describe, expect, test } from 'bun:test';
 
-import { PathStore, StaticPathStore } from '../src/index';
+import {
+  createVisibleTreeProjection,
+  PathStore,
+  StaticPathStore,
+} from '../src/index';
 import type {
   PathStoreCleanupEvent,
   PathStoreEvent,
@@ -1725,6 +1729,70 @@ describe('PathStore', () => {
     expect(getVisiblePathDepthSnapshot(staticStore)).toEqual(expectedRows);
   });
 
+  test('builds visible tree projection metadata without reparsing row paths', () => {
+    const store = new PathStore({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      paths: createDeepChainWithSiblingDirectoryPaths(3),
+    });
+
+    expect(
+      createVisibleTreeProjection(
+        store.getVisibleSlice(0, store.getVisibleCount() - 1)
+      ).rows
+    ).toEqual([
+      {
+        index: 0,
+        parentPath: null,
+        path: 'level1/',
+        posInSet: 0,
+        setSize: 3,
+      },
+      {
+        index: 1,
+        parentPath: 'level1/',
+        path: 'level1/level2/',
+        posInSet: 0,
+        setSize: 1,
+      },
+      {
+        index: 2,
+        parentPath: 'level1/level2/',
+        path: 'level1/level2/level3/',
+        posInSet: 0,
+        setSize: 1,
+      },
+      {
+        index: 3,
+        parentPath: 'level1/level2/level3/',
+        path: 'level1/level2/level3/leaf.txt',
+        posInSet: 0,
+        setSize: 1,
+      },
+      {
+        index: 4,
+        parentPath: null,
+        path: 'sibling-folder/',
+        posInSet: 1,
+        setSize: 3,
+      },
+      {
+        index: 5,
+        parentPath: 'sibling-folder/',
+        path: 'sibling-folder/child.txt',
+        posInSet: 0,
+        setSize: 1,
+      },
+      {
+        index: 6,
+        parentPath: null,
+        path: 'root.txt',
+        posInSet: 2,
+        setSize: 3,
+      },
+    ]);
+  });
+
   test('matches repeated single-row reads after traversing out of deep subtrees', () => {
     const flatPaths = createDeepChainPaths(5);
     const nonFlattenedStore = new PathStore({
@@ -1792,6 +1860,56 @@ describe('PathStore', () => {
 
     expect(getVisiblePathDepthSnapshot(store)).toEqual(expectedRows);
     expect(getVisiblePathDepthSnapshot(staticStore)).toEqual(expectedRows);
+  });
+
+  test('builds flattened visible tree projection metadata with correct sibling sets', () => {
+    const store = new PathStore({
+      flattenEmptyDirectories: true,
+      initialExpansion: 'open',
+      paths: createDeepChainWithSiblingDirectoryPaths(3),
+    });
+
+    expect(
+      createVisibleTreeProjection(
+        store.getVisibleSlice(0, store.getVisibleCount() - 1)
+      ).rows
+    ).toEqual([
+      {
+        index: 0,
+        parentPath: null,
+        path: 'level1/level2/level3/',
+        posInSet: 0,
+        setSize: 3,
+      },
+      {
+        index: 1,
+        parentPath: 'level1/level2/level3/',
+        path: 'level1/level2/level3/leaf.txt',
+        posInSet: 0,
+        setSize: 1,
+      },
+      {
+        index: 2,
+        parentPath: null,
+        path: 'sibling-folder/',
+        posInSet: 1,
+        setSize: 3,
+      },
+      {
+        index: 3,
+        parentPath: 'sibling-folder/',
+        path: 'sibling-folder/child.txt',
+        posInSet: 0,
+        setSize: 1,
+      },
+      {
+        index: 4,
+        parentPath: null,
+        path: 'root.txt',
+        posInSet: 2,
+        setSize: 3,
+      },
+    ]);
   });
 
   test('updates visible rows immediately when adding and removing inside expanded directories', () => {
