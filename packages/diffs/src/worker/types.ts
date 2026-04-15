@@ -16,6 +16,7 @@ import type {
 } from '../types';
 
 export type WorkerRequestId = string;
+export type HighlightRequestMetadata = unknown;
 
 export interface WorkerRenderingOptions {
   theme: DiffsThemeNames | ThemesType;
@@ -30,9 +31,13 @@ export interface FileRendererInstance {
   onHighlightSuccess(
     file: FileContents,
     result: ThemedFileResult,
-    options: RenderFileOptions
+    options: RenderFileOptions,
+    metadata?: HighlightRequestMetadata
   ): unknown;
-  onHighlightError(error: unknown): unknown;
+  onHighlightError(
+    error: unknown,
+    metadata?: HighlightRequestMetadata
+  ): unknown;
 }
 
 export interface DiffRendererInstance {
@@ -40,9 +45,13 @@ export interface DiffRendererInstance {
   onHighlightSuccess(
     diff: FileDiffMetadata,
     result: ThemedDiffResult,
-    options: RenderDiffOptions
+    options: RenderDiffOptions,
+    metadata?: HighlightRequestMetadata
   ): unknown;
-  onHighlightError(error: unknown): unknown;
+  onHighlightError(
+    error: unknown,
+    metadata?: HighlightRequestMetadata
+  ): unknown;
 }
 
 export interface RenderFileRequest {
@@ -189,6 +198,7 @@ export interface RenderFileTask {
   id: WorkerRequestId;
   request: RenderFileRequest;
   instance: FileRendererInstance;
+  metadata?: HighlightRequestMetadata;
   requestStart: number;
 }
 
@@ -197,6 +207,7 @@ export interface RenderDiffTask {
   id: WorkerRequestId;
   request: RenderDiffRequest;
   instance: DiffRendererInstance;
+  metadata?: HighlightRequestMetadata;
   requestStart: number;
 }
 

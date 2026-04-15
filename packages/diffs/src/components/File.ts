@@ -49,7 +49,7 @@ import { upsertHostThemeStyle } from '../utils/hostTheme';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { getMeasuredScrollbarGutter } from '../utils/scrollbarGutter';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
-import type { WorkerPoolManager } from '../worker';
+import type { HighlightRequestMetadata, WorkerPoolManager } from '../worker';
 import { DiffsContainerLoaded } from './web-components';
 
 const EMPTY_STRINGS: string[] = [];
@@ -166,7 +166,7 @@ export class File<LAnnotation = undefined> {
   ) {
     this.fileRenderer = new FileRenderer<LAnnotation>(
       options,
-      this.handleHighlightRender,
+      (metadata) => this.handleHighlightRender(metadata),
       this.workerManager
     );
     this.resizeManager = new ResizeManager();
@@ -177,9 +177,9 @@ export class File<LAnnotation = undefined> {
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
-  private handleHighlightRender = (): void => {
+  private handleHighlightRender(_metadata?: HighlightRequestMetadata): void {
     this.rerender();
-  };
+  }
 
   public rerender(): void {
     if (this.file == null) return;

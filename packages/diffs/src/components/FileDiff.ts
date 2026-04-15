@@ -64,7 +64,7 @@ import { parseDiffFromFile } from '../utils/parseDiffFromFile';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { getMeasuredScrollbarGutter } from '../utils/scrollbarGutter';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
-import type { WorkerPoolManager } from '../worker';
+import type { HighlightRequestMetadata, WorkerPoolManager } from '../worker';
 import { DiffsContainerLoaded } from './web-components';
 
 export interface FileDiffRenderProps<LAnnotation> {
@@ -243,9 +243,9 @@ export class FileDiff<LAnnotation = undefined> {
     this.enabled = true;
   }
 
-  protected handleHighlightRender = (): void => {
+  protected handleHighlightRender(_metadata?: HighlightRequestMetadata): void {
     this.rerender();
-  };
+  }
 
   protected getHunksRendererOptions(
     options: FileDiffOptions<LAnnotation>
@@ -266,7 +266,7 @@ export class FileDiff<LAnnotation = undefined> {
   ): DiffHunksRenderer<LAnnotation> {
     return new DiffHunksRenderer(
       this.getHunksRendererOptions(options),
-      this.handleHighlightRender,
+      (metadata) => this.handleHighlightRender(metadata),
       this.workerManager
     );
   }

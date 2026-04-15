@@ -62,7 +62,7 @@ import type { DiffLineMetadata } from '../utils/iterateOverDiff';
 import { iterateOverDiff } from '../utils/iterateOverDiff';
 import { renderDiffWithHighlighter } from '../utils/renderDiffWithHighlighter';
 import { shouldUseTokenTransformer } from '../utils/shouldUseTokenTransformer';
-import type { WorkerPoolManager } from '../worker';
+import type { HighlightRequestMetadata, WorkerPoolManager } from '../worker';
 
 interface PushLineWithAnnotation {
   diffStyle: 'unified' | 'split';
@@ -213,7 +213,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
 
   constructor(
     public options: DiffHunksRendererOptions = { theme: DEFAULT_THEMES },
-    private onRenderUpdate?: () => unknown,
+    private onRenderUpdate?: (metadata?: HighlightRequestMetadata) => unknown,
     private workerManager?: WorkerPoolManager | undefined
   ) {
     if (workerManager?.isWorkingPool() !== true) {
@@ -445,9 +445,45 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
     return { options, forceRender: false };
   }
 
+  public willTriggerAsyncHighlight(diff: FileDiffMetadata): boolean {
+    // If fileDiff is the same and we have the highlighted renderCache, then we
+    // know we'll always have a synchronous render
+    if (
+      this.renderCache == null ||
+      diff === this.renderCache?.diff ||
+      this.renderCache?.highlighted === false
+    ) {
+      return false;
+    }
+
+    // If we have an updated fileDiff and are using the Worker Pool, async
+    // highlighting depends on whether we are plainText or not
+    if (this.workerManager?.isWorkingPool() === true) {
+      if (isDiffPlainText(diff)) {
+        return false;
+      } else {
+        return true;
+      }
+    }
+
+    // If we aren't using the Worker Pool, then we gotta make sure we have a
+    // highlighter instantiated (async)
+    if (this.highlighter == null) {
+      return true;
+    }
+
+    // And that we have all the languages and themes loaded (also async)
+    const { options } = this.getRenderOptions(diff);
+    const computedLang = diff.lang ?? getFiletypeFromFileName(diff.name);
+    const hasThemes = areThemesAttached(options.theme);
+    const hasLangs = areLanguagesAttached(computedLang);
+    return !hasThemes || !hasLangs;
+  }
+
   public renderDiff(
     diff: FileDiffMetadata | undefined = this.renderCache?.diff,
-    renderRange: RenderRange = DEFAULT_RENDER_RANGE
+    renderRange: RenderRange = DEFAULT_RENDER_RANGE,
+    metadata?: HighlightRequestMetadata
   ): HunksRenderResult | undefined {
     if (diff == null) {
       return undefined;
@@ -500,7 +536,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
         renderRange.totalLines > 0 &&
         (!this.renderCache.highlighted || forceRender)
       ) {
-        this.workerManager.highlightDiffAST(this, diff);
+        this.workerManager.highlightDiffAST(this, diff, metadata);
       }
     } else {
       this.computedLang = diff.lang ?? getFiletypeFromFileName(diff.name);
@@ -544,7 +580,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
           if (this.renderCache != null) {
             this.renderCache.highlighted = false;
           }
-          this.onHighlightSuccess(diff, result, options);
+          this.onHighlightSuccess(diff, result, options, metadata);
         });
       }
     }
@@ -619,8 +655,10 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
   public onHighlightSuccess(
     diff: FileDiffMetadata,
     result: ThemedDiffResult,
-    options: RenderDiffOptions
+    options: RenderDiffOptions,
+    metadata?: HighlightRequestMetadata
   ): void {
+    console.log('onHighlightSuccess', metadata);
     // NOTE(amadeus): This is a bad assumption, and I should figure out
     // something better...
     // If renderCache was blown away, we can assume we've run cleanUp()
@@ -641,7 +679,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
       renderRange: undefined,
     };
     if (triggerRenderUpdate) {
-      this.onRenderUpdate?.();
+      this.onRenderUpdate?.(metadata);
     }
   }
 

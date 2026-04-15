@@ -41,6 +41,7 @@ import type {
   AllWorkerTasks,
   DiffRendererInstance,
   FileRendererInstance,
+  HighlightRequestMetadata,
   InitializeWorkerRequest,
   InitializeWorkerTask,
   RenderDiffRequest,
@@ -521,25 +522,18 @@ export class WorkerPoolManager {
     this.queueBroadcastStateChanges();
   };
 
-  highlightFileAST(instance: FileRendererInstance, file: FileContents): void {
+  highlightFileAST(
+    instance: FileRendererInstance,
+    file: FileContents,
+    metadata?: HighlightRequestMetadata
+  ): void {
     if (isFilePlainText(file)) {
       return;
     }
-    // If we already have a task in progress for this same file content, we
-    // should drop it
-    for (const tasks of [this.taskQueue, this.pendingTasks.values()]) {
-      for (const task of tasks) {
-        if (
-          'instance' in task &&
-          task.instance === instance &&
-          task.request.type === 'file' &&
-          areFilesEqual(file, task.request.file)
-        ) {
-          return;
-        }
-      }
+    if (this.refreshMatchingFileTaskMetadata(instance, file, metadata)) {
+      return;
     }
-    this.submitTask(instance, { type: 'file', file });
+    this.submitTask(instance, { type: 'file', file }, metadata);
   }
 
   getPlainFileAST(
@@ -562,26 +556,17 @@ export class WorkerPoolManager {
 
   highlightDiffAST(
     instance: DiffRendererInstance,
-    diff: FileDiffMetadata
+    diff: FileDiffMetadata,
+    metadata?: HighlightRequestMetadata
   ): void {
     if (isDiffPlainText(diff)) {
       return;
     }
-    // If we already have a task in progress for this same diff content, we
-    // should ignore executing it again
-    for (const tasks of [this.taskQueue, this.pendingTasks.values()]) {
-      for (const task of tasks) {
-        if (
-          'instance' in task &&
-          task.instance === instance &&
-          task.request.type === 'diff' &&
-          task.request.diff === diff
-        ) {
-          return;
-        }
-      }
+    if (this.refreshMatchingDiffTaskMetadata(instance, diff, metadata)) {
+      return;
     }
-    this.submitTask(instance, { type: 'diff', diff });
+    console.log('highlightDiffAST', metadata);
+    this.submitTask(instance, { type: 'diff', diff }, metadata);
   }
 
   getPlainDiffAST(
@@ -667,15 +652,18 @@ export class WorkerPoolManager {
 
   private submitTask(
     instance: FileRendererInstance,
-    request: Omit<RenderFileRequest, 'id'>
+    request: Omit<RenderFileRequest, 'id'>,
+    metadata?: HighlightRequestMetadata
   ): void;
   private submitTask(
     instance: DiffRendererInstance,
-    request: Omit<RenderDiffRequest, 'id'>
+    request: Omit<RenderDiffRequest, 'id'>,
+    metadata?: HighlightRequestMetadata
   ): void;
   private submitTask(
     instance: FileRendererInstance | DiffRendererInstance,
-    request: SubmitRequest
+    request: SubmitRequest,
+    metadata?: HighlightRequestMetadata
   ): void {
     if (this.initialized === false) {
       this.queueInitialization();
@@ -691,6 +679,7 @@ export class WorkerPoolManager {
             id,
             request: { ...request, id },
             instance: instance as FileRendererInstance,
+            metadata,
             requestStart,
           };
         case 'diff':
@@ -699,6 +688,7 @@ export class WorkerPoolManager {
             id,
             request: { ...request, id },
             instance: instance as DiffRendererInstance,
+            metadata,
             requestStart,
           };
       }
@@ -706,6 +696,74 @@ export class WorkerPoolManager {
 
     this.taskQueue.set(instance, task);
     this.queueDrain();
+  }
+
+  // REVIEW(amadeus): Can these 2 refreshMatching lads be simplified? They are
+  // largely the same function, perhaps a uniform function that has 2 argument
+  // signatures and a type string passed in?
+  private refreshMatchingFileTaskMetadata(
+    instance: FileRendererInstance,
+    file: FileContents,
+    metadata?: HighlightRequestMetadata
+  ): boolean {
+    const queuedTask = this.taskQueue.get(instance);
+    if (
+      queuedTask?.type === 'file' &&
+      areFilesEqual(file, queuedTask.request.file)
+    ) {
+      queuedTask.metadata = metadata;
+      return true;
+    }
+
+    const pendingRequestId = this.instanceRequestMap.get(instance);
+    if (pendingRequestId == null) {
+      return false;
+    }
+
+    const pendingTask = this.pendingTasks.get(pendingRequestId);
+    if (
+      pendingTask == null ||
+      !('instance' in pendingTask) ||
+      pendingTask.instance !== instance ||
+      pendingTask.type !== 'file' ||
+      !areFilesEqual(file, pendingTask.request.file)
+    ) {
+      return false;
+    }
+
+    pendingTask.metadata = metadata;
+    return true;
+  }
+
+  private refreshMatchingDiffTaskMetadata(
+    instance: DiffRendererInstance,
+    diff: FileDiffMetadata,
+    metadata?: HighlightRequestMetadata
+  ): boolean {
+    const queuedTask = this.taskQueue.get(instance);
+    if (queuedTask?.type === 'diff' && queuedTask.request.diff === diff) {
+      queuedTask.metadata = metadata;
+      return true;
+    }
+
+    const pendingRequestId = this.instanceRequestMap.get(instance);
+    if (pendingRequestId == null) {
+      return false;
+    }
+
+    const pendingTask = this.pendingTasks.get(pendingRequestId);
+    if (
+      pendingTask == null ||
+      !('instance' in pendingTask) ||
+      pendingTask.instance !== instance ||
+      pendingTask.type !== 'diff' ||
+      pendingTask.request.diff !== diff
+    ) {
+      return false;
+    }
+
+    pendingTask.metadata = metadata;
+    return true;
   }
 
   private async resolveLanguagesAndExecuteTask(
@@ -752,7 +810,7 @@ export class WorkerPoolManager {
         if ('reject' in task) {
           task.reject(error);
         } else {
-          task.instance.onHighlightError(error);
+          task.instance.onHighlightError(error, task.metadata);
         }
         throw error;
       } else {
@@ -789,7 +847,12 @@ export class WorkerPoolManager {
             if (request.file.cacheKey != null) {
               this.fileCache.set(request.file.cacheKey, { result, options });
             }
-            instance.onHighlightSuccess(request.file, result, options);
+            instance.onHighlightSuccess(
+              request.file,
+              result,
+              options,
+              task.metadata
+            );
             break;
           }
           case 'diff': {
@@ -802,7 +865,12 @@ export class WorkerPoolManager {
             if (request.diff.cacheKey != null) {
               this.diffCache.set(request.diff.cacheKey, { result, options });
             }
-            instance.onHighlightSuccess(request.diff, result, options);
+            instance.onHighlightSuccess(
+              request.diff,
+              result,
+              options,
+              task.metadata
+            );
             break;
           }
         }
@@ -871,7 +939,7 @@ export class WorkerPoolManager {
       this.cleanWorkerAndTask(managedWorker, task);
       console.error('Failed to post message to worker:', error);
       if ('instance' in task) {
-        task.instance.onHighlightError(error);
+        task.instance.onHighlightError(error, task.metadata);
       } else if ('reject' in task) {
         task.reject(error as Error);
       }
