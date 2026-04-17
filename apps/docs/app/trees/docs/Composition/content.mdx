@@ -1,0 +1,30 @@
+## Composition
+
+`PathStoreFileTree` supports composition slots for headers and context menus.
+Pass the `composition` option in `PathStoreFileTreeOptions` to configure them.
+
+### Header slot [toc-ignore]
+
+Add a fixed header above the tree content. You can provide static HTML or a
+render function that returns a DOM element.
+
+<DocsCodeExample {...compositionHeaderExample} />
+
+### Context menu [toc-ignore]
+
+Enable a right-click context menu on tree items. The menu can be rendered by
+providing a `render` function, or you can use `onOpen` and `onClose` hooks to
+manage your own menu UI (e.g. a React portal).
+
+<DocsCodeExample {...compositionContextMenuExample} />
+
+### Composition options reference [toc-ignore]
+
+| Option                | Description                                                                 |
+| --------------------- | --------------------------------------------------------------------------- |
+| `header.html`         | Static HTML string for the header slot                                      |
+| `header.render`       | Function returning an `HTMLElement` for the header slot                     |
+| `contextMenu.enabled` | Enable the context menu (`true` / `false`)                                  |
+| `contextMenu.render`  | Function receiving `(item, context)` and returning an `HTMLElement`         |
+| `contextMenu.onOpen`  | Called when the context menu opens, receives the item and an anchor context |
+| `contextMenu.onClose` | Called when the context menu closes                                         |

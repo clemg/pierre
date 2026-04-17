@@ -24,10 +24,10 @@ const options = {
   unsafeCSS: CustomScrollbarCSS,
 } as const;
 
-export const TREES_REACT_BASIC_USAGE: PreloadFileOptions<undefined> = {
+export const PATH_STORE_BASIC_USAGE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'FileExplorer.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
+    name: 'file-explorer.ts',
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 
 const files = [
   'src/index.ts',
@@ -36,27 +36,51 @@ const files = [
   'package.json',
 ];
 
-export function FileExplorer() {
-  return <FileTree options={{ initialFiles: files }} />;
-}`,
+const fileTree = new PathStoreFileTree({
+  paths: files,
+  flattenEmptyDirectories: true,
+  search: true,
+});
+
+fileTree.render({ containerWrapper: document.getElementById('tree-root')! });
+
+// Mutate the tree at any time
+fileTree.add('src/lib/theme.ts');
+fileTree.remove('src/utils/helpers.ts');
+
+// Clean up when done
+// fileTree.cleanUp();`,
   },
   options,
 };
 
-export const TREES_VANILLA_BASIC_USAGE: PreloadFileOptions<undefined> = {
+export const PATH_STORE_SSR_USAGE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'file-explorer.ts',
-    contents: `import { FileTree } from '@pierre/trees';
+    name: 'ssr-example.tsx',
+    contents: `// Server: pre-render tree HTML
+import { preloadPathStoreFileTree } from '@pierre/trees/path-store';
 
-const files = [
-  'src/index.ts',
-  'src/components/Button.tsx',
-  'src/utils/helpers.ts',
-  'package.json',
-];
+const payload = preloadPathStoreFileTree({
+  paths: ['src/index.ts', 'src/components/Button.tsx', 'package.json'],
+  flattenEmptyDirectories: true,
+  id: 'my-tree',
+});
 
-const fileTree = new FileTree({ initialFiles: files });
-fileTree.render({ containerWrapper: document.body });`,
+// Render payload.html into the page (e.g. dangerouslySetInnerHTML)
+
+// Client: hydrate the pre-rendered tree
+import { PathStoreFileTree } from '@pierre/trees/path-store';
+
+const fileTree = new PathStoreFileTree({
+  paths: ['src/index.ts', 'src/components/Button.tsx', 'package.json'],
+  flattenEmptyDirectories: true,
+  id: 'my-tree',
+});
+
+const container = document.querySelector('file-tree-container');
+if (container instanceof HTMLElement) {
+  fileTree.hydrate({ fileTreeContainer: container });
+}`,
   },
   options,
 };

@@ -10,14 +10,19 @@
 
 - [Overview](https://diffs.com/preview/trees/docs#overview): What file tree is, architecture, and getting started
 - [Installation](https://diffs.com/preview/trees/docs#installation): Package installation and entry points
-- [Core Types](https://diffs.com/preview/trees/docs#core-types): FileTreeOptions, FileTreeSelectionItem, FileTreeSearchMode, and configuration
-- [React API](https://diffs.com/preview/trees/docs#react-api): FileTree React component and props
-- [Vanilla JS API](https://diffs.com/preview/trees/docs#vanilla-js-api): FileTree class, constructor options, instance methods, and FileTreeStateConfig
-- [Git Status](https://diffs.com/preview/trees/docs#git-status): Git-style file status indicators
-- [Icons](https://diffs.com/preview/trees/docs#icons): Custom SVG sprite sheets and icon remapping
-- [Utilities](https://diffs.com/preview/trees/docs#utilities): sortChildren, generateSyncDataLoader, generateLazyDataLoader
+- [Core Types](https://diffs.com/preview/trees/docs#core-types): PathStoreFileTreeOptions, item handles, search modes, and configuration
+- [React API](https://diffs.com/preview/trees/docs#react-api): Using PathStoreFileTree in React with useEffect, SSR hydration
+- [Path-Store API](https://diffs.com/preview/trees/docs#path-store-api): PathStoreFileTree class, constructor options, instance methods, and mutations
+- [Git Status](https://diffs.com/preview/trees/docs#git-status): Git-style file status indicators with setGitStatus
+- [Icons](https://diffs.com/preview/trees/docs#icons): Custom SVG sprite sheets, icon tiers, and setIcons
+- [Mutations](https://diffs.com/preview/trees/docs#mutations): add, remove, move, batch, resetPaths, and onMutation events
+- [Drag and Drop](https://diffs.com/preview/trees/docs#drag-and-drop): PathStoreTreesDragAndDropConfig with canDrag, canDrop, and drop hooks
+- [Composition](https://diffs.com/preview/trees/docs#composition): Header slots and context menu composition options
+- [Renaming](https://diffs.com/preview/trees/docs#renaming): Inline file/folder renaming with PathStoreTreesRenamingConfig
+- [Utilities](https://diffs.com/preview/trees/docs#utilities): sortChildren, generateSyncDataLoader, generateLazyDataLoader (legacy)
 - [Styling](https://diffs.com/preview/trees/docs#styling): CSS variables and inline style overrides
-- [SSR](https://diffs.com/preview/trees/docs#ssr): preloadFileTree for server-side rendering and vanilla hydration
+- [Themes](https://diffs.com/preview/trees/docs#themes): Theme integration with themeToTreeStyles and custom VS Code themes
+- [SSR](https://diffs.com/preview/trees/docs#ssr): preloadPathStoreFileTree for server-side rendering and hydration
 
 ## See also
 

@@ -59,8 +59,13 @@ const TREES_SECTIONS = [
   'VanillaAPI',
   'GitStatus',
   'Icons',
+  'Mutations',
+  'DragAndDrop',
+  'Composition',
+  'Renaming',
   'Utilities',
   'Styling',
+  'Theming',
   'SSR',
 ] as const;
 
@@ -90,15 +95,23 @@ const SECTION_DESCRIPTIONS: Record<string, Record<string, string>> = {
     Overview: 'What file tree is, architecture, and getting started',
     Installation: 'Package installation and entry points',
     CoreTypes:
-      'FileTreeOptions, FileTreeSelectionItem, FileTreeSearchMode, and configuration',
-    ReactAPI: 'FileTree React component and props',
+      'PathStoreFileTreeOptions, item handles, search modes, and configuration',
+    ReactAPI: 'Using PathStoreFileTree in React with useEffect, SSR hydration',
     VanillaAPI:
-      'FileTree class, constructor options, instance methods, and FileTreeStateConfig',
-    GitStatus: 'Git-style file status indicators',
-    Icons: 'Custom SVG sprite sheets and icon remapping',
-    Utilities: 'sortChildren, generateSyncDataLoader, generateLazyDataLoader',
+      'PathStoreFileTree class, constructor options, instance methods, and mutations',
+    GitStatus: 'Git-style file status indicators with setGitStatus',
+    Icons: 'Custom SVG sprite sheets, icon tiers, and setIcons',
+    Mutations: 'add, remove, move, batch, resetPaths, and onMutation events',
+    DragAndDrop:
+      'PathStoreTreesDragAndDropConfig with canDrag, canDrop, and drop hooks',
+    Composition: 'Header slots and context menu composition options',
+    Renaming: 'Inline file/folder renaming with PathStoreTreesRenamingConfig',
+    Utilities:
+      'sortChildren, generateSyncDataLoader, generateLazyDataLoader (legacy)',
     Styling: 'CSS variables and inline style overrides',
-    SSR: 'preloadFileTree for server-side rendering and vanilla hydration',
+    Theming:
+      'Theme integration with themeToTreeStyles and custom VS Code themes',
+    SSR: 'preloadPathStoreFileTree for server-side rendering and hydration',
   },
 };
 

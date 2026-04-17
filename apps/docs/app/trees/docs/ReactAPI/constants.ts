@@ -8,9 +8,124 @@ const options = {
   unsafeCSS: CustomScrollbarCSS,
 } as const;
 
-export const REACT_API_FILE_TREE: PreloadFileOptions<undefined> = {
+export const REACT_PATH_STORE_USAGE: PreloadFileOptions<undefined> = {
   file: {
     name: 'FileExplorer.tsx',
+    contents: `'use client';
+
+import { PathStoreFileTree } from '@pierre/trees/path-store';
+import { useEffect, useRef } from 'react';
+
+const files = [
+  'src/index.ts',
+  'src/components/Button.tsx',
+  'src/utils/helpers.ts',
+  'package.json',
+];
+
+export function FileExplorer() {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = mountRef.current;
+    if (node == null) return;
+
+    const fileTree = new PathStoreFileTree({
+      paths: files,
+      flattenEmptyDirectories: true,
+      search: true,
+      viewportHeight: 400,
+      onSelectionChange: (paths) => {
+        console.log('Selected:', paths);
+      },
+    });
+
+    fileTree.render({ containerWrapper: node });
+
+    return () => {
+      fileTree.cleanUp();
+    };
+  }, []);
+
+  return <div ref={mountRef} style={{ height: 400 }} />;
+}`,
+  },
+  options,
+};
+
+export const REACT_PATH_STORE_SSR: PreloadFileOptions<undefined> = {
+  file: {
+    name: 'TreePage.tsx',
+    contents: `// Server component (page.tsx)
+import {
+  type PathStoreFileTreeOptions,
+  preloadPathStoreFileTree,
+} from '@pierre/trees/path-store';
+
+const sharedOptions: PathStoreFileTreeOptions = {
+  paths: ['src/index.ts', 'src/components/Button.tsx', 'package.json'],
+  flattenEmptyDirectories: true,
+  id: 'my-tree',
+  search: true,
+  viewportHeight: 400,
+};
+
+export default function TreePage() {
+  const payload = preloadPathStoreFileTree(sharedOptions);
+  return <TreeClient html={payload.html} options={sharedOptions} />;
+}
+
+// Client component (TreeClient.tsx)
+'use client';
+
+import { PathStoreFileTree } from '@pierre/trees/path-store';
+import type { PathStoreFileTreeOptions } from '@pierre/trees/path-store';
+import { useEffect, useRef } from 'react';
+
+export function TreeClient({
+  html,
+  options,
+}: {
+  html: string;
+  options: PathStoreFileTreeOptions;
+}) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = mountRef.current;
+    if (node == null) return;
+
+    const fileTree = new PathStoreFileTree(options);
+    const container = node.querySelector('file-tree-container');
+
+    if (container instanceof HTMLElement) {
+      fileTree.hydrate({ fileTreeContainer: container });
+    } else {
+      node.innerHTML = '';
+      fileTree.render({ containerWrapper: node });
+    }
+
+    return () => {
+      fileTree.cleanUp();
+    };
+  }, [html, options]);
+
+  return (
+    <div
+      ref={mountRef}
+      style={{ height: options.viewportHeight ?? 400 }}
+      dangerouslySetInnerHTML={{ __html: html }}
+      suppressHydrationWarning
+    />
+  );
+}`,
+  },
+  options,
+};
+
+export const REACT_LEGACY_FILE_TREE: PreloadFileOptions<undefined> = {
+  file: {
+    name: 'LegacyFileExplorer.tsx',
     contents: `import { FileTree } from '@pierre/trees/react';
 
 const files = [
@@ -27,91 +142,36 @@ export function FileExplorer() {
   options,
 };
 
-export const REACT_API_FILE_TREE_PROPS: PreloadFileOptions<undefined> = {
-  file: {
-    name: 'file_tree_props.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
-
-// FileTree accepts these props:
-
-<FileTree
-  // Required: options object + initialFiles (or controlled files)
-  options={{
-    flattenEmptyDirectories: true,
-    fileTreeSearchMode: 'expand-matches',
-    search: true,
-    unsafeCSS: \`
-      [data-item-section='icon'] {
-        color: oklch(67% 0.2 25);
-      }
-    \`,
-  }}
-  initialFiles={['src/index.ts', 'package.json']}
-
-  // Optional: uncontrolled state defaults
-  initialExpandedItems={['src']}
-  initialSelectedItems={['package.json']}
-  initialSearchQuery="Button"
-
-  // Optional: controlled state (overrides internal state each render)
-  // files={controlledFiles}
-  // expandedItems={controlledExpanded}
-  // selectedItems={controlledSelected}
-
-  // Optional: state change callbacks
-  onSelection={(items) => console.log(items)}
-  onExpandedItemsChange={(items) => console.log('expanded', items)}
-  onSelectedItemsChange={(items) => console.log('selected', items)}
-  onFilesChange={(files) => console.log('files', files)}
-
-  // Optional: git status
-  gitStatus={gitStatusEntries}
-
-  // Optional: CSS class name and inline styles
-  className="my-file-tree"
-  style={{ maxHeight: 400 }}
-
-  // Optional: pre-rendered HTML for SSR hydration
-  prerenderedHTML={htmlFromServer}
-/>`,
-  },
-  options,
-};
-
 export const REACT_API_CUSTOM_ICONS_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
     name: 'custom_icons_file_tree.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 
-export function IconSetTree() {
-  return (
-    <FileTree
-      options={{
-        id: 'icon-set-tree',
-        icons: {
-          set: 'standard',
-          colored: true,
-        },
-      }}
-      initialFiles={[
-        'src/index.ts',
-        'src/components/Button.tsx',
-        'package.json',
-      ]}
-      initialExpandedItems={['src', 'src/components']}
-    />
-  );
-}`,
+const fileTree = new PathStoreFileTree({
+  paths: [
+    'src/index.ts',
+    'src/components/Button.tsx',
+    'package.json',
+  ],
+  icons: {
+    set: 'standard',
+    colored: true,
+  },
+});
+
+fileTree.render({ containerWrapper: document.getElementById('tree')! });
+
+// Update icons at any time
+fileTree.setIcons({ set: 'complete', colored: true });`,
   },
   options,
 };
 
 export const REACT_API_GIT_STATUS_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'git_status_file_tree.tsx',
-    contents: `import { useEffect, useState } from 'react';
+    name: 'git_status_file_tree.ts',
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 import type { GitStatusEntry } from '@pierre/trees';
-import { FileTree } from '@pierre/trees/react';
 
 const files = [
   'README.md',
@@ -121,27 +181,24 @@ const files = [
   'src/lib/utils.ts',
 ];
 
-export function GitAwareTree() {
-  const [gitStatus, setGitStatus] = useState<GitStatusEntry[] | undefined>();
+const initialGitStatus: GitStatusEntry[] = [
+  { path: 'src/index.ts', status: 'modified' },
+  { path: 'src/components/Button.tsx', status: 'added' },
+  { path: 'README.md', status: 'deleted' },
+];
 
-  useEffect(() => {
-    // Replace this with your VCS/remote status source.
-    setGitStatus([
-      { path: 'src/index.ts', status: 'modified' },
-      { path: 'src/components/Button.tsx', status: 'added' },
-      { path: 'README.md', status: 'deleted' },
-    ]);
-  }, []);
+const fileTree = new PathStoreFileTree({
+  paths: files,
+  gitStatus: initialGitStatus,
+  search: true,
+});
 
-  return (
-    <FileTree
-      options={{ id: 'git-aware-tree' }}
-      initialFiles={files}
-      initialExpandedItems={['src', 'src/components']}
-      gitStatus={gitStatus}
-    />
-  );
-}`,
+fileTree.render({ containerWrapper: document.getElementById('tree')! });
+
+// Update git status at any time
+fileTree.setGitStatus([
+  { path: 'src/lib/utils.ts', status: 'modified' },
+]);`,
   },
   options,
 };

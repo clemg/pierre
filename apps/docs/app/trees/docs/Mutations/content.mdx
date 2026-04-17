@@ -1,0 +1,34 @@
+## Mutations
+
+`PathStoreFileTree` supports native tree mutations — you can add, remove, move,
+and batch operations directly on the tree without replacing the entire file
+list. All mutations update the internal store and re-render the tree
+automatically.
+
+### Individual operations [toc-ignore]
+
+<DocsCodeExample {...mutationsBasicExample} />
+
+### Batch operations [toc-ignore]
+
+Use `batch` to apply multiple operations atomically. The tree re-renders once
+after all operations complete, improving performance for bulk changes.
+
+<DocsCodeExample {...mutationsBatchExample} />
+
+### resetPaths [toc-ignore]
+
+Replace the entire file list. Use this when swapping datasets (e.g. switching
+branches) rather than computing individual add/remove deltas.
+
+<DocsCodeExample {...mutationsResetExample} />
+
+### Mutation Events
+
+Listen for mutation events with `onMutation`. The handler receives a typed event
+object describing what changed. Pass `'*'` to listen for all mutation types, or
+a specific type (`'add'`, `'remove'`, `'move'`, `'batch'`, `'reset'`).
+
+`onMutation` returns an unsubscribe function.
+
+<DocsCodeExample {...mutationsEventsExample} />

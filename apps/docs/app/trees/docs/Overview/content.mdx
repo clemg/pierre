@@ -5,9 +5,9 @@
 </Notice>
 
 **File tree** is a library for rendering file trees on the web. It includes
-vanilla JavaScript and React components, with support for SSR. You get flexible
-components for building trees with filtering, directory flattening, icons, and
-customizable styling.
+vanilla JavaScript and React integration, with support for SSR. You get flexible
+components for building trees with mutations, filtering, directory flattening,
+icons, drag and drop, and customizable styling.
 
 <FileTree
   options={overviewFileTreeOptions}
@@ -17,22 +17,28 @@ customizable styling.
   }}
 />
 
-We have an opinionated stance in our architecture: **file trees benefit from
-headless state management**. We lean into this by building on top of
-[`@headless-tree/core`](https://www.npmjs.com/package/@headless-tree/core) for
-expansion, selection, keyboard navigation, and search while keeping rendering
-ergonomic in React and vanilla JavaScript. The UI renders in Shadow DOM for
-style isolation.
-
-Generally speaking, you'll want to use the `FileTree` component—it provides an
-easy-to-use API whether you're in vanilla JavaScript or React. For this
-overview, we'll show both; the React and vanilla APIs are equivalent.
+The recommended API is **`@pierre/trees/path-store`**, which provides an
+imperative, path-first file tree built on top of `@pierre/path-store`. It
+supports native mutations (`add`, `remove`, `move`, `batch`), always-on
+virtualization, drag and drop, inline renaming, search, and composition slots
+(headers, context menus). The UI renders in Shadow DOM for style isolation.
 
 ## Rendering Trees
 
-The `FileTree` component is available in both vanilla JavaScript and React. You
-pass a list of file paths (and optional [options](#core-types-filetreeoptions));
-the tree builds the hierarchy and handles expand/collapse, selection, and
-search. Examples for both environments are below.
+Import `PathStoreFileTree` from `@pierre/trees/path-store`. Pass a list of file
+paths and optional configuration; the tree builds the hierarchy and handles
+expand/collapse, selection, search, and mutations.
 
-<TreesCodeToggle vanilla={vanillaBasicUsage} react={reactBasicUsage} />
+<DocsCodeExample {...pathStoreBasicUsage} />
+
+For server-side rendering, use `preloadPathStoreFileTree` on the server, send
+the HTML to the client, and call `hydrate` to attach interactivity:
+
+<DocsCodeExample {...pathStoreSsrUsage} />
+
+### Legacy API [toc-ignore]
+
+The legacy `FileTree` class (`@pierre/trees`) and React component
+(`@pierre/trees/react`) are still available. See the
+[Legacy Vanilla API](#vanilla-js-api) and [Legacy React API](#react-api)
+sections for those APIs. New projects should use `@pierre/trees/path-store`.

@@ -1,0 +1,24 @@
+## Renaming
+
+Enable inline file and folder renaming by setting `renaming: true` in
+`PathStoreFileTreeOptions`. Users can trigger renaming via `F2` or
+programmatically with `startRenaming(path)`.
+
+Pass an object instead of `true` to customize rename behavior with
+`PathStoreTreesRenamingConfig`.
+
+### Configuration [toc-ignore]
+
+<DocsCodeExample {...renamingConfigExample} />
+
+### Config options [toc-ignore]
+
+| Option      | Description                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------- |
+| `canRename` | Return `false` to prevent renaming for specific items.                                                          |
+| `onRename`  | Called after a successful rename. Receives the source path, destination path, and whether the item is a folder. |
+| `onError`   | Called when a rename fails (e.g. name collision).                                                               |
+
+### Usage [toc-ignore]
+
+<DocsCodeExample {...renamingUsageExample} />

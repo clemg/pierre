@@ -6,31 +6,46 @@ import { DocsLayout } from '../../../docs/DocsLayout';
 import { HeadingAnchors } from '../../../docs/HeadingAnchors';
 import { ProseWrapper } from '../../../docs/ProseWrapper';
 import {
-  FILE_TREE_OPTIONS_TYPE,
-  FILE_TREE_SEARCH_MODE_TYPE,
-  FILE_TREE_SELECTION_ITEM_TYPE,
-  FILE_TREE_STATE_CONFIG_TYPE,
-  FILES_OPTION_EXAMPLE,
-  ON_SELECTION_EXAMPLE,
+  COMPOSITION_CONTEXT_MENU_EXAMPLE,
+  COMPOSITION_HEADER_EXAMPLE,
+} from '../../../trees/docs/Composition/constants';
+import {
+  PATH_STORE_FILE_TREE_OPTIONS_TYPE,
+  PATH_STORE_ITEM_HANDLE_TYPE,
+  PATH_STORE_SEARCH_MODE_TYPE,
+  PATHS_OPTION_EXAMPLE,
 } from '../../../trees/docs/CoreTypes/constants';
+import {
+  DND_CONFIG_EXAMPLE,
+  DND_USAGE_EXAMPLE,
+} from '../../../trees/docs/DragAndDrop/constants';
 import {
   INSTALLATION_EXAMPLES,
   PACKAGE_MANAGERS,
 } from '../../../trees/docs/Installation/constants';
 import {
+  MUTATIONS_BASIC_EXAMPLE,
+  MUTATIONS_BATCH_EXAMPLE,
+  MUTATIONS_EVENTS_EXAMPLE,
+  MUTATIONS_RESET_EXAMPLE,
+} from '../../../trees/docs/Mutations/constants';
+import {
   OVERVIEW_FILE_TREE_OPTIONS,
-  TREES_REACT_BASIC_USAGE,
-  TREES_VANILLA_BASIC_USAGE,
+  PATH_STORE_BASIC_USAGE,
+  PATH_STORE_SSR_USAGE,
 } from '../../../trees/docs/Overview/constants';
 import {
-  REACT_API_CUSTOM_ICONS_EXAMPLE,
-  REACT_API_FILE_TREE,
-  REACT_API_FILE_TREE_PROPS,
-  REACT_API_GIT_STATUS_EXAMPLE,
+  REACT_LEGACY_FILE_TREE,
+  REACT_PATH_STORE_SSR,
+  REACT_PATH_STORE_USAGE,
 } from '../../../trees/docs/ReactAPI/constants';
 import {
+  RENAMING_CONFIG_EXAMPLE,
+  RENAMING_USAGE_EXAMPLE,
+} from '../../../trees/docs/Renaming/constants';
+import {
   SSR_HYDRATION_EXAMPLE,
-  SSR_PRELOAD_FILE_TREE,
+  SSR_PRELOAD_PATH_STORE_FILE_TREE,
 } from '../../../trees/docs/SSR/constants';
 import {
   STYLING_CODE_GLOBAL,
@@ -48,10 +63,11 @@ import {
   HELPER_SORT_CHILDREN,
 } from '../../../trees/docs/Utilities/constants';
 import {
+  PATH_STORE_API_BASIC_EXAMPLE,
+  PATH_STORE_API_FULL_EXAMPLE,
   VANILLA_API_CUSTOM_ICONS_EXAMPLE,
-  VANILLA_API_FILE_TREE_EXAMPLE,
-  VANILLA_API_FILE_TREE_OPTIONS,
   VANILLA_API_GIT_STATUS_EXAMPLE,
+  VANILLA_LEGACY_EXAMPLE,
 } from '../../../trees/docs/VanillaAPI/constants';
 import Footer from '@/components/Footer';
 import { renderMDX } from '@/lib/mdx';
@@ -75,6 +91,10 @@ export default function TreesDocsPage() {
           <VanillaAPISection />
           <GitStatusSection />
           <CustomIconsSection />
+          <MutationsSection />
+          <DragAndDropSection />
+          <CompositionSection />
+          <RenamingSection />
           <UtilitiesSection />
           <StylingSection />
           <ThemingSection />
@@ -87,16 +107,16 @@ export default function TreesDocsPage() {
 }
 
 async function OverviewSection() {
-  const [vanillaBasicUsage, reactBasicUsage] = await Promise.all([
-    preloadFile(TREES_VANILLA_BASIC_USAGE),
-    preloadFile(TREES_REACT_BASIC_USAGE),
+  const [pathStoreBasicUsage, pathStoreSsrUsage] = await Promise.all([
+    preloadFile(PATH_STORE_BASIC_USAGE),
+    preloadFile(PATH_STORE_SSR_USAGE),
   ]);
   const content = await renderMDX({
     filePath: 'trees/docs/Overview/content.mdx',
     scope: {
       overviewFileTreeOptions: OVERVIEW_FILE_TREE_OPTIONS,
-      vanillaBasicUsage,
-      reactBasicUsage,
+      pathStoreBasicUsage,
+      pathStoreSsrUsage,
     },
   });
   return <ProseWrapper>{content}</ProseWrapper>;
@@ -120,41 +140,41 @@ async function InstallationSection() {
 
 async function CoreTypesSection() {
   const [
-    fileTreeOptionsType,
-    fileTreeSelectionItemType,
-    fileTreeSearchModeType,
-    filesOptionExample,
-    onSelectionExample,
+    pathStoreFileTreeOptionsType,
+    pathStoreSearchModeType,
+    pathStoreItemHandleType,
+    pathsOptionExample,
   ] = await Promise.all([
-    preloadFile(FILE_TREE_OPTIONS_TYPE),
-    preloadFile(FILE_TREE_SELECTION_ITEM_TYPE),
-    preloadFile(FILE_TREE_SEARCH_MODE_TYPE),
-    preloadFile(FILES_OPTION_EXAMPLE),
-    preloadFile(ON_SELECTION_EXAMPLE),
+    preloadFile(PATH_STORE_FILE_TREE_OPTIONS_TYPE),
+    preloadFile(PATH_STORE_SEARCH_MODE_TYPE),
+    preloadFile(PATH_STORE_ITEM_HANDLE_TYPE),
+    preloadFile(PATHS_OPTION_EXAMPLE),
   ]);
   const content = await renderMDX({
     filePath: 'trees/docs/CoreTypes/content.mdx',
     scope: {
-      fileTreeOptionsType,
-      fileTreeSelectionItemType,
-      fileTreeSearchModeType,
-      filesOptionExample,
-      onSelectionExample,
+      pathStoreFileTreeOptionsType,
+      pathStoreSearchModeType,
+      pathStoreItemHandleType,
+      pathsOptionExample,
     },
   });
   return <ProseWrapper>{content}</ProseWrapper>;
 }
 
 async function ReactAPISection() {
-  const [reactAPIFileTree, reactAPIFileTreeProps] = await Promise.all([
-    preloadFile(REACT_API_FILE_TREE),
-    preloadFile(REACT_API_FILE_TREE_PROPS),
-  ]);
+  const [reactPathStoreUsage, reactPathStoreSsr, reactLegacyFileTree] =
+    await Promise.all([
+      preloadFile(REACT_PATH_STORE_USAGE),
+      preloadFile(REACT_PATH_STORE_SSR),
+      preloadFile(REACT_LEGACY_FILE_TREE),
+    ]);
   const content = await renderMDX({
     filePath: 'trees/docs/ReactAPI/content.mdx',
     scope: {
-      reactAPIFileTree,
-      reactAPIFileTreeProps,
+      reactPathStoreUsage,
+      reactPathStoreSsr,
+      reactLegacyFileTree,
     },
   });
   return <ProseWrapper>{content}</ProseWrapper>;
@@ -162,45 +182,100 @@ async function ReactAPISection() {
 
 async function VanillaAPISection() {
   const [
-    vanillaAPIFileTreeExample,
-    vanillaAPIFileTreeOptions,
-    fileTreeStateConfigType,
+    pathStoreAPIBasicExample,
+    pathStoreAPIFullExample,
+    vanillaLegacyExample,
   ] = await Promise.all([
-    preloadFile(VANILLA_API_FILE_TREE_EXAMPLE),
-    preloadFile(VANILLA_API_FILE_TREE_OPTIONS),
-    preloadFile(FILE_TREE_STATE_CONFIG_TYPE),
+    preloadFile(PATH_STORE_API_BASIC_EXAMPLE),
+    preloadFile(PATH_STORE_API_FULL_EXAMPLE),
+    preloadFile(VANILLA_LEGACY_EXAMPLE),
   ]);
   const content = await renderMDX({
     filePath: 'trees/docs/VanillaAPI/content.mdx',
     scope: {
-      vanillaAPIFileTreeExample,
-      vanillaAPIFileTreeOptions,
-      fileTreeStateConfigType,
+      pathStoreAPIBasicExample,
+      pathStoreAPIFullExample,
+      vanillaLegacyExample,
     },
   });
   return <ProseWrapper>{content}</ProseWrapper>;
 }
 
 async function GitStatusSection() {
-  const [reactGitStatus, vanillaGitStatus] = await Promise.all([
-    preloadFile(REACT_API_GIT_STATUS_EXAMPLE),
-    preloadFile(VANILLA_API_GIT_STATUS_EXAMPLE),
-  ]);
+  const pathStoreGitStatus = await preloadFile(VANILLA_API_GIT_STATUS_EXAMPLE);
   const content = await renderMDX({
     filePath: 'trees/docs/GitStatus/content.mdx',
-    scope: { reactGitStatus, vanillaGitStatus },
+    scope: { pathStoreGitStatus },
   });
   return <ProseWrapper>{content}</ProseWrapper>;
 }
 
 async function CustomIconsSection() {
-  const [reactIcons, vanillaIcons] = await Promise.all([
-    preloadFile(REACT_API_CUSTOM_ICONS_EXAMPLE),
-    preloadFile(VANILLA_API_CUSTOM_ICONS_EXAMPLE),
-  ]);
+  const pathStoreIcons = await preloadFile(VANILLA_API_CUSTOM_ICONS_EXAMPLE);
   const content = await renderMDX({
     filePath: 'trees/docs/Icons/content.mdx',
-    scope: { reactIcons, vanillaIcons },
+    scope: { pathStoreIcons },
+  });
+  return <ProseWrapper>{content}</ProseWrapper>;
+}
+
+async function MutationsSection() {
+  const [
+    mutationsBasicExample,
+    mutationsBatchExample,
+    mutationsResetExample,
+    mutationsEventsExample,
+  ] = await Promise.all([
+    preloadFile(MUTATIONS_BASIC_EXAMPLE),
+    preloadFile(MUTATIONS_BATCH_EXAMPLE),
+    preloadFile(MUTATIONS_RESET_EXAMPLE),
+    preloadFile(MUTATIONS_EVENTS_EXAMPLE),
+  ]);
+  const content = await renderMDX({
+    filePath: 'trees/docs/Mutations/content.mdx',
+    scope: {
+      mutationsBasicExample,
+      mutationsBatchExample,
+      mutationsResetExample,
+      mutationsEventsExample,
+    },
+  });
+  return <ProseWrapper>{content}</ProseWrapper>;
+}
+
+async function DragAndDropSection() {
+  const [dndConfigExample, dndUsageExample] = await Promise.all([
+    preloadFile(DND_CONFIG_EXAMPLE),
+    preloadFile(DND_USAGE_EXAMPLE),
+  ]);
+  const content = await renderMDX({
+    filePath: 'trees/docs/DragAndDrop/content.mdx',
+    scope: { dndConfigExample, dndUsageExample },
+  });
+  return <ProseWrapper>{content}</ProseWrapper>;
+}
+
+async function CompositionSection() {
+  const [compositionHeaderExample, compositionContextMenuExample] =
+    await Promise.all([
+      preloadFile(COMPOSITION_HEADER_EXAMPLE),
+      preloadFile(COMPOSITION_CONTEXT_MENU_EXAMPLE),
+    ]);
+  const content = await renderMDX({
+    filePath: 'trees/docs/Composition/content.mdx',
+    scope: { compositionHeaderExample, compositionContextMenuExample },
+  });
+  return <ProseWrapper>{content}</ProseWrapper>;
+}
+
+async function RenamingSection() {
+  const [renamingConfigExample, renamingUsageExample] = await Promise.all([
+    preloadFile(RENAMING_CONFIG_EXAMPLE),
+    preloadFile(RENAMING_USAGE_EXAMPLE),
+  ]);
+  const content = await renderMDX({
+    filePath: 'trees/docs/Renaming/content.mdx',
+    scope: { renamingConfigExample, renamingUsageExample },
   });
   return <ProseWrapper>{content}</ProseWrapper>;
 }
@@ -224,13 +299,13 @@ async function UtilitiesSection() {
 }
 
 async function SSRSection() {
-  const [preloadFileTree, ssrHydrationExample] = await Promise.all([
-    preloadFile(SSR_PRELOAD_FILE_TREE),
+  const [preloadPathStoreFileTree, ssrHydrationExample] = await Promise.all([
+    preloadFile(SSR_PRELOAD_PATH_STORE_FILE_TREE),
     preloadFile(SSR_HYDRATION_EXAMPLE),
   ]);
   const content = await renderMDX({
     filePath: 'trees/docs/SSR/content.mdx',
-    scope: { preloadFileTree, ssrHydrationExample },
+    scope: { preloadPathStoreFileTree, ssrHydrationExample },
   });
   return <ProseWrapper>{content}</ProseWrapper>;
 }

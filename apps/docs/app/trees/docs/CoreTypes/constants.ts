@@ -8,147 +8,114 @@ const options = {
   unsafeCSS: CustomScrollbarCSS,
 } as const;
 
-export const FILE_TREE_OPTIONS_TYPE: PreloadFileOptions<undefined> = {
-  file: {
-    name: 'FileTreeOptions.ts',
-    contents: `import type {
-  FileTreeOptions,
-  FileTreeIcons,
-  FileTreeStateConfig,
-  FileTreeSearchMode,
-  FileTreeCollision,
-  ChildrenComparator,
-  GitStatusEntry,
-} from '@pierre/trees';
+export const PATH_STORE_FILE_TREE_OPTIONS_TYPE: PreloadFileOptions<undefined> =
+  {
+    file: {
+      name: 'PathStoreFileTreeOptions.ts',
+      contents: `import type {
+  PathStoreFileTreeOptions,
+  PathStoreTreesSearchMode,
+  PathStoreTreesDragAndDropConfig,
+  PathStoreTreesRenamingConfig,
+  PathStoreTreesCompositionOptions,
+} from '@pierre/trees/path-store';
+import type { GitStatusEntry, FileTreeIcons } from '@pierre/trees';
 
-// FileTreeOptions is the main options object for FileTree (vanilla and React).
-// Pass it to the FileTree constructor or to the <FileTree options={...} /> component.
-interface FileTreeOptions {
+interface PathStoreFileTreeOptions {
   // Required: array of file paths (forward slashes). Defines the tree structure.
-  initialFiles: string[];
+  paths: readonly string[];
 
-  // Optional: unique id for this instance (DOM ids, SSR). Defaults to ft_brw_1, etc.
+  // Optional: unique id for this instance (DOM ids, SSR). Auto-generated if omitted.
   id?: string;
 
   // Optional: collapse single-child folder chains into one row. Default: false.
   flattenEmptyDirectories?: boolean;
 
-  // Optional: load children when a folder is expanded (for very large trees). Default: false.
-  useLazyDataLoader?: boolean;
-
-  // Optional: file tree search behavior.
-  fileTreeSearchMode?: FileTreeSearchMode;
+  // Optional: search behavior mode.
+  fileTreeSearchMode?: PathStoreTreesSearchMode;
 
   // Optional: render the built-in search input. Default: false.
   search?: boolean;
 
-  // Optional: enable built-in drag and drop. Default: false.
-  dragAndDrop?: boolean;
+  // Optional: enable drag and drop. true for defaults, or config object.
+  dragAndDrop?: boolean | PathStoreTreesDragAndDropConfig;
+
+  // Optional: enable inline renaming. true for defaults, or config object.
+  renaming?: boolean | PathStoreTreesRenamingConfig;
 
   // Optional: Git status entries for file status indicators.
-  gitStatus?: GitStatusEntry[];
+  gitStatus?: readonly GitStatusEntry[];
 
-  // Optional: built-in icon set selection, colors, and custom remapping.
+  // Optional: built-in icon set or custom icon config.
   icons?: FileTreeIcons;
 
-  // Optional: paths that cannot be dragged when drag and drop is enabled.
-  lockedPaths?: string[];
+  // Optional: composition slots (header, context menu).
+  composition?: PathStoreTreesCompositionOptions;
 
-  // Optional: return true to overwrite the destination on DnD collision.
-  onCollision?: (collision: FileTreeCollision) => boolean;
+  // Optional: height of the virtualized viewport in pixels. Default: 320.
+  viewportHeight?: number;
 
-  // Optional: sort children within each directory. Default: true (folders first,
-  // dot-prefixed next, case-insensitive alphabetical). false preserves insertion
-  // order. { comparator: fn } for custom sorting.
-  sort?: boolean | { comparator: ChildrenComparator };
+  // Optional: height of each tree row in pixels. Default: 28.
+  itemHeight?: number;
 
-  // Optional: inject raw CSS directly into the tree shadow root.
-  // Use this only when --trees-* variables are not enough.
-  unsafeCSS?: string;
+  // Optional: directory paths to expand on mount.
+  initialExpandedPaths?: readonly string[];
 
-  // Optional: enable virtualized rendering (only visible items are rendered).
-  // Pass { threshold: N } to activate when item count >= N. Default: undefined (off).
-  virtualize?: { threshold: number } | false;
+  // Optional: callback when selection changes.
+  onSelectionChange?: (selectedPaths: readonly string[]) => void;
+
+  // Optional: callback when search value changes.
+  onSearchChange?: (value: string | null) => void;
 }
 
 // Example usage
-const options: FileTreeOptions = {
-  initialFiles: [
+const options: PathStoreFileTreeOptions = {
+  paths: [
     'README.md',
     'package.json',
     'src/index.ts',
     'src/components/Button.tsx',
   ],
   flattenEmptyDirectories: true,
-  fileTreeSearchMode: 'collapse-non-matches',
+  fileTreeSearchMode: 'hide-non-matches',
   search: true,
-  unsafeCSS: \`
-    button[data-type='item'][data-item-selected] {
-      border-radius: 999px;
-    }
-  \`,
-};
-
-// State callbacks and controlled state are configured separately:
-const stateConfig: FileTreeStateConfig = {
-  initialExpandedItems: ['src'],
-  onSelection: (items) => {
-    const first = items.find((item) => !item.isFolder);
-    if (first) {
-      console.log('Selected:', first.path);
-    }
+  viewportHeight: 400,
+  initialExpandedPaths: ['src/', 'src/components/'],
+  onSelectionChange: (paths) => {
+    console.log('Selected:', paths);
   },
 };`,
+    },
+    options,
+  };
+
+export const PATHS_OPTION_EXAMPLE: PreloadFileOptions<undefined> = {
+  file: {
+    name: 'paths.ts',
+    contents: `const paths = [
+  'README.md',
+  'package.json',
+  'src/index.ts',
+  'src/components/Button.tsx',
+  'src/utils/helpers.ts',
+];`,
   },
-  options,
+  options: {
+    theme: { dark: 'pierre-dark', light: 'pierre-light' },
+    disableFileHeader: true,
+  },
 };
 
-export const FILE_TREE_SELECTION_ITEM_TYPE: PreloadFileOptions<undefined> = {
+export const PATH_STORE_SEARCH_MODE_TYPE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'FileTreeSelectionItem.ts',
-    contents: `import type { FileTreeSelectionItem } from '@pierre/trees';
+    name: 'PathStoreTreesSearchMode.ts',
+    contents: `import type { PathStoreTreesSearchMode } from '@pierre/trees/path-store';
 
-// FileTreeSelectionItem describes one item in the selection.
-// Your onSelection callback receives an array of these.
-interface FileTreeSelectionItem {
-  // The path of the file or folder (e.g. 'src/index.ts' or 'src/components').
-  path: string;
-
-  // true for folders, false for files.
-  isFolder: boolean;
-}
-
-// Example: use in onSelection
-function handleSelection(items: FileTreeSelectionItem[]) {
-  const selectedFile = items.find((i) => !i.isFolder);
-  const selectedFolders = items.filter((i) => i.isFolder);
-
-  if (selectedFile) {
-    console.log('Selected file:', selectedFile.path);
-  }
-  selectedFolders.forEach((folder) => {
-    console.log('Expanded folder:', folder.path);
-  });
-}
-
-// Pass to FileTreeOptions
-const options = {
-  initialFiles: ['src/index.ts', 'src/components/Button.tsx'],
-};`,
-  },
-  options,
-};
-
-export const FILE_TREE_SEARCH_MODE_TYPE: PreloadFileOptions<undefined> = {
-  file: {
-    name: 'FileTreeSearchMode.ts',
-    contents: `import type { FileTreeSearchMode } from '@pierre/trees';
-
-// FileTreeSearchMode is:
+// PathStoreTreesSearchMode is:
 // - 'expand-matches' (default)
 // - 'collapse-non-matches'
 // - 'hide-non-matches'
-// Pass it via fileTreeSearchMode in FileTreeOptions.
+// Pass it via fileTreeSearchMode in PathStoreFileTreeOptions.
 //
 // 'expand-matches' (default): expand nodes that match the search.
 // 'collapse-non-matches': hide non-matching branches; only matching
@@ -156,160 +123,51 @@ export const FILE_TREE_SEARCH_MODE_TYPE: PreloadFileOptions<undefined> = {
 // 'hide-non-matches': keep branch structure, but hide non-matching rows.
 
 const options = {
-  initialFiles: ['src/index.ts', 'src/components/Button.tsx'],
-  fileTreeSearchMode: 'collapse-non-matches' as FileTreeSearchMode,
+  paths: ['src/index.ts', 'src/components/Button.tsx'],
+  fileTreeSearchMode: 'collapse-non-matches' as PathStoreTreesSearchMode,
+  search: true,
 };`,
   },
   options,
 };
 
-export const FILE_TREE_ICON_CONFIG_TYPE: PreloadFileOptions<undefined> = {
+export const PATH_STORE_ITEM_HANDLE_TYPE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'FileTreeIconConfig.ts',
-    contents: `import type { FileTreeIconConfig } from '@pierre/trees';
+    name: 'ItemHandles.ts',
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
+import type {
+  PathStoreTreesItemHandle,
+  PathStoreTreesDirectoryHandle,
+  PathStoreTreesFileHandle,
+} from '@pierre/trees/path-store';
 
-// FileTreeIconConfig lets you pick a built-in set, enable semantic colors,
-// or inject your own SVG symbols.
-interface FileTreeIconConfig {
-  // Optional: use one of the built-in sets, or "none" for custom-only rules.
-  set?: 'minimal' | 'standard' | 'complete' | 'none';
+const fileTree = new PathStoreFileTree({
+  paths: ['src/index.ts', 'src/components/Button.tsx', 'package.json'],
+});
 
-  // Optional: enable built-in per-file-type colors. Default: true.
-  colored?: boolean;
+// getItem returns a typed handle for the given path, or null if not found.
+const item = fileTree.getItem('src/');
 
-  // An SVG string with <symbol> definitions injected into the shadow DOM.
-  spriteSheet?: string;
+if (item != null) {
+  // Common methods on all handles
+  item.focus();
+  item.select();
+  item.deselect();
+  item.toggleSelect();
+  console.log(item.getPath(), item.isSelected(), item.isFocused());
 
-  // Map built-in icon names to custom symbol ids or objects with sizing info.
-  remap?: Record<
-    string,
-    | string
-    | { name: string; width?: number; height?: number; viewBox?: string }
-  >;
-
-  // Remap file icons by exact basename (e.g. package.json, .gitignore).
-  byFileName?: Record<
-    string,
-    | string
-    | { name: string; width?: number; height?: number; viewBox?: string }
-  >;
-
-  // Remap file icons by extension (e.g. ts, tsx, spec.ts).
-  byFileExtension?: Record<
-    string,
-    | string
-    | { name: string; width?: number; height?: number; viewBox?: string }
-  >;
-
-  // Remap file icons when filename contains a substring (e.g. dockerfile).
-  byFileNameContains?: Record<
-    string,
-    | string
-    | { name: string; width?: number; height?: number; viewBox?: string }
-  >;
+  // Directory-specific methods
+  if (item.isDirectory()) {
+    item.expand();
+    item.collapse();
+    item.toggle();
+    console.log(item.isExpanded());
+  }
 }
 
-// Example: use the built-in file-type set with colors enabled, then override one icon.
-const options = {
-  initialFiles: ['src/index.ts', 'src/components/Button.tsx'],
-  icons: {
-    set: 'standard',
-    colored: true,
-    spriteSheet: \`
-      <svg data-icon-sprite aria-hidden="true" width="0" height="0">
-        <symbol id="my-file" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2">
-          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
-          <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-        </symbol>
-        <symbol id="my-folder" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2">
-          <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
-        </symbol>
-      </svg>
-    \`,
-    byFileExtension: {
-      ts: 'my-file',
-    },
-    remap: {
-      'file-tree-icon-chevron': { name: 'my-folder', width: 16, height: 16 },
-    },
-  },
-};`,
+// Selection
+const selected = fileTree.getSelectedPaths();
+console.log('Selected paths:', selected);`,
   },
   options,
-};
-
-export const FILE_TREE_STATE_CONFIG_TYPE: PreloadFileOptions<undefined> = {
-  file: {
-    name: 'FileTreeStateConfig.ts',
-    contents: `import { FileTree } from '@pierre/trees';
-import type { FileTreeStateConfig } from '@pierre/trees';
-
-// FileTreeStateConfig controls default/controlled tree state and callbacks.
-const stateConfig: FileTreeStateConfig = {
-  initialExpandedItems: ['src', 'src/components'],
-  initialSelectedItems: ['src/index.ts'],
-  onSelection: (items) => {
-    console.log(items);
-  },
-  onExpandedItemsChange: (items) => {
-    console.log('expanded', items);
-  },
-};
-
-const fileTree = new FileTree(
-  {
-    initialFiles: ['README.md', 'src/index.ts', 'src/components/Button.tsx'],
-  },
-  stateConfig
-);`,
-  },
-  options,
-};
-
-export const FILES_OPTION_EXAMPLE: PreloadFileOptions<undefined> = {
-  file: {
-    name: 'fileTreeOptions.ts',
-    contents: `const fileTreeOptions = {
-  initialFiles: [
-    'README.md',
-    'package.json',
-    'src/index.ts',
-    'src/components/Button.tsx',
-    'src/utils/helpers.ts',
-  ],
-  // …
-};`,
-  },
-  options: {
-    theme: { dark: 'pierre-dark', light: 'pierre-light' },
-    disableFileHeader: true,
-  },
-};
-
-export const ON_SELECTION_EXAMPLE: PreloadFileOptions<undefined> = {
-  file: {
-    name: 'onSelection.ts',
-    contents: `// React: top-level prop
-<FileTree
-  options={{ initialFiles: ['src/index.ts', 'src/components/Button.tsx'] }}
-  onSelection={(items: FileTreeSelectionItem[]) => {
-    const file = items.find((i) => !i.isFolder);
-    if (file) setSelectedPath(file.path);
-  }}
-/>;
-
-// Vanilla: FileTreeStateConfig (second constructor argument)
-const stateConfig = {
-  onSelection: (items: FileTreeSelectionItem[]) => {
-  const file = items.find((i) => !i.isFolder);
-  if (file) setSelectedPath(file.path);
-  },
-};`,
-  },
-  options: {
-    theme: { dark: 'pierre-dark', light: 'pierre-light' },
-    disableFileHeader: true,
-  },
 };

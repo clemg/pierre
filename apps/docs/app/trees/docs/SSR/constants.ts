@@ -8,52 +8,52 @@ const options = {
   unsafeCSS: CustomScrollbarCSS,
 } as const;
 
-export const SSR_PRELOAD_FILE_TREE: PreloadFileOptions<undefined> = {
+export const SSR_PRELOAD_PATH_STORE_FILE_TREE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'preloadFileTree.ts',
-    contents: `import { preloadFileTree } from '@pierre/trees/ssr';
-import type { FileTreeOptions, FileTreeStateConfig } from '@pierre/trees';
+    name: 'preloadPathStoreFileTree.tsx',
+    contents: `import {
+  type PathStoreFileTreeOptions,
+  preloadPathStoreFileTree,
+} from '@pierre/trees/path-store';
 
-// Prerender the file tree HTML on the server for fast first paint.
-// Hydrate on the client with the same options.
-
-// Server (e.g. Next.js app router page)
-const fileTreeOptions: FileTreeOptions = {
-  initialFiles: ['README.md', 'src/index.ts', 'src/utils/helper.ts'],
+// Server (e.g. Next.js app router server component)
+const sharedOptions: PathStoreFileTreeOptions = {
+  paths: ['README.md', 'src/index.ts', 'src/utils/helper.ts'],
   flattenEmptyDirectories: true,
+  id: 'my-tree',
+  initialExpandedPaths: ['src/'],
+  viewportHeight: 400,
+  search: true,
 };
 
-// Optional: pass initial state so the SSR output matches client hydration
-const stateConfig: FileTreeStateConfig = {
-  initialExpandedItems: ['src'],
-};
-
-export default async function Page() {
-  const payload = preloadFileTree(fileTreeOptions, stateConfig);
+export default function TreePage() {
+  const payload = preloadPathStoreFileTree(sharedOptions);
 
   return (
     <div
       dangerouslySetInnerHTML={{ __html: payload.html }}
-      data-file-tree-props={JSON.stringify(fileTreeOptions)}
+      style={{ height: sharedOptions.viewportHeight }}
+      suppressHydrationWarning
     />
   );
-}
-
-// Client: use the React component with prerenderedHTML to hydrate,
-// or use vanilla FileTree and pass the same options + container that
-// holds the prerendered markup.`,
+}`,
   },
   options,
 };
 
 export const SSR_HYDRATION_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'hydrate_file_tree.ts',
-    contents: `import { FileTree } from '@pierre/trees';
+    name: 'hydrate_path_store.ts',
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 
-const files = ['src/index.ts', 'src/components/Button.tsx', 'package.json'];
-
-const fileTree = new FileTree({ initialFiles: files });
+const fileTree = new PathStoreFileTree({
+  paths: ['README.md', 'src/index.ts', 'src/utils/helper.ts'],
+  flattenEmptyDirectories: true,
+  id: 'my-tree',
+  initialExpandedPaths: ['src/'],
+  viewportHeight: 400,
+  search: true,
+});
 
 const container = document.querySelector('file-tree-container');
 if (container instanceof HTMLElement) {

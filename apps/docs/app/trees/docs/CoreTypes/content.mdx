@@ -1,30 +1,24 @@
 ## Core Types
 
 Before diving into the options and components, it's helpful to understand the
-core data structures used throughout the library.
+core data structures used throughout the path-store API.
 
-### FileTreeOptions
+### PathStoreFileTreeOptions
 
-`FileTreeOptions` is the main options object for `FileTree`. Use it when
-creating a vanilla `FileTree` instance or when rendering the React
-`<FileTree options={...} />` component. It defines the file list, instance id,
-flattening behavior, search mode, and other structural behavior.
+`PathStoreFileTreeOptions` is the main options object for `PathStoreFileTree`.
+It defines the file list, instance id, flattening behavior, search mode, drag
+and drop, composition slots, and other structural behavior.
 
-**Tip:** To pre-render the tree on the server, use
-[`preloadFileTree`](#ssr-preloadfiletree) from `@pierre/trees/ssr` and pass
-`payload.html` as the `prerenderedHTML` prop (React) or hydrate the same
-container in vanilla. See [SSR](#ssr) for usage.
+<DocsCodeExample {...pathStoreFileTreeOptionsType} />
 
-<DocsCodeExample {...fileTreeOptionsType} />
-
-#### The `initialFiles` option [toc-ignore]
+#### The `paths` option [toc-ignore]
 
 The tree is built from an array of file paths (strings). Folders are inferred
 from path segments; use forward slashes. Top-level paths (e.g. `README.md`) and
 nested paths (e.g. `src/components/Button.tsx`) are both valid. A trailing slash
 (e.g. `src/components/`) marks an explicit directory, including empty folders.
 
-<DocsCodeExample {...filesOptionExample} />
+<DocsCodeExample {...pathsOptionExample} />
 
 That produces a tree with `README.md` and `package.json` at the root and a `src`
 folder containing `index.ts`, `utils/helpers.ts`, and a `components` folder with
@@ -32,49 +26,43 @@ folder containing `index.ts`, `utils/helpers.ts`, and a `components` folder with
 
 #### Options reference [toc-ignore]
 
-`initialFiles` is the only required option, all others are optional.
+`paths` is the only required option, all others are optional.
 
-| Option                    | Description                                                                                                                                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `initialFiles`            | **Required.** Array of file paths (strings). Defines the list and hierarchy.                                                                                                                                                |
-| `id`                      | Unique identifier for this instance (DOM ids, SSR). Default: e.g. `ft_brw_1`.                                                                                                                                               |
-| `flattenEmptyDirectories` | When `true`, single-child folder chains become one row (e.g. `build / assets / images` → `build · assets · images`). Default: `false`. [Live demo](/preview/trees#flattening).                                              |
-| `fileTreeSearchMode`      | Search behavior: `'expand-matches'` (default), `'collapse-non-matches'`, or `'hide-non-matches'`.                                                                                                                           |
-| `search`                  | Render the built-in search input and enable keyboard-open search behavior. Default: `false`.                                                                                                                                |
-| `useLazyDataLoader`       | When `true`, children load when a folder is expanded. Default: `false`.                                                                                                                                                     |
-| `dragAndDrop`             | Enables built-in drag and drop interactions. Default: `false`.                                                                                                                                                              |
-| `lockedPaths`             | Optional list of file/folder paths that cannot be dragged when drag and drop is enabled.                                                                                                                                    |
-| `onCollision`             | Optional callback for drag collisions. Return `true` to overwrite destination.                                                                                                                                              |
-| `gitStatus`               | Optional `GitStatusEntry[]` used to show Git-style file status (`added`, `modified`, `deleted`). Folders with changed descendants also receive a change indicator. [Live demo](/preview/trees#path-colors).                 |
-| `icons`                   | Optional built-in icon set selection or `FileTreeIconConfig` for semantic colors, CSS-themable palettes, and custom sprite overrides. [Live demo](/preview/trees#custom-icons).                                             |
-| `sort`                    | Sort children within each directory. `true` (default) uses the standard sort (folders first, dot-prefixed next, case-insensitive alphabetical). `false` preserves insertion order. `{ comparator: fn }` for custom sorting. |
-| `virtualize`              | Enable virtualized rendering so only visible items are rendered. Pass `{ threshold: number }` to activate when item count exceeds the threshold, or `false` to disable. Default: `undefined` (off).                         |
+| Option                    | Description                                                                                                                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paths`                   | **Required.** Array of file paths (strings). Defines the list and hierarchy.                                                                                                                       |
+| `id`                      | Unique identifier for this instance (DOM ids, SSR). Default: auto-generated.                                                                                                                       |
+| `flattenEmptyDirectories` | When `true`, single-child folder chains become one row (e.g. `build / assets / images` → `build · assets · images`). Default: `false`. [Live demo](/preview/trees#flattening).                     |
+| `fileTreeSearchMode`      | Search behavior: `'expand-matches'` (default), `'collapse-non-matches'`, or `'hide-non-matches'`.                                                                                                  |
+| `search`                  | Render the built-in search input and enable keyboard-open search behavior. Default: `false`.                                                                                                       |
+| `dragAndDrop`             | Enable built-in drag and drop. `true` for defaults, or a `PathStoreTreesDragAndDropConfig` object. Default: `false`.                                                                               |
+| `renaming`                | Enable inline renaming. `true` for defaults, or a `PathStoreTreesRenamingConfig` object. Default: `false`.                                                                                         |
+| `gitStatus`               | Optional `GitStatusEntry[]` for Git-style file status (`added`, `modified`, `deleted`). Folders with changed descendants also receive a change indicator. [Live demo](/preview/trees#path-colors). |
+| `icons`                   | Optional built-in icon set or `FileTreeIconConfig` for semantic colors and custom sprite overrides. [Live demo](/preview/trees#custom-icons).                                                      |
+| `composition`             | Optional composition slots for header and context menu. See [Composition](#composition).                                                                                                           |
+| `viewportHeight`          | Height of the virtualized viewport in pixels. Default: `320`.                                                                                                                                      |
+| `itemHeight`              | Height of each tree row in pixels. Default: `28`.                                                                                                                                                  |
+| `initialExpandedPaths`    | Array of directory paths to expand on mount (e.g. `['src/', 'src/components/']`).                                                                                                                  |
+| `preparedInput`           | Pre-sorted input from `PathStore.preparePresortedInput` for faster initialization with large trees.                                                                                                |
+| `onSelectionChange`       | Callback fired when the selection changes. Receives the array of selected paths.                                                                                                                   |
+| `onSearchChange`          | Callback fired when the search value changes. Receives the search string or `null` when closed.                                                                                                    |
 
-`onSelection` is configured in React as a top-level prop
-(`\<FileTree onSelection={...} />`) and in vanilla via `FileTreeStateConfig`
-(second constructor argument).
+### PathStoreTreesSearchMode
 
-**onSelection examples**
-
-<DocsCodeExample {...onSelectionExample} />
-
-### FileTreeSelectionItem
-
-`FileTreeSelectionItem` describes one item in the tree selection. Your
-`onSelection` callback receives an array of these (in vanilla state config or
-React top-level props). Each item has a `path` (the file or folder path) and
-`isFolder` (whether it's a folder or file).
-
-<DocsCodeExample {...fileTreeSelectionItemType} />
-
-### FileTreeSearchMode
-
-`FileTreeSearchMode` controls how search affects the tree. Pass it via
-`fileTreeSearchMode` in `FileTreeOptions`.
+`PathStoreTreesSearchMode` controls how search affects the tree. Pass it via
+`fileTreeSearchMode` in options.
 
 - `'expand-matches'` (default): expand nodes that match the search.
 - `'collapse-non-matches'`: hide non-matching branches so only matching paths
   and their parents stay visible.
 - `'hide-non-matches'`: keep branch structure but hide non-matching rows.
 
-<DocsCodeExample {...fileTreeSearchModeType} />
+<DocsCodeExample {...pathStoreSearchModeType} />
+
+### Item Handles
+
+Call `getItem(path)` on a `PathStoreFileTree` instance to get a typed handle for
+interacting with a specific tree item. Handles provide methods for focus,
+selection, and (for directories) expansion.
+
+<DocsCodeExample {...pathStoreItemHandleType} />

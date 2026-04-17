@@ -1,55 +1,57 @@
-## Vanilla JS API
+## Path-Store API
 
 <Notice icon={<IconInfoFill />}>
-  Import the vanilla JavaScript class from `@pierre/trees`.
+  Import the path-store file tree from `@pierre/trees/path-store`.
 </Notice>
 
-The Vanilla JS API exposes the `FileTree` class. Create an instance with
-options, then call `render({ fileTreeContainer })` or
-`render({ containerWrapper })` to mount the tree into the DOM (pass a host
-element to reuse, or a parent to append the host to).
-
-Set `search: true` in the constructor options when you want the built-in search
-field and keyboard-open search behavior.
+The Path-Store API exposes `PathStoreFileTree`, an imperative class that manages
+the full tree lifecycle: rendering, mutations, search, selection, drag and drop,
+and cleanup. It works in any JavaScript environment — no framework required.
 
 ### Basic usage
 
-<DocsCodeExample {...vanillaAPIFileTreeExample} />
+<DocsCodeExample {...pathStoreAPIBasicExample} />
 
 ### Constructor options and instance methods
 
-`FileTree` is constructed with an options object (see
-[FileTree options](#core-types-filetreeoptions) for full details) and an
-optional `FileTreeStateConfig`. After construction you can render, update state
-imperatively, or clean up:
+`PathStoreFileTree` is constructed with a
+[`PathStoreFileTreeOptions`](#core-types-pathstorefiletreeoptions) object. After
+construction you can render, mutate the tree, query state, or clean up:
 
-<DocsCodeExample {...vanillaAPIFileTreeOptions} />
+<DocsCodeExample {...pathStoreAPIFullExample} />
 
-### Imperative state methods
+### Instance methods
 
-Beyond `render` and `cleanUp`, `FileTree` exposes methods to read and update
-tree state programmatically:
+| Method                           | Description                                                 |
+| -------------------------------- | ----------------------------------------------------------- |
+| `render({ containerWrapper })`   | Mount the tree into a parent DOM node                       |
+| `hydrate({ fileTreeContainer })` | Hydrate a pre-rendered `file-tree-container` element        |
+| `cleanUp()`                      | Unmount and release all resources                           |
+| `add(path)`                      | Add a file or directory to the tree                         |
+| `remove(path, options?)`         | Remove a file or directory (optionally recursive)           |
+| `move(from, to, options?)`       | Move a file or directory to a new path                      |
+| `batch(operations)`              | Apply multiple add/remove/move operations atomically        |
+| `resetPaths(paths, options?)`    | Replace the entire file list                                |
+| `getItem(path)`                  | Get a typed handle for the item at the given path           |
+| `getSelectedPaths()`             | Return the currently selected paths                         |
+| `getFileTreeContainer()`         | Return the root `file-tree-container` element               |
+| `setGitStatus(entries?)`         | Update git status indicators                                |
+| `setIcons(icons?)`               | Update the icon configuration                               |
+| `openSearch(initialValue?)`      | Open the search input with an optional initial value        |
+| `closeSearch()`                  | Close the search input                                      |
+| `setSearch(value)`               | Set the search value programmatically                       |
+| `isSearchOpen()`                 | Check if search is open                                     |
+| `getSearchValue()`               | Get the current search string                               |
+| `getSearchMatchingPaths()`       | Get paths matching the current search                       |
+| `focusNextSearchMatch()`         | Focus the next search match                                 |
+| `focusPreviousSearchMatch()`     | Focus the previous search match                             |
+| `startRenaming(path?)`           | Start inline renaming for the given path (or focused item)  |
+| `onMutation(type, handler)`      | Listen for mutation events. Returns an unsubscribe function |
 
-| Method                              | Description                                               |
-| ----------------------------------- | --------------------------------------------------------- |
-| `setFiles(files)`                   | Replace the file list and re-render                       |
-| `getFiles()`                        | Return the current file list                              |
-| `setExpandedItems(items)`           | Set which folders are expanded                            |
-| `getExpandedItems()`                | Return the currently expanded folder paths                |
-| `expandItem(path)`                  | Expand a single folder                                    |
-| `collapseItem(path)`                | Collapse a single folder                                  |
-| `toggleItemExpanded(path)`          | Toggle a folder's expanded state                          |
-| `setSelectedItems(items)`           | Set the selected items                                    |
-| `getSelectedItems()`                | Return the currently selected item paths                  |
-| `setCallbacks(callbacks)`           | Update callbacks (`onSelection`, etc.) after construction |
-| `setOptions(options, stateConfig?)` | Merge new options (and optionally state config)           |
+### Legacy Vanilla JS API [toc-ignore]
 
-### FileTreeStateConfig
+The legacy `FileTree` class from `@pierre/trees` is still available. It uses
+`initialFiles`, `FileTreeStateConfig`, and `setFiles` for updates. New projects
+should prefer `PathStoreFileTree` from `@pierre/trees/path-store`.
 
-`FileTreeStateConfig` is the state/callback config for the `FileTree`
-constructor's second argument. Use it for defaults (`initialExpandedItems`,
-`initialSelectedItems`, `initialSearchQuery`) and callbacks/controlled values
-(`onSelection`, `onExpandedItemsChange`, `onSelectedItemsChange`,
-`onFilesChange`, plus `expandedItems`/`selectedItems`/`files` when controlled).
-
-<DocsCodeExample {...fileTreeStateConfigType} />
+<DocsCodeExample {...vanillaLegacyExample} />

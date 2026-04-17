@@ -3,11 +3,11 @@
 The file tree is rendered inside a shadow DOM host (the `file-tree-container`
 custom element), so its styles are isolated from your page.
 
-Customize it by passing `className` and `style` on the host: use those props on
-the React `FileTree` component, or style the host returned by
-`getFileTreeContainer()` after `render()` in vanilla JS. That lets you control
-layout (`width`, `maxHeight`, borders, overflow) and override the tree’s CSS
-variables from global CSS, a wrapper, or the host element directly.
+Customize it by styling the host element: use `className` and `style` on the
+React `FileTree` component, or style the host returned by
+`getFileTreeContainer()` after `render()`. That lets you control layout
+(`width`, `maxHeight`, borders, overflow) and override the tree's CSS variables
+from global CSS, a wrapper, or the host element directly.
 
 <Notice icon={<IconBulbFill />}>
   Think of styling in two layers: host styles change the outer panel, and
@@ -18,12 +18,12 @@ variables from global CSS, a wrapper, or the host element directly.
 <DocsCodeExample {...stylingInline} />
 <DocsCodeExample {...stylingVanilla} />
 
-### Unsafe CSS escape hatch
+### Unsafe CSS escape hatch (legacy only)
 
-If CSS variables are not enough, pass `unsafeCSS` in `FileTreeOptions` to inject
-raw CSS into the tree shadow root. This is the same escape hatch pattern we use
-in diffs, but for trees it should stay the exception rather than the default
-approach.
+The `unsafeCSS` option is available on the legacy `FileTree` class to inject raw
+CSS into the tree shadow root. This option is **not available** on the
+path-store `PathStoreFileTree`. Use `--trees-*` CSS variables for customization
+instead.
 
 <DocsCodeExample {...stylingUnsafe} />
 

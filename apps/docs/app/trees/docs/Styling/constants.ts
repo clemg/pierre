@@ -45,24 +45,26 @@ file-tree-container,
 
 export const STYLING_CODE_INLINE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'DenseTree.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
-import type { CSSProperties } from 'react';
+    name: 'DenseTree.ts',
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 
-<FileTree
-  options={{ initialFiles: ['src/index.ts', 'package.json'] }}
-  className="rounded-xl border p-2"
-  style={{
-    maxHeight: 360,
-    width: 320,
-    '--trees-font-family-override': 'Berkeley Mono, monospace',
-    '--trees-font-size-override': '13px',
-    '--trees-row-height-override': '28px',
-    '--trees-level-gap-override': '6px',
-    '--trees-item-row-gap-override': '4px',
-    '--trees-icon-width-override': '14px',
-  } as CSSProperties}
-/>`,
+const fileTree = new PathStoreFileTree({
+  paths: ['src/index.ts', 'package.json'],
+  viewportHeight: 360,
+});
+
+fileTree.render({ containerWrapper: document.getElementById('tree')! });
+
+const host = fileTree.getFileTreeContainer();
+if (host != null) {
+  Object.assign(host.style, { width: '320px', maxHeight: '360px' });
+  host.style.setProperty('--trees-font-family-override', 'Berkeley Mono, monospace');
+  host.style.setProperty('--trees-font-size-override', '13px');
+  host.style.setProperty('--trees-row-height-override', '28px');
+  host.style.setProperty('--trees-level-gap-override', '6px');
+  host.style.setProperty('--trees-item-row-gap-override', '4px');
+  host.style.setProperty('--trees-icon-width-override', '14px');
+}`,
   },
   options,
 };
@@ -70,56 +72,54 @@ import type { CSSProperties } from 'react';
 export const STYLING_CODE_VANILLA: PreloadFileOptions<undefined> = {
   file: {
     name: 'file-tree.ts',
-    contents: `import { FileTree } from '@pierre/trees';
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 
-const fileTree = new FileTree({
-  initialFiles: ['src/index.ts', 'src/lib/utils.ts', 'package.json'],
+const fileTree = new PathStoreFileTree({
+  paths: ['src/index.ts', 'src/lib/utils.ts', 'package.json'],
 });
 
-fileTree.render({
-  containerWrapper: document.getElementById('tree-root') ?? undefined,
-});
+fileTree.render({ containerWrapper: document.getElementById('tree-root')! });
 
 const host = fileTree.getFileTreeContainer();
+if (host != null) {
+  Object.assign(host.style, {
+    width: '320px',
+    maxHeight: '420px',
+  });
 
-Object.assign(host.style, {
-  width: '320px',
-  maxHeight: '420px',
-});
-
-host.style.setProperty('--trees-row-height-override', '30px');
-host.style.setProperty('--trees-font-size-override', '13px');
-host.style.setProperty('--trees-selected-bg-override', 'oklch(90% 0.05 255)');
-host.style.setProperty('--trees-git-modified-color-override', '#009fff');`,
+  host.style.setProperty('--trees-row-height-override', '30px');
+  host.style.setProperty('--trees-font-size-override', '13px');
+  host.style.setProperty('--trees-selected-bg-override', 'oklch(90% 0.05 255)');
+  host.style.setProperty('--trees-git-modified-color-override', '#009fff');
+}`,
   },
   options,
 };
 
 export const STYLING_CODE_UNSAFE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'unsafe-tree-css.tsx',
-    contents: `import { FileTree } from '@pierre/trees/react';
+    name: 'unsafe-tree-css.ts',
+    contents: `// unsafeCSS is only available on the legacy FileTree class.
+// It is NOT available on PathStoreFileTree.
+import { FileTree } from '@pierre/trees';
 
-<FileTree
-  options={{
-    initialFiles: ['src/index.ts', 'src/lib/utils.ts', 'package.json'],
-    unsafeCSS: \`
-      [data-file-tree-search-input] {
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-      }
+const fileTree = new FileTree({
+  initialFiles: ['src/index.ts', 'src/lib/utils.ts', 'package.json'],
+  unsafeCSS: \`
+    [data-file-tree-search-input] {
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
 
-      button[data-type='item'][data-item-selected] {
-        border-radius: 999px;
-      }
+    button[data-type='item'][data-item-selected] {
+      border-radius: 999px;
+    }
 
-      [data-item-section='icon'] {
-        color: oklch(67% 0.2 25);
-      }
-    \`,
-  }}
-/>;
-`,
+    [data-item-section='icon'] {
+      color: oklch(67% 0.2 25);
+    }
+  \`,
+});`,
   },
   options,
 };

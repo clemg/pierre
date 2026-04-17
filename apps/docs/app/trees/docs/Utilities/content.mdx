@@ -1,8 +1,9 @@
 ## Utilities
 
 <Notice icon={<IconInfoFill />}>
-  Import utility functions from `@pierre/trees`. These can be used with any
-  framework or rendering approach.
+  Import utility functions from `@pierre/trees`. These utilities are used by the
+  legacy `FileTree` API. The path-store API handles sorting and data loading
+  internally.
 </Notice>
 
 ### sortChildren [toc-ignore]
@@ -18,17 +19,18 @@ alphabetical). You can pass a custom comparator to implement your own order.
 ### generateSyncDataLoader [toc-ignore]
 
 Build a tree data loader from a flat list of file paths. All nodes are computed
-upfront. FileTree uses this internally when you pass `initialFiles` (and
-`flattenEmptyDirectories`). Use it directly when building custom integrations
-with the headless tree or when you need the same tree shape elsewhere.
+upfront. The legacy `FileTree` uses this internally when you pass `initialFiles`
+(and `flattenEmptyDirectories`). Use it directly when building custom
+integrations with the headless tree or when you need the same tree shape
+elsewhere.
 
 <DocsCodeExample {...generateSyncDataLoader} />
 
 ### generateLazyDataLoader [toc-ignore]
 
 Build a tree data loader that computes nodes on demand when folders are
-expanded. FileTree uses this internally when you pass `initialFiles` and
-`useLazyDataLoader: true`. Best for large trees where most folders stay
-collapsed.
+expanded. The legacy `FileTree` uses this internally when you pass
+`initialFiles` and `useLazyDataLoader: true`. Best for large trees where most
+folders stay collapsed.
 
 <DocsCodeExample {...generateLazyDataLoader} />

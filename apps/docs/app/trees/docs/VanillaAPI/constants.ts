@@ -8,10 +8,10 @@ const options = {
   unsafeCSS: CustomScrollbarCSS,
 } as const;
 
-export const VANILLA_API_FILE_TREE_EXAMPLE: PreloadFileOptions<undefined> = {
+export const PATH_STORE_API_BASIC_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
     name: 'file_tree_example.ts',
-    contents: `import { FileTree } from '@pierre/trees';
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 
 const files = [
   'src/index.ts',
@@ -20,8 +20,8 @@ const files = [
   'package.json',
 ];
 
-const fileTree = new FileTree({ initialFiles: files });
-fileTree.render({ containerWrapper: document.getElementById('tree-container') });
+const fileTree = new PathStoreFileTree({ paths: files });
+fileTree.render({ containerWrapper: document.getElementById('tree-root')! });
 
 // Clean up when done
 // fileTree.cleanUp();`,
@@ -29,53 +29,112 @@ fileTree.render({ containerWrapper: document.getElementById('tree-container') })
   options,
 };
 
-export const VANILLA_API_FILE_TREE_OPTIONS: PreloadFileOptions<undefined> = {
+export const PATH_STORE_API_FULL_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
-    name: 'file_tree_options.ts',
-    contents: `import { FileTree } from '@pierre/trees';
-import type { FileTreeStateConfig } from '@pierre/trees';
+    name: 'path_store_file_tree.ts',
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
 
-// Constructor options (see FileTree options section for full details)
-const options = {
-  initialFiles: ['src/index.ts', 'package.json'],
+const fileTree = new PathStoreFileTree({
+  paths: ['src/index.ts', 'src/components/Button.tsx', 'package.json'],
   id: 'my-tree',
   flattenEmptyDirectories: true,
-  fileTreeSearchMode: 'expand-matches',
+  fileTreeSearchMode: 'hide-non-matches',
   search: true,
-  unsafeCSS: \`
-    button[data-type='item'][data-item-selected] {
-      border-radius: 999px;
-    }
-  \`,
-  useLazyDataLoader: false,
-};
-
-const stateConfig: FileTreeStateConfig = {
-  initialExpandedItems: ['src'],
-  initialSelectedItems: ['package.json'],
-  onSelection: (items) => console.log(items),
-};
-
-const fileTree = new FileTree(options, stateConfig);
-
-// Render into the DOM
-fileTree.render({
-  fileTreeContainer: existingElement,  // optional: reuse a <file-tree-container> element
-  containerWrapper: document.body,     // optional: append to this parent
+  viewportHeight: 400,
+  initialExpandedPaths: ['src/', 'src/components/'],
+  onSelectionChange: (paths) => console.log('Selected:', paths),
+  onSearchChange: (value) => console.log('Search:', value),
 });
 
-// Instance methods
-fileTree.getFileTreeContainer();  // get the root <file-tree-container> element
-fileTree.setOptions({ fileTreeSearchMode: 'hide-non-matches' });
+// Render into the DOM
+fileTree.render({ containerWrapper: document.getElementById('tree')! });
 
-// Imperative state
-fileTree.setExpandedItems(['src', 'src/components']);
-fileTree.expandItem('src');
-fileTree.collapseItem('src/components');
+// Mutations
+fileTree.add('src/lib/theme.ts');
+fileTree.remove('src/utils/helpers.ts');
+fileTree.move('src/components/Button.tsx', 'src/ui/Button.tsx');
+
+// Batch multiple operations atomically
+fileTree.batch([
+  { type: 'add', path: 'docs/README.md' },
+  { type: 'remove', path: 'package.json' },
+]);
+
+// Replace the entire file list
+fileTree.resetPaths([
+  'src/index.ts',
+  'src/ui/Button.tsx',
+  'src/lib/theme.ts',
+  'docs/README.md',
+]);
+
+// Item handles
+const item = fileTree.getItem('src/');
+if (item?.isDirectory()) {
+  item.toggle();
+  console.log('Expanded:', item.isExpanded());
+}
+
+// Search
+fileTree.openSearch('Button');
+console.log(fileTree.getSearchMatchingPaths());
+fileTree.closeSearch();
+
+// Listen for mutations
+const unsubscribe = fileTree.onMutation('*', (event) => {
+  console.log(event.operation, event);
+});
+
+// Cleanup
+// unsubscribe();
+// fileTree.cleanUp();`,
+  },
+  options,
+};
+
+export const VANILLA_LEGACY_EXAMPLE: PreloadFileOptions<undefined> = {
+  file: {
+    name: 'legacy_file_tree.ts',
+    contents: `import { FileTree } from '@pierre/trees';
+
+const fileTree = new FileTree({
+  initialFiles: ['src/index.ts', 'src/components/Button.tsx', 'package.json'],
+});
+
+fileTree.render({ containerWrapper: document.getElementById('tree')! });
+
+// Legacy imperative methods
 fileTree.setFiles(['src/index.ts', 'src/new-file.ts', 'package.json']);
+fileTree.expandItem('src');
+fileTree.collapseItem('src');
 console.log(fileTree.getFiles(), fileTree.getExpandedItems());
 
-fileTree.cleanUp();               // unmount and clear references`,
+fileTree.cleanUp();`,
+  },
+  options,
+};
+
+export const VANILLA_API_CUSTOM_ICONS_EXAMPLE: PreloadFileOptions<undefined> = {
+  file: {
+    name: 'custom_icons_file_tree.ts',
+    contents: `import { PathStoreFileTree } from '@pierre/trees/path-store';
+
+const fileTree = new PathStoreFileTree({
+  paths: [
+    'src/index.ts',
+    'src/components/Button.tsx',
+    'package.json',
+  ],
+  icons: {
+    set: 'standard',
+    colored: true,
+  },
+});
+
+fileTree.render({ containerWrapper: document.getElementById('tree')! });
+
+// Update icons at any time
+fileTree.setIcons({ set: 'complete', colored: true });`,
   },
   options,
 };
@@ -84,7 +143,7 @@ export const VANILLA_API_GIT_STATUS_EXAMPLE: PreloadFileOptions<undefined> = {
   file: {
     name: 'git_status_file_tree.ts',
     contents: `import type { GitStatusEntry } from '@pierre/trees';
-import { FileTree } from '@pierre/trees';
+import { PathStoreFileTree } from '@pierre/trees/path-store';
 
 const files = [
   'README.md',
@@ -99,52 +158,18 @@ const initialGitStatus: GitStatusEntry[] = [
   { path: 'src/components/Button.tsx', status: 'added' },
 ];
 
-const fileTree = new FileTree({
-  initialFiles: files,
-  id: 'git-aware-tree-vanilla',
+const fileTree = new PathStoreFileTree({
+  paths: files,
   gitStatus: initialGitStatus,
 });
 
-fileTree.render({
-  containerWrapper: document.getElementById('tree-container') ?? undefined,
-});
+fileTree.render({ containerWrapper: document.getElementById('tree')! });
 
-async function refreshGitStatus() {
-  // Replace this with your VCS/remote status source.
-  const nextStatus: GitStatusEntry[] = [
-    { path: 'src/lib/utils.ts', status: 'modified' },
-    { path: 'README.md', status: 'deleted' },
-  ];
-
-  fileTree.setGitStatus(nextStatus);
-  console.log(fileTree.getGitStatus());
-}
-
-void refreshGitStatus();`,
-  },
-  options,
-};
-
-export const VANILLA_API_CUSTOM_ICONS_EXAMPLE: PreloadFileOptions<undefined> = {
-  file: {
-    name: 'custom_icons_file_tree.ts',
-    contents: `import { FileTree } from '@pierre/trees';
-
-const fileTree = new FileTree({
-  initialFiles: [
-    'src/index.ts',
-    'src/components/Button.tsx',
-    'package.json',
-  ],
-  icons: {
-    set: 'standard',
-    colored: true,
-  },
-});
-
-fileTree.render({
-  containerWrapper: document.getElementById('tree-container') ?? undefined,
-});`,
+// Update status at any time
+fileTree.setGitStatus([
+  { path: 'src/lib/utils.ts', status: 'modified' },
+  { path: 'README.md', status: 'deleted' },
+]);`,
   },
   options,
 };

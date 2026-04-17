@@ -1,0 +1,34 @@
+## Drag and Drop
+
+Enable built-in drag and drop by setting `dragAndDrop: true` in
+`PathStoreFileTreeOptions`. Drops resolve to canonical folder paths and commit
+through the store's `move` or `batch` APIs — the tree stays consistent without
+manual file list management.
+
+Pass an object instead of `true` to customize drag behavior with
+`PathStoreTreesDragAndDropConfig`.
+
+### Configuration [toc-ignore]
+
+<DocsCodeExample {...dndConfigExample} />
+
+### Config options [toc-ignore]
+
+| Option            | Description                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| `canDrag`         | Return `false` to prevent specific paths from being dragged.                                             |
+| `canDrop`         | Return `false` to prevent dropping onto specific targets.                                                |
+| `onDropComplete`  | Called after a successful drop. Receives the drop result with dragged paths and target info.             |
+| `onDropError`     | Called when a drop fails. Receives the error message and drop context.                                   |
+| `openOnDropDelay` | Milliseconds to wait before auto-expanding a collapsed folder when hovering during drag. Default: `800`. |
+
+### Drop behavior [toc-ignore]
+
+- Dragging files over a collapsed folder auto-opens it after `openOnDropDelay`.
+- Active filtered search blocks drag starts.
+- Flattened path segments (e.g. `assets · images · social`) target their exact
+  canonical folder path.
+- Drops call `move` or `batch` on the underlying store, so the mutation appears
+  in `onMutation` listeners.
+
+<DocsCodeExample {...dndUsageExample} />

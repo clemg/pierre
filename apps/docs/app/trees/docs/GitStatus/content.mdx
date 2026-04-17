@@ -9,13 +9,12 @@ automatically receive a change hint.
 `{ path: string; status: 'added' | 'modified' | 'deleted' }`.
 
 Import `GitStatusEntry` from `@pierre/trees` and pass an array via `gitStatus`
-in constructor options (vanilla) or as a top-level prop (React). `path` should
-match your tree file paths (for example, `src/index.ts`).
+in the `PathStoreFileTreeOptions`. `path` should match your tree file paths (for
+example, `src/index.ts`).
 
-In vanilla JS you can also update status imperatively:
+You can update status imperatively at any time:
 
 - `fileTree.setGitStatus(entries | undefined)` updates statuses and re-renders.
-- `fileTree.getGitStatus()` returns the current `GitStatusEntry[] | undefined`.
 
 When `gitStatus` is provided, tree rows include status-aware attributes you can
 target:
@@ -23,4 +22,4 @@ target:
 - `data-item-git-status="added" | "modified" | "deleted"` on changed files
 - `data-item-contains-git-change="true"` on folders that contain changed files
 
-<TreesCodeToggle vanilla={vanillaGitStatus} react={reactGitStatus} />
+<DocsCodeExample {...pathStoreGitStatus} />

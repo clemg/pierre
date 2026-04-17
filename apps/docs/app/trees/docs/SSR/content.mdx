@@ -1,7 +1,7 @@
 ## SSR
 
 <Notice icon={<IconBulbFill />}>
-  Import SSR utilities from `@pierre/trees/ssr`.
+  Import `preloadPathStoreFileTree` from `@pierre/trees/path-store`.
 </Notice>
 
 The SSR API lets you pre-render the file tree HTML on the server for fast first
@@ -9,34 +9,35 @@ paint, then hydrate on the client for full interactivity.
 
 ### Usage
 
-`preloadFileTree` returns a payload object: `{ id, shadowHtml, html }`. Pass
-`payload.html` to the client as `prerenderedHTML` (React) and pass the same
-`FileTreeOptions` you used on the server. For vanilla hydration, render the
-pre-rendered container into the page and call `hydrate({ fileTreeContainer })`.
+`preloadPathStoreFileTree` returns a payload object: `{ id, shadowHtml, html }`.
+Render `payload.html` into the page on the server (e.g. via
+`dangerouslySetInnerHTML`), then create a `PathStoreFileTree` with the same
+options on the client and call `hydrate({ fileTreeContainer })`.
 
 <Notice variant="warning" icon={<IconCiWarningFill />}>
   Options used for pre-rendering must exactly match what you pass on the client.
-  Use the same `FileTreeOptions` object (or equivalent) when calling
-  `preloadFileTree` and when rendering `FileTree` so the tree structure and
-  state hydrate correctly.
+  Use the same `PathStoreFileTreeOptions` object (or equivalent) when calling
+  `preloadPathStoreFileTree` and when constructing `PathStoreFileTree` so the
+  tree structure and state hydrate correctly.
 </Notice>
 
-### Preloaders
+### preloadPathStoreFileTree [toc-ignore]
 
-#### preloadFileTree [toc-ignore]
+Preloads the file tree HTML from a `PathStoreFileTreeOptions` object. Use this
+in a server component or server route; pass the returned payload and the same
+options to your client component.
 
-Preloads the file tree HTML from a `FileTreeOptions` object and an optional
-`FileTreeStateConfig` (for initial expanded/selected items). Use this in a
-server component or server route; pass the returned payload and the same options
-to your client component. Pass `payload.html` to the React `FileTree` via the
-`prerenderedHTML` prop, or use vanilla `FileTree` and call `hydrate()` with the
-server-rendered container.
+<DocsCodeExample {...preloadPathStoreFileTree} />
 
-<DocsCodeExample {...preloadFileTree} />
+### Client hydration [toc-ignore]
 
-### Vanilla hydration
-
-When using the vanilla `FileTree` class with SSR, call `hydrate()` instead of
-`render()` and pass the server-rendered container:
+On the client, create a `PathStoreFileTree` with the same options and call
+`hydrate()` with the server-rendered container:
 
 <DocsCodeExample {...ssrHydrationExample} />
+
+### Legacy SSR [toc-ignore]
+
+The legacy `preloadFileTree` from `@pierre/trees/ssr` is still available for use
+with the legacy `FileTree` class. New projects should use
+`preloadPathStoreFileTree` from `@pierre/trees/path-store`.
