@@ -229,6 +229,14 @@ export class PathStoreFileTree
     return this.#controller.getSelectedPaths();
   }
 
+  // Number of rows the controller would project for the current path set plus
+  // expansion state. Pairs with `subscribe` / `useSyncExternalStore` so React
+  // callers can reactively size an outer container (e.g. to avoid dead space
+  // when the visible row count shrinks after a filter change).
+  public getVisibleRowCount(): number {
+    return this.#controller.getVisibleCount();
+  }
+
   public getComposition(): PathStoreTreesCompositionOptions | undefined {
     return this.#composition;
   }

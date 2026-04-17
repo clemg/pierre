@@ -54,6 +54,24 @@ export function flatteningPathStoreOptions(
   };
 }
 
+/**
+ * Path-store flavored options for the Git status example. Defaults to the
+ * shared sample file list and forwards an optional `gitStatus` array; leaving
+ * `gitStatus` undefined is how the demo communicates "Git status disabled".
+ * The returned object is intentionally free of `id` so callers can supply
+ * matching server/client ids.
+ */
+export function gitStatusPathStoreOptions(
+  paths: readonly string[] = sampleFileList,
+  gitStatus?: readonly GitStatusEntry[]
+): Omit<PathStoreFileTreeOptions, 'id'> {
+  return {
+    flattenEmptyDirectories: true,
+    gitStatus,
+    paths,
+  };
+}
+
 /** Base options for all tree example sections. */
 export const baseTreeOptions = sharedDemoFileTreeOptions;
 
