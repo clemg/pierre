@@ -94,6 +94,17 @@
       --trees-file-icon-color-zig
       --trees-file-icon-color-zip
 
+      // Density
+      //
+      // A unitless scale factor that drives row height, padding, gaps,
+      // and indentation. Individual layout overrides still take precedence.
+      //
+      //   Tight:   0.8  (row height ~24px)
+      //   Default: 1    (row height  30px)
+      //   Relaxed: 1.25 (row height ~38px)
+      //
+      --trees-density-override
+
       // Available CSS Layout Overrides
       --trees-gap-override
       --trees-border-radius-override
@@ -151,7 +162,10 @@
         light-dark(oklch(0% 0 0 / 0.2), oklch(100% 0 0 / 0.2))
       )
     );
-    --trees-border-radius: var(--trees-border-radius-override, 6px);
+    --trees-border-radius: var(
+      --trees-border-radius-override,
+      calc(6px * var(--trees-density))
+    );
 
     --trees-font-family: var(--trees-font-family-override, system-ui);
     --trees-font-size: var(--trees-font-size-override, 13px);
@@ -447,15 +461,37 @@
       var(--trees-icon-orange)
     );
 
-    --trees-level-gap: var(--trees-level-gap-override, 8px);
-    --trees-item-padding-x: var(--trees-item-padding-x-override, 8px);
-    --trees-item-margin-x: var(--trees-item-margin-x-override, 2px);
-    --trees-item-row-gap: var(--trees-item-row-gap-override, 6px);
+    --trees-density: var(--trees-density-override, 1);
+
+    --trees-level-gap: var(
+      --trees-level-gap-override,
+      calc(8px * var(--trees-density))
+    );
+    --trees-item-padding-x: var(
+      --trees-item-padding-x-override,
+      calc(8px * var(--trees-density))
+    );
+    --trees-item-margin-x: var(
+      --trees-item-margin-x-override,
+      calc(2px * var(--trees-density))
+    );
+    --trees-item-row-gap: var(
+      --trees-item-row-gap-override,
+      calc(6px * var(--trees-density))
+    );
     --trees-icon-width: var(--trees-icon-width-override, 16px);
-    --trees-icon-nudge: var(--trees-icon-nudge-override, 1px);
-    --trees-row-height: var(--trees-row-height-override, 30px);
+    --trees-icon-nudge: var(
+      --trees-icon-nudge-override,
+      calc(1px * var(--trees-density))
+    );
+    --trees-row-height: var(
+      --trees-row-height-override,
+      calc(30px * var(--trees-density))
+    );
+    --ft-internal-row-height: var(--trees-row-height);
 
     color-scheme: light dark;
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     font-size: var(--trees-font-size);
@@ -639,7 +675,7 @@
   [data-item-flattened-subitems] {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: calc(2px * var(--trees-density, 1));
   }
   [data-item-flattened-subitem]:hover,
   [data-item-flattened-subitem-drag-target='true'] {
@@ -837,14 +873,14 @@
     min-width: 0;
     font-family: inherit;
     font-size: inherit;
-    line-height: calc(var(--trees-row-height) - 8px);
-    height: calc(var(--trees-row-height) - 8px);
+    line-height: calc(var(--trees-row-height) - 8px * var(--trees-density, 1));
+    height: calc(var(--trees-row-height) - 8px * var(--trees-density, 1));
     color: inherit;
     background-color: var(--trees-search-bg);
     border: 1px solid var(--trees-border-color);
     /* border-radius: calc(var(--trees-border-radius) - 1px);border-radius */
-    padding-inline: 6px;
-    margin-right: 40px;
+    padding-inline: calc(6px * var(--trees-density, 1));
+    margin-right: calc(var(--trees-row-height) + 10px);
     outline: none;
   }
 
@@ -856,7 +892,7 @@
 
   [data-item-section='status'] {
     flex: 0 0 auto;
-    width: 12px;
+    width: calc(12px * var(--trees-density, 1));
     text-align: center;
     align-items: center;
   }
@@ -909,6 +945,17 @@
     & + & {
       margin-left: calc(
         var(--trees-item-row-gap) + calc(var(--trees-icon-width) / 2) - 0.5px
+      );
+    }
+  }
+
+  @container (max-width: 300px) {
+    [data-item-section='spacing-item'] {
+      margin-right: calc(var(--trees-level-gap) / 2 - 1px);
+    }
+    [data-item-section='spacing-item'] + [data-item-section='spacing-item'] {
+      margin-left: calc(
+        (var(--trees-item-row-gap) + var(--trees-icon-width) / 2 - 0.5px) / 2
       );
     }
   }

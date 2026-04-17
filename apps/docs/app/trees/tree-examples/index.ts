@@ -1,5 +1,6 @@
 export { A11ySection } from './A11ySection';
 export { CustomIconsSection } from './CustomIconsSection';
+export { DensitySection } from './DensitySection';
 export { DragDropSection } from './DragDropSection';
 export { FlatteningSection } from './FlatteningSection';
 export { GitStatusSection } from './GitStatusSection';

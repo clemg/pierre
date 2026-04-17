@@ -6,6 +6,7 @@ import type { ProductId } from '../product-config';
 import {
   A11ySection,
   CustomIconsSection,
+  DensitySection,
   DragDropSection,
   FlatteningSection,
   GitStatusSection,
@@ -43,6 +44,7 @@ export default function TreesHomePage() {
         <CustomIconsSection />
         <ThemingSection />
         <StylingSection />
+        <DensitySection />
       </section>
 
       <PierreCompanySection />
