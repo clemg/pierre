@@ -1,43 +1,30 @@
-import { IconFileTreeFill, IconFolders } from '@pierre/icons';
-import { FileTree } from '@pierre/trees/react';
-import { preloadFileTree } from '@pierre/trees/ssr';
+import { preloadPathStoreFileTree } from '@pierre/trees/path-store';
 import Link from 'next/link';
-import type { CSSProperties } from 'react';
 
-import { TreeExampleHeading } from '../../components/TreeExampleHeading';
 import { FeatureHeader } from '../../diff-examples/FeatureHeader';
-import { DEFAULT_FILE_TREE_PANEL_CLASS, flatteningOptions } from './demo-data';
+import { flatteningPathStoreOptions } from './demo-data';
+import {
+  FLATTENED_EXPANDED_PATHS,
+  FLATTENED_VIEWPORT_HEIGHT,
+  HIERARCHICAL_EXPANDED_PATHS,
+  HIERARCHICAL_VIEWPORT_HEIGHT,
+} from './flattening-config';
+import { FlatteningSectionClient } from './FlatteningSectionClient';
 import { TreeExampleSection } from './TreeExampleSection';
 
-const flattenStyle = {
-  colorScheme: 'dark',
-  '--trees-search-bg-override': 'light-dark(#fff, oklch(14.5% 0 0))',
-} as CSSProperties;
+const hierarchicalPreloaded = preloadPathStoreFileTree({
+  ...flatteningPathStoreOptions(false),
+  id: 'flatten-demo-hierarchical',
+  initialExpandedPaths: HIERARCHICAL_EXPANDED_PATHS,
+  viewportHeight: HIERARCHICAL_VIEWPORT_HEIGHT,
+});
 
-const hierarchicalPrerenderedHTML = preloadFileTree(
-  {
-    ...flatteningOptions(false),
-    id: 'flatten-demo-hierarchical',
-  },
-  {
-    initialExpandedItems: [
-      'build',
-      'build/assets',
-      'build/assets/images',
-      'build/assets/images/social',
-    ],
-  }
-).shadowHtml;
-
-const flattenedPrerenderedHTML = preloadFileTree(
-  {
-    ...flatteningOptions(true),
-    id: 'flatten-demo-flattened',
-  },
-  {
-    initialExpandedItems: ['build', 'f::build/assets/images/social'],
-  }
-).shadowHtml;
+const flattenedPreloaded = preloadPathStoreFileTree({
+  ...flatteningPathStoreOptions(true),
+  id: 'flatten-demo-flattened',
+  initialExpandedPaths: FLATTENED_EXPANDED_PATHS,
+  viewportHeight: FLATTENED_VIEWPORT_HEIGHT,
+});
 
 export function FlatteningSection() {
   return (
@@ -60,43 +47,10 @@ export function FlatteningSection() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
-          <TreeExampleHeading icon={<IconFileTreeFill />}>
-            Hierarchical
-          </TreeExampleHeading>
-          <FileTree
-            className={DEFAULT_FILE_TREE_PANEL_CLASS}
-            prerenderedHTML={hierarchicalPrerenderedHTML}
-            options={{
-              ...flatteningOptions(false),
-              id: 'flatten-demo-hierarchical',
-            }}
-            initialExpandedItems={[
-              'build',
-              'build/assets',
-              'build/assets/images',
-              'build/assets/images/social',
-            ]}
-            style={flattenStyle}
-          />
-        </div>
-        <div>
-          <TreeExampleHeading icon={<IconFolders />}>
-            Flattened
-          </TreeExampleHeading>
-          <FileTree
-            className={DEFAULT_FILE_TREE_PANEL_CLASS}
-            prerenderedHTML={flattenedPrerenderedHTML}
-            options={{
-              ...flatteningOptions(true),
-              id: 'flatten-demo-flattened',
-            }}
-            initialExpandedItems={['build', 'f::build/assets/images/social']}
-            style={flattenStyle}
-          />
-        </div>
-      </div>
+      <FlatteningSectionClient
+        hierarchicalPreloaded={hierarchicalPreloaded}
+        flattenedPreloaded={flattenedPreloaded}
+      />
     </TreeExampleSection>
   );
 }

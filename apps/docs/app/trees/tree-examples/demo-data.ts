@@ -3,9 +3,13 @@ import type {
   FileTreeSearchMode,
   GitStatusEntry,
 } from '@pierre/trees';
+import type { PathStoreFileTreeOptions } from '@pierre/trees/path-store';
 import type { CSSProperties } from 'react';
 
-import { sharedDemoFileTreeOptions } from '../../trees/demo-data';
+import {
+  sampleFileList,
+  sharedDemoFileTreeOptions,
+} from '../../trees/demo-data';
 
 /** Default panel look for FileTree in docs examples. Apply via className + style on FileTree. */
 export const DEFAULT_FILE_TREE_PANEL_CLASS =
@@ -32,6 +36,21 @@ export function flatteningOptions(flatten: boolean): FileTreeOptions {
   return {
     ...sharedDemoFileTreeOptions,
     flattenEmptyDirectories: flatten,
+  };
+}
+
+/**
+ * Path-store flavored flattening options for the new `@pierre/trees/path-store`
+ * APIs. Mirrors `flatteningOptions` but uses `paths` (path-store's input key)
+ * instead of the legacy `initialFiles`. The returned object is intentionally
+ * free of `id` so callers can supply matching server/client ids per panel.
+ */
+export function flatteningPathStoreOptions(
+  flatten: boolean
+): Omit<PathStoreFileTreeOptions, 'id'> {
+  return {
+    flattenEmptyDirectories: flatten,
+    paths: sampleFileList,
   };
 }
 
