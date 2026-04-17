@@ -1,4 +1,5 @@
 export { A11ySection } from './A11ySection';
+export { ContextMenuSection } from './ContextMenuSection';
 export { CustomIconsSection } from './CustomIconsSection';
 export { DragDropSection } from './DragDropSection';
 export { FlatteningSection } from './FlatteningSection';

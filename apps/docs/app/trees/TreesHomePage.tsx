@@ -5,6 +5,7 @@ import { Hero } from '../Hero';
 import type { ProductId } from '../product-config';
 import {
   A11ySection,
+  ContextMenuSection,
   CustomIconsSection,
   DragDropSection,
   FlatteningSection,
@@ -37,6 +38,7 @@ export default function TreesHomePage() {
         <FlatteningSection />
         <GitStatusSection />
         <DragDropSection />
+        <ContextMenuSection />
         <SearchSection />
         <VirtualizationSection />
         <A11ySection />

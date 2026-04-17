@@ -1003,6 +1003,11 @@
     flex: 0 0 auto;
   }
 
+  /* Hide git status badge when the context menu trigger is overlaying the row */
+  [data-item-context-hover='true'] > [data-item-section='status'] {
+    visibility: hidden;
+  }
+
   [data-type='context-menu-wash'] {
     position: absolute;
     inset: 0;
