@@ -127,7 +127,11 @@ export class FileTree
   readonly #slotHost = new FileTreeManagedSlotHost();
   readonly #viewOptions: Pick<
     FileTreeOptions,
-    'itemHeight' | 'overscan' | 'viewportHeight'
+    | 'itemHeight'
+    | 'maxStickyFolderDepth'
+    | 'overscan'
+    | 'stickyFolders'
+    | 'viewportHeight'
   >;
   #fileTreeContainer: HTMLElement | undefined;
   #gitStatusState: FileTreeGitStatusState | null;
@@ -145,12 +149,14 @@ export class FileTree
       initialSearchQuery,
       icons,
       itemHeight,
+      maxStickyFolderDepth,
       onSearchChange,
       onSelectionChange,
       overscan,
       renderRowDecoration,
       renaming,
       search,
+      stickyFolders,
       viewportHeight,
       ...controllerOptions
     } = options;
@@ -164,7 +170,9 @@ export class FileTree
     this.#searchEnabled = search === true;
     this.#viewOptions = {
       itemHeight,
+      maxStickyFolderDepth,
       overscan,
+      stickyFolders,
       viewportHeight,
     };
     this.#controller = new FileTreeController({
@@ -395,7 +403,9 @@ export class FileTree
 
   #getResolvedViewOptions(host: HTMLElement): {
     itemHeight?: number;
+    maxStickyFolderDepth?: number;
     overscan?: number;
+    stickyFolders?: boolean;
     viewportHeight: number;
   } {
     const viewportHeight =
@@ -405,7 +415,9 @@ export class FileTree
 
     return {
       itemHeight: this.#viewOptions.itemHeight,
+      maxStickyFolderDepth: this.#viewOptions.maxStickyFolderDepth,
       overscan: this.#viewOptions.overscan,
+      stickyFolders: this.#viewOptions.stickyFolders,
       viewportHeight,
     };
   }
@@ -623,12 +635,14 @@ export function preloadFileTree(options: FileTreeOptions): FileTreeSsrPayload {
     initialSearchQuery,
     icons,
     itemHeight,
+    maxStickyFolderDepth,
     onSearchChange: _onSearchChange,
     onSelectionChange: _onSelectionChange,
     overscan,
     renderRowDecoration,
     renaming,
     search,
+    stickyFolders,
     viewportHeight,
     ...controllerOptions
   } = options;
@@ -659,10 +673,12 @@ export function preloadFileTree(options: FileTreeOptions): FileTreeSsrPayload {
       icons,
       instanceId: resolvedId,
       itemHeight,
+      maxStickyFolderDepth,
       overscan,
       renamingEnabled: renaming != null && renaming !== false,
       renderRowDecoration,
       searchEnabled: search === true,
+      stickyFolders,
       viewportHeight: resolvedViewportHeight,
     })
   );
