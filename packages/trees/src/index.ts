@@ -63,6 +63,7 @@ export type {
   FileTreeVisibleRow,
 } from './model/types';
 export {
+  computeFirstVisibleIndex,
   computeStickyWindowLayout,
   computeVisibleRange,
   computeWindowRange,

@@ -29,6 +29,27 @@ export function rangesEqual(
   return left.start === right.start && left.end === right.end;
 }
 
+export function computeFirstVisibleIndex({
+  itemCount,
+  itemHeight,
+  scrollTop,
+  topInset = 0,
+}: Pick<FileTreeViewportMetrics, 'itemCount' | 'itemHeight' | 'scrollTop'> & {
+  topInset?: number;
+}): number {
+  if (itemCount <= 0) {
+    return -1;
+  }
+
+  const maxItemTop = Math.max(0, itemCount * itemHeight - itemHeight);
+  const effectiveScrollTop = Math.max(
+    0,
+    Math.min(scrollTop + Math.max(0, topInset), maxItemTop)
+  );
+
+  return Math.floor(effectiveScrollTop / itemHeight);
+}
+
 export function computeVisibleRange({
   itemCount,
   itemHeight,
