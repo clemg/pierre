@@ -11,7 +11,7 @@ function getSnapshot(path: string) {
   );
 }
 
-export async function GET(request: Request) {
+export function GET(request: Request) {
   const url = new URL(request.url);
   const path = url.searchParams.get('path');
   if (path == null || path.length === 0) {
@@ -30,8 +30,21 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { paths?: unknown };
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: 'Expected a JSON body with paths: string[]' },
+      { status: 400 }
+    );
+  }
+
   if (
+    body == null ||
+    typeof body !== 'object' ||
+    Array.isArray(body) ||
+    !('paths' in body) ||
     !Array.isArray(body.paths) ||
     body.paths.some((path) => typeof path !== 'string')
   ) {

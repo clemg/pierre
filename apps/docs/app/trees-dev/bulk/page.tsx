@@ -18,6 +18,7 @@ export default function TreesDevBulkPage() {
   const payload = preloadFileTree({
     flattenEmptyDirectories: false,
     id: 'trees-dev-bulk-ssr',
+    initialExpansion: 'open',
     paths: previewPaths,
     preparedInput: createPresortedPreparedInput(previewPaths),
     search: true,

@@ -22,6 +22,9 @@ export const REVEAL_DEMO_SNAPSHOTS = {
       'apps/docs/tsconfig.json',
     ],
   },
+  'apps/docs/app/': {
+    children: ['apps/docs/app/layout.tsx', 'apps/docs/app/page.tsx'],
+  },
   'docs/': {
     childDirectoryKnownChildCounts: [2, undefined],
     children: ['docs/architecture/', 'docs/changelog.md'],

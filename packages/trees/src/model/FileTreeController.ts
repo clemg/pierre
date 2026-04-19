@@ -103,6 +103,10 @@ interface RevealBatchRequest {
 
 type RevealRequest = RevealSingleRequest | RevealBatchRequest;
 
+function getRevealRequestPaths(request: RevealRequest): readonly string[] {
+  return request.kind === 'batch' ? request.paths : [request.path];
+}
+
 function registerTypedListener<TEvent, TKey extends string>(
   listenersByType: Map<TKey | '*', Set<(event: TEvent) => void>>,
   key: TKey | '*',
@@ -189,6 +193,23 @@ function arePathSetsEqual(
 
   for (const path of nextPaths) {
     if (!currentPaths.has(path)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areOrderedPathsEqual(
+  currentPaths: readonly string[],
+  nextPaths: readonly string[]
+): boolean {
+  if (currentPaths.length !== nextPaths.length) {
+    return false;
+  }
+
+  for (let index = 0; index < currentPaths.length; index += 1) {
+    if (currentPaths[index] !== nextPaths[index]) {
       return false;
     }
   }
@@ -583,7 +604,6 @@ export class FileTreeController
   #bulkIngestInfo: FileTreeBulkIngestInfo | null = null;
   #bulkIngestAbortController: AbortController | null = null;
   #bulkIngestRunId = 0;
-  #bulkPublishingCheckpoint = false;
   #bulkSeedPaths: readonly string[] = [];
   readonly #listeners = new Set<FileTreeControllerListener>();
   readonly #loading: FileTreeControllerOptions['loading'];
@@ -711,8 +731,9 @@ export class FileTreeController
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     new Set(this.#revealInflightByPath.values()).forEach((request) => {
-      request.abortController.abort();
+      this.#cancelRevealRequest(request);
     });
+    this.#cancelActiveBulkIngest();
     this.#bulkIngestListeners.clear();
     this.#mutationListeners.clear();
     this.#listeners.clear();
@@ -1350,11 +1371,15 @@ export class FileTreeController
    * without exposing the raw store to tree consumers.
    */
   public add(path: string): void {
-    this.#store.add(path);
+    this.#runPathChangingMutation(() => {
+      this.#store.add(path);
+    });
   }
 
   public remove(path: string, options: FileTreeRemoveOptions = {}): void {
-    this.#store.remove(path, options);
+    this.#runPathChangingMutation(() => {
+      this.#store.remove(path, options);
+    });
   }
 
   public move(
@@ -1362,11 +1387,15 @@ export class FileTreeController
     toPath: string,
     options: FileTreeMoveOptions = {}
   ): void {
-    this.#store.move(fromPath, toPath, options);
+    this.#runPathChangingMutation(() => {
+      this.#store.move(fromPath, toPath, options);
+    });
   }
 
   public batch(operations: readonly FileTreeBatchOperation[]): void {
-    this.#store.batch(operations);
+    this.#runPathChangingMutation(() => {
+      this.#store.batch(operations);
+    });
   }
 
   public onMutation<TType extends FileTreeMutationEventType | '*'>(
@@ -1447,6 +1476,7 @@ export class FileTreeController
     }
 
     this.#cancelActiveBulkIngest();
+    this.#resetStoreToBulkSeedPathsIfNeeded();
     const runId = this.#bulkIngestRunId + 1;
     this.#bulkIngestRunId = runId;
     const abortController = new AbortController();
@@ -1661,7 +1691,7 @@ export class FileTreeController
       'resetPaths',
       this.#storeOptions.sort
     );
-    if (this.#loading?.mode === 'bulk' && !this.#bulkPublishingCheckpoint) {
+    if (this.#loading?.mode === 'bulk') {
       this.#cancelActiveBulkIngest();
     }
     const nextStore = this.#createStore(
@@ -1676,7 +1706,7 @@ export class FileTreeController
 
     this.#unsubscribe?.();
     this.#store = nextStore;
-    if (this.#loading?.mode === 'bulk' && !this.#bulkPublishingCheckpoint) {
+    if (this.#loading?.mode === 'bulk') {
       this.#bulkSeedPaths =
         resolvedInput.preparedInput?.paths ??
         PathStore.preparePaths(resolvedInput.paths, this.#storeOptions);
@@ -1989,8 +2019,42 @@ export class FileTreeController
     validationStore.batch(operations);
   }
 
+  // Cancels an active bulk ingest before user-driven canonical changes so later
+  // streamed checkpoints cannot overwrite the live tree. Successful mutations
+  // become the next bulk seed because they are now the controller's truth.
+  #runPathChangingMutation<TValue>(mutation: () => TValue): TValue {
+    if (this.#loading?.mode === 'bulk') {
+      this.#cancelActiveBulkIngest();
+    }
+
+    const result = mutation();
+
+    if (this.#loading?.mode === 'bulk') {
+      this.#bulkSeedPaths = this.#store.list();
+      this.#syncBulkIngestIdleInfo(this.#bulkSeedPaths.length);
+    }
+
+    return result;
+  }
+
+  #resetStoreToBulkSeedPathsIfNeeded(): void {
+    if (this.#loading?.mode !== 'bulk') {
+      return;
+    }
+
+    const currentPaths = this.#store.list();
+    if (areOrderedPathsEqual(currentPaths, this.#bulkSeedPaths)) {
+      return;
+    }
+
+    this.resetPaths(this.#bulkSeedPaths, {
+      initialExpandedPaths: this.#getExpandedDirectoryPaths(),
+      preparedInput: PathStore.preparePresortedInput(this.#bulkSeedPaths),
+    });
+  }
+
   #syncBulkIngestIdleInfo(pathCount: number): void {
-    if (this.#loading?.mode !== 'bulk' || this.#bulkPublishingCheckpoint) {
+    if (this.#loading?.mode !== 'bulk') {
       return;
     }
 
@@ -2078,6 +2142,43 @@ export class FileTreeController
       path,
       type,
     });
+  }
+
+  #cancelRevealRequest(request: RevealRequest): void {
+    request.abortController.abort();
+    if (request.kind === 'batch') {
+      this.#revealRunningBatches.delete(request);
+    }
+
+    const cancelledPaths: string[] = [];
+    this.#store.batch((store) => {
+      for (const path of getRevealRequestPaths(request)) {
+        if (this.#revealInflightByPath.get(path) === request) {
+          this.#revealInflightByPath.delete(path);
+        }
+
+        const pathInfo = store.getPathInfo(path);
+        if (pathInfo == null || pathInfo.kind !== 'directory') {
+          continue;
+        }
+        if (store.getDirectoryLoadState(pathInfo.path) !== 'loading') {
+          continue;
+        }
+
+        const knownChildCount = store.getDirectoryKnownChildCount(
+          pathInfo.path
+        );
+        store.markDirectoryUnloaded(
+          pathInfo.path,
+          knownChildCount == null ? {} : { knownChildCount }
+        );
+        cancelledPaths.push(pathInfo.path);
+      }
+    });
+
+    for (const path of cancelledPaths) {
+      this.#emitRevealLoadingEvent('cancelled', path);
+    }
   }
 
   #warnRevealCustomSortSlowPath(): void {
@@ -2169,24 +2270,7 @@ export class FileTreeController
         continue;
       }
 
-      request.abortController.abort();
-      this.#revealRunningBatches.delete(request);
-      this.#store.batch((store) => {
-        for (const path of request.paths) {
-          if (this.#revealInflightByPath.get(path) === request) {
-            this.#revealInflightByPath.delete(path);
-          }
-          if (store.getDirectoryLoadState(path) !== 'loading') {
-            continue;
-          }
-
-          const knownChildCount = store.getDirectoryKnownChildCount(path);
-          store.markDirectoryUnloaded(
-            path,
-            knownChildCount == null ? {} : { knownChildCount }
-          );
-        }
-      });
+      this.#cancelRevealRequest(request);
     }
   }
 
@@ -2496,16 +2580,7 @@ export class FileTreeController
     preparedInput: PathStorePreparedInput,
     ingestedPathCount: number
   ): void {
-    const expandedPaths = this.#getExpandedDirectoryPaths();
-    this.#bulkPublishingCheckpoint = true;
-    try {
-      this.resetPaths(preparedInput.paths, {
-        initialExpandedPaths: expandedPaths,
-        preparedInput: preparedInput as unknown as FileTreePreparedInput,
-      });
-    } finally {
-      this.#bulkPublishingCheckpoint = false;
-    }
+    this.#store.appendPreparedInput(preparedInput);
 
     if (this.#bulkIngestInfo != null) {
       this.#bulkIngestInfo = {
@@ -2526,11 +2601,7 @@ export class FileTreeController
       return;
     }
 
-    const builder = new PathStorePreparedInputBuilder(this.#storeOptions);
-    if (this.#bulkSeedPaths.length > 0) {
-      builder.appendPresortedPaths(this.#bulkSeedPaths);
-    }
-
+    let pendingBuilder = new PathStorePreparedInputBuilder(this.#storeOptions);
     const checkpointPathCountCeiling =
       loading.policy?.checkpointPathCountCeiling;
     const checkpointTimeBudgetMs = loading.policy?.checkpointTimeBudgetMs ?? 16;
@@ -2576,7 +2647,7 @@ export class FileTreeController
           return;
         }
 
-        builder.appendPresortedPaths(chunk.paths);
+        pendingBuilder.appendPresortedPaths(chunk.paths);
         ingestedPathCount += chunk.paths.length;
         pendingPathCount += chunk.paths.length;
         if (totalPathCount != null && ingestedPathCount > totalPathCount) {
@@ -2591,7 +2662,13 @@ export class FileTreeController
           (checkpointPathCountCeiling != null &&
             pendingPathCount >= checkpointPathCountCeiling)
         ) {
-          this.#publishBulkCheckpoint(builder.build(), ingestedPathCount);
+          this.#publishBulkCheckpoint(
+            pendingBuilder.build(),
+            ingestedPathCount
+          );
+          pendingBuilder = new PathStorePreparedInputBuilder(
+            this.#storeOptions
+          );
           publishedPathCount = ingestedPathCount;
           pendingPathCount = 0;
           lastPublishTime = now();
@@ -2605,8 +2682,8 @@ export class FileTreeController
         return;
       }
 
-      if (ingestedPathCount !== publishedPathCount) {
-        this.#publishBulkCheckpoint(builder.build(), ingestedPathCount);
+      if (pendingPathCount > 0) {
+        this.#publishBulkCheckpoint(pendingBuilder.build(), ingestedPathCount);
         publishedPathCount = ingestedPathCount;
       }
       if (totalPathCount != null && ingestedPathCount !== totalPathCount) {

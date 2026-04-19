@@ -36,6 +36,15 @@ function getRenderedTreePaths(tree: FileTree | null): string[] {
     .filter((path): path is string => path != null);
 }
 
+// The FileTree wrapper exposes additive item selection, so this helper clears the
+// current wrapper selection first to mirror the controller's selectOnlyPath API.
+function selectOnlyInTree(tree: FileTree, path: string): void {
+  for (const selectedPath of tree.getSelectedPaths()) {
+    tree.getItem(selectedPath)?.deselect();
+  }
+  tree.getItem(path)?.select();
+}
+
 export function DebugStaticClient({
   mountId,
   mountMode,
@@ -218,7 +227,7 @@ export function DebugStaticClient({
                   nextController.selectOnlyPath(DEBUG_STATIC_FOCUS_PATH);
                 },
                 tree: (nextTree) => {
-                  nextTree.getItem(DEBUG_STATIC_FOCUS_PATH)?.select();
+                  selectOnlyInTree(nextTree, DEBUG_STATIC_FOCUS_PATH);
                 },
               });
             }}

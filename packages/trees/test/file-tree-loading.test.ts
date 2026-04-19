@@ -13,22 +13,22 @@ async function* emptyBulkChunks() {}
 
 function createRevealSource(): FileTreeRevealLoadingSource {
   return {
-    async loadDirectories() {
-      return [];
+    loadDirectories() {
+      return Promise.resolve([]);
     },
-    async loadDirectory() {
-      return { children: [] };
+    loadDirectory() {
+      return Promise.resolve({ children: [] });
     },
   };
 }
 
 function createBulkSource(): FileTreeBulkIngestSource {
   return {
-    async openSession() {
-      return {
+    openSession() {
+      return Promise.resolve({
         chunks: emptyBulkChunks(),
         header: {},
-      };
+      });
     },
   };
 }

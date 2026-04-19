@@ -450,10 +450,17 @@ export interface FileTreeRevealLoadingFailedEvent {
   type: 'failed';
 }
 
+export interface FileTreeRevealLoadingCancelledEvent {
+  info: FileTreeRevealLoadingInfo;
+  path: FileTreePublicId;
+  type: 'cancelled';
+}
+
 export type FileTreeRevealLoadingEvent =
   | FileTreeRevealLoadingStartedEvent
   | FileTreeRevealLoadingCompletedEvent
-  | FileTreeRevealLoadingFailedEvent;
+  | FileTreeRevealLoadingFailedEvent
+  | FileTreeRevealLoadingCancelledEvent;
 
 export type FileTreeRevealLoadingEventType = FileTreeRevealLoadingEvent['type'];
 

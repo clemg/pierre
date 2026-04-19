@@ -93,6 +93,7 @@ export type {
   FileTreeResetOptions,
   FileTreeRevealDirectoryBatchResult,
   FileTreeRevealDirectorySnapshot,
+  FileTreeRevealLoadingCancelledEvent,
   FileTreeRevealLoadingCompletedEvent,
   FileTreeRevealLoadingConfig,
   FileTreeRevealLoadingEvent,

@@ -42,10 +42,7 @@ export function TreesDevSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </p>
       {DEMO_PAGES.map(({ slug, label }) => {
         const href = slug === '' ? '/trees-dev' : `/trees-dev/${slug}`;
-        const isActive =
-          slug === ''
-            ? pathname === '/trees-dev'
-            : pathname.startsWith(`/trees-dev/${slug}`);
+        const isActive = pathname === href;
         return (
           <NavLink key={slug} href={href} active={isActive}>
             {label}

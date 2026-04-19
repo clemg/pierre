@@ -204,6 +204,112 @@ describe('file-tree reveal loading', () => {
     controller.destroy();
   });
 
+  test('obsolete speculative batches emit cancelled before an explicit retry completes', async () => {
+    const alphaSpeculative =
+      createDeferred<readonly FileTreeRevealDirectoryBatchResult[]>();
+    const betaSpeculative =
+      createDeferred<readonly FileTreeRevealDirectoryBatchResult[]>();
+    const loadDirectoriesCalls: Array<readonly string[]> = [];
+    const loadDirectoryCalls: string[] = [];
+    const source: FileTreeRevealLoadingSource = {
+      async loadDirectories(paths) {
+        loadDirectoriesCalls.push([...paths]);
+        return loadDirectoriesCalls.length === 1
+          ? alphaSpeculative.promise
+          : betaSpeculative.promise;
+      },
+      async loadDirectory(path) {
+        loadDirectoryCalls.push(path);
+        return { children: [`${path}retry.ts`] };
+      },
+    };
+    const controller = new FileTreeController({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      loading: {
+        mode: 'reveal',
+        policy: {
+          maxSpeculativeBatchSize: 1,
+          maxSpeculativeInflightRequests: 1,
+        },
+        source,
+      },
+      paths: ['alpha/', 'beta/'],
+    });
+    const events: string[] = [];
+    controller.onRevealLoading('*', (event) => {
+      events.push(`${event.type}:${event.path}:${event.info.state}`);
+    });
+
+    controller.getVisibleRows(0, 0);
+    await flushAsync();
+    controller.getVisibleRows(1, 1);
+    await flushAsync();
+
+    expect(loadDirectoriesCalls).toEqual([['alpha/'], ['beta/']]);
+    expect(events).toEqual([
+      'started:alpha/:loading',
+      'cancelled:alpha/:unloaded',
+      'started:beta/:loading',
+    ]);
+    expect(controller.getRevealLoadingInfo('alpha/')).toEqual({
+      path: 'alpha/',
+      state: 'unloaded',
+    });
+
+    getDirectoryHandle(controller, 'alpha/').expand();
+    await flushAsync();
+
+    expect(loadDirectoryCalls).toEqual(['alpha/']);
+    expect(events).toEqual([
+      'started:alpha/:loading',
+      'cancelled:alpha/:unloaded',
+      'started:beta/:loading',
+      'started:alpha/:loading',
+      'completed:alpha/:loaded',
+    ]);
+
+    betaSpeculative.resolve([{ snapshot: { children: ['beta/ready.ts'] } }]);
+    await flushAsync();
+
+    expect(controller.getRevealLoadingInfo('beta/')).toEqual({
+      path: 'beta/',
+      state: 'loaded',
+    });
+    controller.destroy();
+  });
+
+  test('destroy emits cancelled for in-flight explicit loads', async () => {
+    const deferred = createDeferred<FileTreeRevealDirectorySnapshot>();
+    const source: FileTreeRevealLoadingSource = {
+      async loadDirectories() {
+        throw new Error('speculative batch should not run in this test');
+      },
+      async loadDirectory() {
+        return deferred.promise;
+      },
+    };
+    const controller = new FileTreeController({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      loading: {
+        mode: 'reveal',
+        source,
+      },
+      paths: ['src/'],
+    });
+    const events: string[] = [];
+    controller.onRevealLoading('*', (event) => {
+      events.push(`${event.type}:${event.path}:${event.info.state}`);
+    });
+
+    getDirectoryHandle(controller, 'src/').expand();
+    controller.destroy();
+    await flushAsync();
+
+    expect(events).toEqual(['started:src/:loading', 'cancelled:src/:unloaded']);
+  });
+
   test('failed reused speculative work retries immediately through the foreground loader', async () => {
     const speculative =
       createDeferred<readonly FileTreeRevealDirectoryBatchResult[]>();

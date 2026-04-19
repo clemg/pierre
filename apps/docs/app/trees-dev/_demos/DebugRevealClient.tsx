@@ -18,11 +18,26 @@ import {
 import { FILE_TREE_PROOF_VIEWPORT_HEIGHT } from '../_lib/workloadMeta';
 import { ImperativeFileTreeMount } from './ImperativeFileTreeMount';
 
-const INFO_PATHS = ['apps/', 'packages/', 'packages/path-store/'] as const;
+const INFO_PATHS = DEBUG_REVEAL_ROOT_PATHS.flatMap((rootPath) => {
+  const descendantPaths = Object.keys(DEBUG_REVEAL_SNAPSHOTS).filter(
+    (path) =>
+      path !== rootPath && path.endsWith('/') && path.startsWith(rootPath)
+  );
+  return [rootPath, ...descendantPaths];
+});
 const DEBUG_REVEAL_PREPARED_INPUT = createPresortedPreparedInput(
   DEBUG_REVEAL_ROOT_PATHS
 );
 const MAX_DEBUG_REVEAL_BATCH_CALLS = 20;
+
+function getDebugRevealSnapshot(path: string): FileTreeRevealDirectorySnapshot {
+  const snapshot =
+    DEBUG_REVEAL_SNAPSHOTS[path as keyof typeof DEBUG_REVEAL_SNAPSHOTS];
+  if (snapshot == null) {
+    throw new Error(`Unknown debug reveal path: ${path}`);
+  }
+  return snapshot as FileTreeRevealDirectorySnapshot;
+}
 
 function getDirectoryHandle(
   tree: import('@pierre/trees').FileTree | null,
@@ -87,28 +102,20 @@ export function DebugRevealClient({ mountId }: { mountId: string }) {
         mode: 'reveal',
         policy: { maxSpeculativeBatchSize: 2 },
         source: {
-          async loadDirectories(paths) {
+          loadDirectories(paths) {
             recordBatchCall(paths);
-            return paths.map((path) => {
-              const snapshot =
-                DEBUG_REVEAL_SNAPSHOTS[
-                  path as keyof typeof DEBUG_REVEAL_SNAPSHOTS
-                ];
-              return snapshot == null
-                ? { errorMessage: `Unknown debug reveal path: ${path}` }
-                : ({ snapshot } satisfies FileTreeRevealDirectoryBatchResult);
-            });
+            return Promise.resolve(
+              paths.map((path) => {
+                const snapshot = getDebugRevealSnapshot(path);
+                return {
+                  snapshot,
+                } satisfies FileTreeRevealDirectoryBatchResult;
+              })
+            );
           },
-          async loadDirectory(path) {
+          loadDirectory(path) {
             recordSingleCall(path);
-            const snapshot =
-              DEBUG_REVEAL_SNAPSHOTS[
-                path as keyof typeof DEBUG_REVEAL_SNAPSHOTS
-              ];
-            if (snapshot == null) {
-              throw new Error(`Unknown debug reveal path: ${path}`);
-            }
-            return snapshot as FileTreeRevealDirectorySnapshot;
+            return Promise.resolve(getDebugRevealSnapshot(path));
           },
         },
       },
@@ -149,6 +156,21 @@ export function DebugRevealClient({ mountId }: { mountId: string }) {
     };
   }, []);
 
+  const runExpandAction = useCallback(
+    (path: string) => {
+      const handle = getDirectoryHandle(treeRef.current, path);
+      if (handle == null) {
+        addLog(`error:expand ${path} handle missing`);
+        return;
+      }
+
+      handle.expand();
+      addLog(`action:expand ${path}`);
+      recordUpdate();
+    },
+    [addLog, recordUpdate]
+  );
+
   const revealInfo = INFO_PATHS.map((path) => ({
     info: treeRef.current?.getRevealLoadingInfo(path) ?? null,
     path,
@@ -167,9 +189,7 @@ export function DebugRevealClient({ mountId }: { mountId: string }) {
             className="rounded-sm border px-2 py-1"
             style={{ borderColor: 'var(--color-border)' }}
             onClick={() => {
-              getDirectoryHandle(treeRef.current, 'packages/')?.expand();
-              addLog('action:expand packages/');
-              recordUpdate();
+              runExpandAction('packages/');
             }}
           >
             Expand packages/
@@ -179,9 +199,7 @@ export function DebugRevealClient({ mountId }: { mountId: string }) {
             className="rounded-sm border px-2 py-1"
             style={{ borderColor: 'var(--color-border)' }}
             onClick={() => {
-              getDirectoryHandle(treeRef.current, 'apps/')?.expand();
-              addLog('action:expand apps/');
-              recordUpdate();
+              runExpandAction('apps/');
             }}
           >
             Expand apps/

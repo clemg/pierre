@@ -341,6 +341,24 @@ describe('PathStorePreparedInputBuilder', () => {
     expect(store.list()).toEqual(['alpha/file.ts', 'beta/a.ts', 'beta/z.ts']);
   });
 
+  test('preserves custom sort snapshots that revisit a directory later in the order', () => {
+    const sort = (left: { basename: string }, right: { basename: string }) =>
+      right.basename.localeCompare(left.basename);
+    const rawPaths = ['beta/a.ts', 'beta/z.ts', 'alpha/m.ts'];
+    const builder = new PathStorePreparedInputBuilder({ sort });
+
+    builder.appendPaths(rawPaths);
+
+    const preparedInput = builder.build();
+    const preparedStore = new PathStore({ preparedInput, sort });
+    const rawStore = new PathStore({ paths: rawPaths, sort });
+
+    expect(preparedStore.list()).toEqual(rawStore.list());
+    expect(getVisibleRowsSansIds(preparedStore)).toEqual(
+      getVisibleRowsSansIds(rawStore)
+    );
+  });
+
   test('rejects out-of-order public builder appends', () => {
     const builder = new PathStorePreparedInputBuilder();
 
@@ -349,6 +367,77 @@ describe('PathStorePreparedInputBuilder', () => {
     expect(() => builder.appendPresortedPaths(['alpha.ts'])).toThrow(
       'Builder input must be sorted before appendPaths()'
     );
+  });
+});
+
+describe('appendPreparedInput', () => {
+  test('applies presorted chunks as coherent batch mutations', () => {
+    const store = new PathStore({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      paths: ['alpha/a.ts'],
+    });
+    const events = collectWildcardEvents(store);
+
+    store.appendPreparedInput(
+      PathStore.preparePresortedInput(['alpha/b.ts', 'alpha/c.ts'])
+    );
+    store.appendPreparedInput(PathStore.preparePresortedInput(['beta/']));
+
+    expect(store.list()).toEqual([
+      'alpha/a.ts',
+      'alpha/b.ts',
+      'alpha/c.ts',
+      'beta/',
+    ]);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      canonicalChanged: true,
+      operation: 'batch',
+      projectionChanged: true,
+      visibleCountDelta: 2,
+    });
+    expect(events[0]?.operation === 'batch' ? events[0].events : []).toEqual([
+      expect.objectContaining({
+        operation: 'add',
+        path: 'alpha/b.ts',
+        visibleCountDelta: 1,
+      }),
+      expect.objectContaining({
+        operation: 'add',
+        path: 'alpha/c.ts',
+        visibleCountDelta: 1,
+      }),
+    ]);
+    expect(events[1]).toMatchObject({
+      canonicalChanged: true,
+      operation: 'batch',
+      projectionChanged: true,
+      visibleCountDelta: 1,
+    });
+    expect(events[1]?.operation === 'batch' ? events[1].events : []).toEqual([
+      expect.objectContaining({
+        operation: 'add',
+        path: 'beta/',
+        visibleCountDelta: 1,
+      }),
+    ]);
+    assertMatchesRebuild(store);
+  });
+
+  test('rejects chunks that would insert before the current canonical tail', () => {
+    const store = new PathStore({
+      paths: ['beta/file.ts'],
+    });
+
+    expect(() =>
+      store.appendPreparedInput(
+        PathStore.preparePresortedInput(['alpha/file.ts'])
+      )
+    ).toThrow(
+      'appendPreparedInput only accepts paths that append after the current canonical tail'
+    );
+    expect(store.list()).toEqual(['beta/file.ts']);
   });
 });
 
@@ -3146,6 +3235,31 @@ describe('PathStore', () => {
         path: 'alpha/',
       })
     );
+  });
+
+  test('cleanup preserves known child-count hints for loaded directories across both modes', () => {
+    const store = new PathStore({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      paths: ['alpha/', 'beta/file.ts'],
+    });
+
+    store.markDirectoryUnloaded('alpha/', { knownChildCount: 3 });
+    const attempt = store.beginChildLoad('alpha/');
+    store.completeChildLoad(attempt);
+
+    expect(store.getDirectoryLoadState('alpha/')).toBe('loaded');
+    expect(store.getDirectoryKnownChildCount('alpha/')).toBe(3);
+
+    const stableResult = store.cleanup();
+    expect(stableResult.idsPreserved).toBe(true);
+    expect(store.getDirectoryLoadState('alpha/')).toBe('loaded');
+    expect(store.getDirectoryKnownChildCount('alpha/')).toBe(3);
+
+    const aggressiveResult = store.cleanup({ mode: 'aggressive' });
+    expect(aggressiveResult.idsPreserved).toBe(false);
+    expect(store.getDirectoryLoadState('alpha/')).toBe('loaded');
+    expect(store.getDirectoryKnownChildCount('alpha/')).toBe(3);
   });
 
   test('cleanup remains rebuild-equivalent with flattening enabled', () => {

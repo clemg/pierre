@@ -107,6 +107,7 @@ export function BulkIngestDemoClient({
     return {
       flattenEmptyDirectories: false,
       id: 'trees-dev-bulk-demo',
+      initialExpansion: 'open',
       loading: {
         mode: 'bulk',
         policy: {
@@ -178,10 +179,11 @@ export function BulkIngestDemoClient({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] xl:items-start">
       <ExampleCard
+        className="max-w-none"
         title="Bulk ingest"
-        description={`This demo starts from a ${previewPaths.length.toLocaleString()}-path ${workloadLabel} preview slice and bulk ingests the remaining ${remainingPathCount.toLocaleString()} paths until the tree reaches the full ${totalPathCount.toLocaleString()}-path dataset. Start the ingest, then expand folders, focus rows, select a file, or press F2 to open an inline rename draft while checkpoints continue to publish.`}
+        description={`This demo starts from a ${previewPaths.length.toLocaleString()}-path ${workloadLabel} preview slice, opens that preview fully expanded, and bulk ingests the remaining ${remainingPathCount.toLocaleString()} paths until the tree reaches the full ${totalPathCount.toLocaleString()}-path dataset. Start the ingest, focus rows, select a file, or press F2 to open an inline rename draft while checkpoints continue to publish.`}
       >
         <div className="mb-3 flex flex-wrap gap-2 text-xs">
           <button
@@ -268,56 +270,60 @@ export function BulkIngestDemoClient({
         />
       </ExampleCard>
 
-      <ExampleCard
-        title="Bulk ingest state"
-        description="The status and progress numbers come from the public bulk ingest query surface. Focus and selection update from the live model so you can verify state survives checkpoint publications while ingesting."
-      >
-        <div className="grid gap-3 text-xs md:grid-cols-3">
-          <div
-            className="rounded-sm border px-3 py-2"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <strong>Status</strong>
-            <div className="text-muted-foreground mt-1">
-              {bulkInfo == null
-                ? 'null'
-                : `${bulkInfo.status}${bulkInfo.errorMessage == null ? '' : ` (${bulkInfo.errorMessage})`}`}
+      <div className="space-y-6">
+        <ExampleCard
+          className="max-w-none"
+          title="Bulk ingest state"
+          description="The status and progress numbers come from the public bulk ingest query surface. Focus and selection update from the live model so you can verify state survives checkpoint publications while ingesting."
+        >
+          <div className="grid gap-3 text-xs md:grid-cols-3">
+            <div
+              className="rounded-sm border px-3 py-2"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <strong>Status</strong>
+              <div className="text-muted-foreground mt-1">
+                {bulkInfo == null
+                  ? 'null'
+                  : `${bulkInfo.status}${bulkInfo.errorMessage == null ? '' : ` (${bulkInfo.errorMessage})`}`}
+              </div>
+            </div>
+            <div
+              className="rounded-sm border px-3 py-2"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <strong>Progress</strong>
+              <div className="text-muted-foreground mt-1">
+                {bulkInfo == null
+                  ? 'null'
+                  : `${bulkInfo.ingestedPathCount.toLocaleString()}${bulkInfo.totalPathCount == null ? '' : ` / ${bulkInfo.totalPathCount.toLocaleString()}`}`}
+              </div>
+            </div>
+            <div
+              className="rounded-sm border px-3 py-2"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <strong>Interaction state</strong>
+              <div className="text-muted-foreground mt-1">
+                focus={focusedPath ?? 'null'}
+                <br />
+                selection=
+                {selectedPaths.length === 0
+                  ? '[]'
+                  : `[${selectedPaths.join(', ')}]`}
+              </div>
             </div>
           </div>
-          <div
-            className="rounded-sm border px-3 py-2"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <strong>Progress</strong>
-            <div className="text-muted-foreground mt-1">
-              {bulkInfo == null
-                ? 'null'
-                : `${bulkInfo.ingestedPathCount.toLocaleString()}${bulkInfo.totalPathCount == null ? '' : ` / ${bulkInfo.totalPathCount.toLocaleString()}`}`}
-            </div>
-          </div>
-          <div
-            className="rounded-sm border px-3 py-2"
-            style={{ borderColor: 'var(--color-border)' }}
-          >
-            <strong>Interaction state</strong>
-            <div className="text-muted-foreground mt-1">
-              focus={focusedPath ?? 'null'}
-              <br />
-              selection=
-              {selectedPaths.length === 0
-                ? '[]'
-                : `[${selectedPaths.join(', ')}]`}
-            </div>
-          </div>
-        </div>
-      </ExampleCard>
+        </ExampleCard>
 
-      <ExampleCard
-        title="Bulk ingest log"
-        description="These log entries come from the public bulk ingest event surface plus the client-side source lifecycle. Start, cancel, and retry the ingest to watch status transitions and checkpoint publications."
-      >
-        <StateLog entries={log} />
-      </ExampleCard>
+        <ExampleCard
+          className="max-w-none"
+          title="Bulk ingest log"
+          description="These log entries come from the public bulk ingest event surface plus the client-side source lifecycle. Start, cancel, and retry the ingest to watch status transitions and checkpoint publications."
+        >
+          <StateLog entries={log} />
+        </ExampleCard>
+      </div>
     </div>
   );
 }

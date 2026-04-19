@@ -66,42 +66,45 @@ export function RevealLoadingDemoClient({
           maxSpeculativeBatchSize: 3,
         },
         source: {
-          async loadDirectories(paths) {
+          loadDirectories(paths) {
             revealBatchCallCountRef.current += 1;
             addLog(`source:batch [${paths.join(', ')}]`);
             if (revealBatchCallCountRef.current > 20) {
               throw new Error('Reveal demo loop guard tripped.');
             }
-            return paths.map((path) => {
-              if (path === REVEAL_DEMO_BATCH_FAILURE_PATH) {
-                return {
-                  errorMessage:
-                    'Background prefetch intentionally fails once here. Expand the folder to trigger the explicit foreground retry.',
-                } satisfies FileTreeRevealDirectoryBatchResult;
-              }
+            return Promise.resolve(
+              paths.map((path) => {
+                if (path === REVEAL_DEMO_BATCH_FAILURE_PATH) {
+                  return {
+                    errorMessage:
+                      'Background prefetch intentionally fails once here. Expand the folder to trigger the explicit foreground retry.',
+                  } satisfies FileTreeRevealDirectoryBatchResult;
+                }
 
-              const snapshot =
-                REVEAL_DEMO_SNAPSHOTS[
-                  path as keyof typeof REVEAL_DEMO_SNAPSHOTS
-                ];
-              return snapshot == null
-                ? ({
-                    errorMessage: `Unknown reveal demo path: ${path}`,
-                  } satisfies FileTreeRevealDirectoryBatchResult)
-                : ({ snapshot } satisfies FileTreeRevealDirectoryBatchResult);
-            });
+                const snapshot =
+                  REVEAL_DEMO_SNAPSHOTS[
+                    path as keyof typeof REVEAL_DEMO_SNAPSHOTS
+                  ];
+                return snapshot == null
+                  ? ({
+                      errorMessage: `Unknown reveal demo path: ${path}`,
+                    } satisfies FileTreeRevealDirectoryBatchResult)
+                  : ({ snapshot } satisfies FileTreeRevealDirectoryBatchResult);
+              })
+            );
           },
-          async loadDirectory(path) {
+          loadDirectory(path) {
             addLog(`source:single ${path}`);
             const snapshot =
               REVEAL_DEMO_SNAPSHOTS[path as keyof typeof REVEAL_DEMO_SNAPSHOTS];
             if (snapshot == null) {
               throw new Error(`Unknown reveal demo path: ${path}`);
             }
-            return snapshot as FileTreeRevealDirectorySnapshot;
+            return Promise.resolve(snapshot as FileTreeRevealDirectorySnapshot);
           },
         },
       },
+
       paths: REVEAL_DEMO_ROOT_PATHS,
       preparedInput: REVEAL_PREPARED_INPUT,
       search: true,
@@ -160,8 +163,9 @@ export function RevealLoadingDemoClient({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] xl:items-start">
       <ExampleCard
+        className="max-w-none"
         title="Reveal loading"
         description="The tree starts with a few root directories whose children are unknown. The overscanned window speculative-prefetches visible directories in bounded batches, while explicit expand uses single-directory foreground loads. The packages/path-store folder intentionally fails in the background batch and succeeds when explicitly expanded."
       >
@@ -199,6 +203,7 @@ export function RevealLoadingDemoClient({
             style={{ borderColor: 'var(--color-border)' }}
             onClick={() => {
               addLog('reveal: reset demo');
+              revealBatchCallCountRef.current = 0;
               runTreeAction('reset reveal demo', (tree) => {
                 tree.resetPaths(REVEAL_DEMO_ROOT_PATHS, {
                   preparedInput: REVEAL_PREPARED_INPUT,
@@ -219,34 +224,38 @@ export function RevealLoadingDemoClient({
         />
       </ExampleCard>
 
-      <ExampleCard
-        title="Tracked reveal info"
-        description="These rows expose the public reveal query surface. Packages/path-store fails in the background batch, then switches back to loading and loaded after an explicit expand triggers the foreground retry."
-      >
-        <div className="space-y-2 text-xs">
-          {revealInfo.map(({ info, path }) => (
-            <div
-              key={`${path}-${revision}`}
-              className="rounded-sm border px-2 py-2"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
-              <strong>{path}</strong>
-              <div className="text-muted-foreground mt-1">
-                {info == null
-                  ? 'null'
-                  : `state=${info.state}${info.knownChildCount == null ? '' : ` knownChildCount=${String(info.knownChildCount)}`}${info.errorMessage == null ? '' : ` error=${info.errorMessage}`}`}
+      <div className="space-y-6">
+        <ExampleCard
+          className="max-w-none"
+          title="Tracked reveal info"
+          description="These rows expose the public reveal query surface. Packages/path-store fails in the background batch, then switches back to loading and loaded after an explicit expand triggers the foreground retry."
+        >
+          <div className="space-y-2 text-xs">
+            {revealInfo.map(({ info, path }) => (
+              <div
+                key={`${path}-${revision}`}
+                className="rounded-sm border px-2 py-2"
+                style={{ borderColor: 'var(--color-border)' }}
+              >
+                <strong>{path}</strong>
+                <div className="text-muted-foreground mt-1">
+                  {info == null
+                    ? 'null'
+                    : `state=${info.state}${info.knownChildCount == null ? '' : ` knownChildCount=${String(info.knownChildCount)}`}${info.errorMessage == null ? '' : ` error=${info.errorMessage}`}`}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </ExampleCard>
+            ))}
+          </div>
+        </ExampleCard>
 
-      <ExampleCard
-        title="Reveal event log"
-        description="Watch the public reveal lifecycle events and the source request traces as the demo prefetches, fails the background batch for packages/path-store, and then succeeds on explicit retry."
-      >
-        <StateLog entries={log} />
-      </ExampleCard>
+        <ExampleCard
+          className="max-w-none"
+          title="Reveal event log"
+          description="Watch the public reveal lifecycle events and the source request traces as the demo prefetches, fails the background batch for packages/path-store, and then succeeds on explicit retry."
+        >
+          <StateLog entries={log} />
+        </ExampleCard>
+      </div>
     </div>
   );
 }

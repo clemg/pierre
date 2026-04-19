@@ -10,6 +10,7 @@ import {
 } from './builder';
 import {
   addPath,
+  addPreparedPath,
   collectAncestorIds,
   findNodeId,
   getDirectoryIndex,
@@ -41,12 +42,19 @@ import {
   subscribe,
 } from './events';
 import { getFlattenedChildDirectoryId } from './flatten';
-import { getNodeDepth, isDirectoryNode } from './internal-types';
-import type { NodeId } from './internal-types';
+import {
+  getNodeDepth,
+  isDirectoryNode,
+  PATH_STORE_NODE_FLAG_ROOT,
+  PATH_STORE_NODE_KIND_DIRECTORY,
+  type NodeId,
+  type PreparedPath,
+} from './internal-types';
 import {
   getBenchmarkInstrumentation,
   withBenchmarkPhase,
 } from './internal/benchmarkInstrumentation';
+import { parseInputPath } from './path';
 import {
   collapsePath,
   expandPath,
@@ -61,6 +69,7 @@ import type {
   PathStoreChildPatch,
   PathStoreCleanupOptions,
   PathStoreCleanupResult,
+  PathStoreCompareEntry,
   PathStoreConstructorOptions,
   PathStoreDirectoryLoadState,
   PathStoreEventForType,
@@ -79,6 +88,7 @@ import type {
   PathStoreVisibleTreeProjectionData,
 } from './public-types';
 import {
+  comparePreparedPathsWithCachedSortKeys,
   compareSegmentSortKeys,
   createSegmentSortKey,
   getSegmentSortKey,
@@ -235,6 +245,52 @@ function canInitializeOpenVisibleCounts(
   );
 }
 
+function createPreparedCompareEntry(
+  preparedPath: PreparedPath
+): PathStoreCompareEntry {
+  return {
+    basename: preparedPath.basename,
+    depth: preparedPath.segments.length,
+    isDirectory: preparedPath.isDirectory,
+    path: preparedPath.path,
+    segments: preparedPath.segments,
+  };
+}
+
+function comparePreparedPathsWithStoreSort(
+  left: PreparedPath,
+  right: PreparedPath,
+  sort: PathStoreOptions['sort'],
+  segmentSortKeyCache: Map<string, ReturnType<typeof createSegmentSortKey>>
+): number {
+  if (sort == null || sort === 'default') {
+    return comparePreparedPathsWithCachedSortKeys(
+      left,
+      right,
+      segmentSortKeyCache
+    );
+  }
+
+  return sort(
+    createPreparedCompareEntry(left),
+    createPreparedCompareEntry(right)
+  );
+}
+
+// Normalizes public prepared-input snapshots back into parsed entries so append
+// validation can run once per chunk and the batch mutation can reuse the same
+// parsed paths without rebuilding a full store snapshot.
+function materializePreparedAppendPaths(
+  preparedInput: PathStorePreparedInput
+): PreparedPath[] {
+  const presortedPaths = getPreparedInputPresortedPaths(preparedInput);
+  if (presortedPaths != null) {
+    return presortedPaths.map((path) => parseInputPath(path));
+  }
+
+  return [...getPreparedInputEntries(preparedInput)];
+}
+
 export class PathStore {
   readonly #state: PathStoreState;
 
@@ -257,12 +313,11 @@ export class PathStore {
           )
         );
       } else {
-        // preparedInput is the caller's explicit fast path, so skip the
-        // builder's redundant monotonic-order validation and only keep
-        // duplicate checks.
+        // Prepared entries still go through the generic builder path so custom
+        // sort orders and directory revisits keep the same semantics as raw
+        // input construction without reparsing the original strings.
         builder.appendPreparedPaths(
-          getPreparedInputEntries(options.preparedInput),
-          false
+          getPreparedInputEntries(options.preparedInput)
         );
       }
     } else {
@@ -362,6 +417,38 @@ export class PathStore {
     paths: readonly string[]
   ): PathStorePreparedInput {
     return prepareCanonicalPresortedInput(paths);
+  }
+
+  /**
+   * Applies a prepared snapshot as one append-only mutation so bulk ingest can
+   * publish incremental checkpoints without rebuilding the whole store.
+   */
+  public appendPreparedInput(preparedInput: PathStorePreparedInput): void {
+    withBenchmarkPhase(
+      this.#state.instrumentation,
+      'store.appendPreparedInput',
+      () => {
+        const preparedPaths = materializePreparedAppendPaths(preparedInput);
+        if (preparedPaths.length === 0) {
+          return;
+        }
+
+        this.validateAppendPreparedPaths(preparedPaths);
+        batchEvents(this.#state, () => {
+          for (const preparedPath of preparedPaths) {
+            const previousVisibleCount = getVisibleCount(this.#state);
+            recordEvent(
+              this.#state,
+              finalizeEvent(
+                this.#state,
+                previousVisibleCount,
+                addPreparedPath(this.#state, preparedPath)
+              )
+            );
+          }
+        });
+      }
+    );
   }
 
   public list(path?: string): string[] {
@@ -1091,6 +1178,66 @@ export class PathStore {
     }
 
     return expandedDirectoryCount;
+  }
+
+  // Validates append chunks against the current tail before mutating so one
+  // checkpoint either lands whole or not at all.
+  private validateAppendPreparedPaths(
+    preparedPaths: readonly PreparedPath[]
+  ): void {
+    let previousPreparedPath: PreparedPath | null = null;
+    const currentTailPath = this.getCanonicalTailPath();
+    if (currentTailPath != null) {
+      previousPreparedPath = parseInputPath(currentTailPath);
+    }
+
+    const segmentSortKeyCache = new Map<
+      string,
+      ReturnType<typeof createSegmentSortKey>
+    >();
+    const sort = this.#state.snapshot.options.sort;
+    for (const preparedPath of preparedPaths) {
+      if (previousPreparedPath != null) {
+        if (preparedPath.path === previousPreparedPath.path) {
+          throw new Error(`Duplicate path: "${preparedPath.path}"`);
+        }
+
+        if (
+          comparePreparedPathsWithStoreSort(
+            previousPreparedPath,
+            preparedPath,
+            sort,
+            segmentSortKeyCache
+          ) > 0
+        ) {
+          throw new Error(
+            `appendPreparedInput only accepts paths that append after the current canonical tail: "${preparedPath.path}"`
+          );
+        }
+      }
+
+      previousPreparedPath = preparedPath;
+    }
+  }
+
+  private getCanonicalTailPath(): string | null {
+    let nodeId = this.#state.snapshot.rootId;
+
+    while (true) {
+      const node = requireNode(this.#state, nodeId);
+      if (node.kind !== PATH_STORE_NODE_KIND_DIRECTORY) {
+        return materializeNodePath(this.#state, nodeId);
+      }
+
+      const childIds = getDirectoryIndex(this.#state, nodeId).childIds;
+      if (childIds.length === 0) {
+        return nodeId === this.#state.snapshot.rootId
+          ? null
+          : materializeNodePath(this.#state, nodeId);
+      }
+
+      nodeId = childIds[childIds.length - 1];
+    }
   }
 
   private hasAllDirectoriesExpanded(): boolean {
