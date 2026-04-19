@@ -59,11 +59,12 @@ export type {
   FileTreeSearchSessionHandle,
   FileTreeSelectionChangeListener,
   FileTreeSlotHost,
+  FileTreeStickyWindowLayout,
   FileTreeRenderProps,
   FileTreeVisibleRow,
 } from './model/types';
 export {
-  computeFirstVisibleIndex,
+  computeStickyWindowLayout,
   computeVisibleRange,
   computeWindowRange,
   FILE_TREE_DEFAULT_ITEM_HEIGHT,

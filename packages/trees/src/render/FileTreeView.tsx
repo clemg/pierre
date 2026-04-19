@@ -1231,7 +1231,7 @@ export function FileTreeView({
   renderRowDecoration,
   searchEnabled = false,
   slotHost,
-  stickyFolders = true,
+  stickyFolders = false,
   viewportHeight = FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
 }: FileTreeViewProps): JSX.Element {
   'use no memo';
@@ -2725,7 +2725,9 @@ export function FileTreeView({
         return;
       }
 
-      const visibleIndex = controller.getVisibleIndex(path);
+      const visibleIndex = visibleRows.findIndex(
+        (row) => getFileTreeRowPath(row) === path
+      );
       if (visibleIndex < 0) {
         return;
       }
@@ -2749,6 +2751,7 @@ export function FileTreeView({
       resolvedViewportHeight,
       stickyOverlayHeight,
       totalScrollableHeight,
+      visibleRows,
     ]
   );
 

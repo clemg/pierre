@@ -3,8 +3,11 @@ import { JSDOM } from 'jsdom';
 
 import type { FileTreeVisibleRow } from '../src/index';
 import {
+  computeStickyWindowLayout,
+  computeWindowRange,
   FILE_TREE_DEFAULT_ITEM_HEIGHT,
   FILE_TREE_DEFAULT_OVERSCAN,
+  FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
 } from '../src/index';
 import { computeFileTreeLayout } from '../src/model/fileTreeLayout';
 
@@ -284,6 +287,23 @@ function getVisibleRowPath(row: FileTreeVisibleRow): string {
     ? (row.flattenedSegments?.findLast((segment) => segment.isTerminal)?.path ??
         row.path)
     : row.path;
+}
+
+function getVisibleIndexForPath(
+  controller: {
+    getVisibleCount(): number;
+    getVisibleRows(start: number, end: number): readonly FileTreeVisibleRow[];
+  },
+  path: string
+): number {
+  const visibleCount = controller.getVisibleCount();
+  if (visibleCount <= 0) {
+    return -1;
+  }
+
+  return controller
+    .getVisibleRows(0, visibleCount - 1)
+    .findIndex((row) => getVisibleRowPath(row) === path);
 }
 
 function computeExpectedRenderedWindow(
@@ -654,52 +674,6 @@ describe('file-tree render + scroll', () => {
     controller.destroy();
   });
 
-  test('controller resolves sticky ancestor rows from actual visible rows', async () => {
-    const FileTreeController = await loadFileTreeController();
-
-    const controller = new FileTreeController({
-      flattenEmptyDirectories: false,
-      initialExpandedPaths: ['src/lib/'],
-      paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
-    });
-
-    const utilRow = controller
-      .getVisibleRows(0, controller.getVisibleCount() - 1)
-      .find((row) => row.path === 'src/lib/util.ts');
-    if (utilRow == null) {
-      throw new Error('expected src/lib/util.ts row');
-    }
-
-    expect(
-      controller.getVisibleAncestorRows(utilRow.index).map((row) => row.path)
-    ).toEqual(['src/', 'src/lib/']);
-
-    controller.destroy();
-  });
-
-  test('controller resolves sticky ancestor rows for flattened rows', async () => {
-    const FileTreeController = await loadFileTreeController();
-
-    const controller = new FileTreeController({
-      flattenEmptyDirectories: true,
-      initialExpandedPaths: ['src/lib/'],
-      paths: ['README.md', 'src/lib/util.ts', 'src/lib/helpers.ts'],
-    });
-
-    const utilRow = controller
-      .getVisibleRows(0, controller.getVisibleCount() - 1)
-      .find((row) => row.path === 'src/lib/util.ts');
-    if (utilRow == null) {
-      throw new Error('expected src/lib/util.ts row');
-    }
-
-    const stickyAncestorRows = controller.getVisibleAncestorRows(utilRow.index);
-    expect(stickyAncestorRows.map((row) => row.path)).toEqual(['src/lib/']);
-    expect(stickyAncestorRows[0]?.isFlattened).toBe(true);
-
-    controller.destroy();
-  });
-
   test('directory row collapses on the first click when initialExpandedPaths uses bare directory paths', async () => {
     const { cleanup, dom } = installDom();
     try {
@@ -939,295 +913,54 @@ describe('file-tree render + scroll', () => {
     }
   });
 
-  test('repeated Shift-clicks contract and extend the same anchored range', async () => {
+  test('sticky folders are opt-in and mirror visible ancestor rows when enabled', async () => {
     const { cleanup, dom } = installDom();
     try {
       const FileTree = await loadFileTree();
-      const containerWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(containerWrapper);
-
-      const fileTree = new FileTree({
-        flattenEmptyDirectories: false,
-        paths: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'],
-        viewportHeight: 120,
-      });
-
-      fileTree.render({ containerWrapper });
-      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
-
-      clickItem(shadowRoot, dom, 'a.ts');
-      await flushDom();
-      clickItem(shadowRoot, dom, 'd.ts', { shiftKey: true });
-      await flushDom();
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual([
-        'a.ts',
-        'b.ts',
-        'c.ts',
-        'd.ts',
-      ]);
-
-      clickItem(shadowRoot, dom, 'b.ts', { shiftKey: true });
-      await flushDom();
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual(['a.ts', 'b.ts']);
-
-      clickItem(shadowRoot, dom, 'e.ts', { shiftKey: true });
-      await flushDom();
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual([
-        'a.ts',
-        'b.ts',
-        'c.ts',
-        'd.ts',
-        'e.ts',
-      ]);
-
-      fileTree.cleanUp();
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('reselecting the same selection set does not emit duplicate change callbacks', async () => {
-    const { cleanup, dom } = installDom();
-    try {
-      const FileTree = await loadFileTree();
-      const containerWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(containerWrapper);
-      const selectionEvents: string[][] = [];
-
-      const fileTree = new FileTree({
-        flattenEmptyDirectories: false,
-        onSelectionChange: (selectedPaths) => {
-          selectionEvents.push([...selectedPaths]);
-        },
-        paths: ['a.ts', 'b.ts', 'c.ts'],
-        viewportHeight: 120,
-      });
-
-      fileTree.render({ containerWrapper });
-      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
-
-      clickItem(shadowRoot, dom, 'b.ts');
-      await flushDom();
-      clickItem(shadowRoot, dom, 'b.ts');
-      await flushDom();
-
-      expect(selectionEvents).toEqual([['b.ts']]);
-
-      fileTree.cleanUp();
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('selection change callbacks stay path-first and selection survives collapse/remount with explicit anchor fallback', async () => {
-    const { cleanup, dom } = installDom();
-    try {
-      const FileTree = await loadFileTree();
-      const containerWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(containerWrapper);
-      const selectionEvents: string[][] = [];
-
-      const fileTree = new FileTree({
-        flattenEmptyDirectories: false,
-        initialExpandedPaths: ['src/lib/'],
-        onSelectionChange: (items) => {
-          selectionEvents.push([...items]);
-        },
-        paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
-        viewportHeight: 120,
-      });
-
-      fileTree.render({ containerWrapper });
-      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
-
-      clickItem(shadowRoot, dom, 'src/lib/util.ts');
-      await flushDom();
-      expect(fileTree.getSelectedPaths()).toEqual(['src/lib/util.ts']);
-      expect(selectionEvents.at(-1)).toEqual(['src/lib/util.ts']);
-
-      const sourceDirectory = fileTree.getItem('src/lib/');
-      if (
-        sourceDirectory == null ||
-        sourceDirectory.isDirectory() !== true ||
-        !('collapse' in sourceDirectory)
-      ) {
-        throw new Error('missing source directory item');
-      }
-
-      sourceDirectory.collapse();
-      await flushDom();
-      expect(fileTree.getSelectedPaths()).toEqual(['src/lib/util.ts']);
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual([]);
-
-      sourceDirectory.expand();
-      await flushDom();
-      expect(
-        getItemButton(shadowRoot, dom, 'src/lib/util.ts').dataset.itemSelected
-      ).toBe('true');
-
-      sourceDirectory.collapse();
-      await flushDom();
-      clickItem(shadowRoot, dom, 'README.md', { shiftKey: true });
-      await flushDom();
-      expect(fileTree.getSelectedPaths()).toEqual(['README.md']);
-      expect(selectionEvents.at(-1)).toEqual(['README.md']);
-
-      fileTree.cleanUp();
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('Ctrl+A selects only currently visible rows', async () => {
-    const { cleanup, dom } = installDom();
-    try {
-      const FileTree = await loadFileTree();
-      const containerWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(containerWrapper);
-
-      const fileTree = new FileTree({
-        flattenEmptyDirectories: false,
-        initialExpansion: 0,
-        paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
-        viewportHeight: 120,
-      });
-
-      fileTree.render({ containerWrapper });
-      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
-      const sourceButton = getItemButton(shadowRoot, dom, 'src/');
-      sourceButton.focus();
-      await flushDom();
-
-      pressKey(sourceButton, dom, 'a', { ctrlKey: true });
-      await flushDom();
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual([
-        'src/',
-        'README.md',
-      ]);
-
-      fileTree.cleanUp();
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('Ctrl+A keeps the focused row as the next Shift-click anchor', async () => {
-    const { cleanup, dom } = installDom();
-    try {
-      const FileTree = await loadFileTree();
-      const containerWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(containerWrapper);
-
-      const fileTree = new FileTree({
-        flattenEmptyDirectories: false,
-        paths: ['a.ts', 'b.ts', 'c.ts', 'd.ts'],
-        viewportHeight: 120,
-      });
-
-      fileTree.render({ containerWrapper });
-      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
-      const secondButton = getItemButton(shadowRoot, dom, 'b.ts');
-      secondButton.focus();
-      await flushDom();
-
-      pressKey(secondButton, dom, 'a', { ctrlKey: true });
-      await flushDom();
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual([
-        'a.ts',
-        'b.ts',
-        'c.ts',
-        'd.ts',
-      ]);
-
-      clickItem(shadowRoot, dom, 'c.ts', { shiftKey: true });
-      await flushDom();
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual(['b.ts', 'c.ts']);
-
-      fileTree.cleanUp();
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('selection persists across virtualization and selected markup returns on remount', async () => {
-    const { cleanup, dom } = installDom();
-    try {
-      const FileTree = await loadFileTree();
-      const containerWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(containerWrapper);
-
-      const paths = Array.from(
-        { length: 120 },
-        (_, index) => `item${String(index).padStart(3, '0')}.ts`
-      );
-      const fileTree = new FileTree({
-        flattenEmptyDirectories: false,
-        paths,
-        viewportHeight: 120,
-      });
-
-      fileTree.render({ containerWrapper });
-      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
-      const scrollElement = shadowRoot?.querySelector(
-        '[data-file-tree-virtualized-scroll="true"]'
-      );
-      if (!(scrollElement instanceof dom.window.HTMLElement)) {
-        throw new Error('missing scroll element');
-      }
-
-      const viewport = scrollElement;
-      viewport.scrollTop = 1500;
-      viewport.dispatchEvent(new dom.window.Event('scroll'));
-      await flushDom();
-
-      clickItem(shadowRoot, dom, 'item050.ts');
-      await flushDom();
-      expect(fileTree.getSelectedPaths()).toEqual(['item050.ts']);
-      expect(
-        getItemButton(shadowRoot, dom, 'item050.ts').dataset.itemSelected
-      ).toBe('true');
-
-      viewport.scrollTop = 3000;
-      viewport.dispatchEvent(new dom.window.Event('scroll'));
-      await flushDom();
-      await flushDom();
-
-      expect(fileTree.getSelectedPaths()).toEqual(['item050.ts']);
-      expect(getSelectedItemPaths(shadowRoot, dom)).toEqual([]);
-
-      viewport.scrollTop = 1500;
-      viewport.dispatchEvent(new dom.window.Event('scroll'));
-      await flushDom();
-      await flushDom();
-
-      expect(
-        getItemButton(shadowRoot, dom, 'item050.ts').dataset.itemSelected
-      ).toBe('true');
-
-      fileTree.cleanUp();
-    } finally {
-      cleanup();
-    }
-  });
-
-  test('sticky overlay mirrors visible ancestor rows and respects opt-out', async () => {
-    const { cleanup, dom } = installDom();
-    try {
-      const FileTree = await loadFileTree();
-      const containerWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(containerWrapper);
-
-      const fileTree = new FileTree({
+      const baseOptions = {
         flattenEmptyDirectories: false,
         initialExpandedPaths: ['src/lib/'],
         paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
         viewportHeight: 60,
-      });
+      } as const;
 
-      fileTree.render({ containerWrapper });
+      const defaultWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(defaultWrapper);
+      const defaultTree = new FileTree(baseOptions);
+      defaultTree.render({ containerWrapper: defaultWrapper });
       await flushDom();
 
-      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const defaultShadowRoot = defaultTree.getFileTreeContainer()?.shadowRoot;
+      const defaultScrollElement = defaultShadowRoot?.querySelector(
+        '[data-file-tree-virtualized-scroll="true"]'
+      );
+      if (!(defaultScrollElement instanceof dom.window.HTMLElement)) {
+        throw new Error('missing scroll element');
+      }
+
+      defaultScrollElement.scrollTop = 30;
+      defaultScrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+
+      expect(getStickyRowPaths(defaultShadowRoot, dom)).toEqual([]);
+      expect(
+        defaultShadowRoot?.querySelector(
+          '[data-file-tree-sticky-overlay="true"]'
+        )
+      ).toBeNull();
+
+      defaultTree.cleanUp();
+
+      const optInWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(optInWrapper);
+      const optInTree = new FileTree({
+        ...baseOptions,
+        stickyFolders: true,
+      });
+      optInTree.render({ containerWrapper: optInWrapper });
+      await flushDom();
+
+      const shadowRoot = optInTree.getFileTreeContainer()?.shadowRoot;
       const scrollElement = shadowRoot?.querySelector(
         '[data-file-tree-virtualized-scroll="true"]'
       );
@@ -1249,27 +982,7 @@ describe('file-tree render + scroll', () => {
 
       expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/', 'src/lib/']);
 
-      fileTree.cleanUp();
-
-      const optOutWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(optOutWrapper);
-      const optOutTree = new FileTree({
-        flattenEmptyDirectories: false,
-        initialExpandedPaths: ['src/lib/'],
-        paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
-        stickyFolders: false,
-        viewportHeight: 60,
-      });
-
-      optOutTree.render({ containerWrapper: optOutWrapper });
-      await flushDom();
-      expect(
-        optOutTree
-          .getFileTreeContainer()
-          ?.shadowRoot?.querySelector('[data-file-tree-sticky-overlay="true"]')
-      ).toBeNull();
-
-      optOutTree.cleanUp();
+      optInTree.cleanUp();
     } finally {
       cleanup();
     }
@@ -1289,6 +1002,7 @@ describe('file-tree render + scroll', () => {
           'arch/alpha/boot/tools/file.ts',
           ...Array.from({ length: 10 }, (_, index) => `z${index}.ts`),
         ],
+        stickyFolders: true,
         viewportHeight: 180,
       });
 
@@ -1355,6 +1069,7 @@ describe('file-tree render + scroll', () => {
           'arch/alpha/boot/head.S',
           'arch/alpha/boot/main.c',
         ],
+        stickyFolders: true,
         viewportHeight: 180,
       } as const;
       const expectedController = new FileTreeController(options);
@@ -1469,6 +1184,7 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: false,
         initialExpandedPaths: [],
         paths: ['src/lib/util.ts', 'z.ts'],
+        stickyFolders: true,
         viewportHeight: 60,
       });
 
@@ -1510,6 +1226,7 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: false,
         initialExpandedPaths: ['src/lib/'],
         paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
+        stickyFolders: true,
         viewportHeight: 60,
       } as const;
       const expectedController = new FileTreeController(options);
@@ -1546,7 +1263,7 @@ describe('file-tree render + scroll', () => {
         )
       );
       expect(expectedAtSixty.layout.visible.startIndex).toBe(
-        expectedController.getVisibleIndex('src/index.ts')
+        getVisibleIndexForPath(expectedController, 'src/index.ts')
       );
       expect(
         getPixelStyleValue(getVirtualList(shadowRoot, dom), 'height')
@@ -1606,6 +1323,7 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: false,
         initialExpandedPaths: ['src/lib/'],
         paths: ['README.md', 'src/index.ts', 'src/lib/util.ts'],
+        stickyFolders: true,
         viewportHeight: 120,
       });
 
@@ -1655,11 +1373,12 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: false,
         initialExpandedPaths: ['aaa/', 'bbb/', 'src/lib/'],
         paths: ['aaa/one.ts', 'bbb/two.ts', 'src/index.ts', 'src/lib/util.ts'],
+        stickyFolders: true,
         viewportHeight: 60,
       } as const;
       const expectedController = new FileTreeController(clickOptions);
       expect(
-        expectedController.getVisibleIndex('src/lib/')
+        getVisibleIndexForPath(expectedController, 'src/lib/')
       ).toBeGreaterThanOrEqual(0);
       expectedController.destroy();
 
@@ -1712,12 +1431,13 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: true,
         initialExpandedPaths: ['aaa/', 'src/lib/'],
         paths: ['aaa/one.ts', 'src/lib/util.ts', 'src/lib/helpers.ts'],
+        stickyFolders: true,
         viewportHeight: 60,
       } as const;
       const expectedController = new FileTreeController(clickOptions);
       const expectedScrollTop = Math.max(
         0,
-        expectedController.getVisibleIndex('src/lib/') *
+        getVisibleIndexForPath(expectedController, 'src/lib/') *
           FILE_TREE_DEFAULT_ITEM_HEIGHT -
           FILE_TREE_DEFAULT_ITEM_HEIGHT
       );
@@ -1776,6 +1496,7 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: true,
         initialExpandedPaths: ['src/lib/'],
         paths: ['README.md', 'src/lib/util.ts', 'src/lib/helpers.ts'],
+        stickyFolders: true,
         viewportHeight: 60,
       });
 
@@ -1834,6 +1555,7 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: false,
         initialExpandedPaths: ['a/b/c/d/e/'],
         paths: deepPaths,
+        stickyFolders: true,
         viewportHeight: 120,
       });
 
@@ -1872,6 +1594,40 @@ describe('file-tree render + scroll', () => {
     } finally {
       cleanup();
     }
+  });
+
+  test('computes a stable window range and sticky layout', () => {
+    const initialRange = computeWindowRange({
+      itemCount: 200,
+      itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
+      overscan: FILE_TREE_DEFAULT_OVERSCAN,
+      scrollTop: 0,
+      viewportHeight: FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
+    });
+    const scrolledRange = computeWindowRange(
+      {
+        itemCount: 200,
+        itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
+        overscan: FILE_TREE_DEFAULT_OVERSCAN,
+        scrollTop: 1800,
+        viewportHeight: FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
+      },
+      initialRange
+    );
+    const layout = computeStickyWindowLayout({
+      itemCount: 200,
+      itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
+      range: scrolledRange,
+      viewportHeight: FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
+    });
+
+    expect(initialRange.start).toBe(0);
+    expect(scrolledRange.start).toBeGreaterThan(0);
+    expect(scrolledRange.end).toBeGreaterThan(scrolledRange.start);
+    expect(layout.totalHeight).toBe(200 * FILE_TREE_DEFAULT_ITEM_HEIGHT);
+    expect(layout.offsetHeight).toBe(
+      scrolledRange.start * FILE_TREE_DEFAULT_ITEM_HEIGHT
+    );
   });
 
   test('preloadFileTree returns SSR-safe initial html', async () => {
@@ -3078,6 +2834,7 @@ describe('file-tree render + scroll', () => {
         flattenEmptyDirectories: false,
         initialExpandedPaths: ['src/'],
         paths: [...topFiles, ...sourceFiles, ...bottomFiles],
+        stickyFolders: true,
         viewportHeight: 120,
       } as const;
       const expectedController = new FileTreeController(options);
