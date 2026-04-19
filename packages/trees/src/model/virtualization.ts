@@ -9,6 +9,19 @@ export const FILE_TREE_DEFAULT_OVERSCAN = 10;
 export const FILE_TREE_DEFAULT_VIEWPORT_HEIGHT = 420;
 export const EMPTY_RANGE: FileTreeRange = { start: 0, end: -1 };
 
+export interface FileTreeInsetWindowLayout {
+  contentHeight: number;
+  firstVisibleIndex: number;
+  offsetHeight: number;
+  stickyInset: number;
+  topInset: number;
+  totalHeight: number;
+  visiblePaneHeight: number;
+  visibleRange: FileTreeRange;
+  windowHeight: number;
+  windowRange: FileTreeRange;
+}
+
 function normalizeRange(
   range: FileTreeRange,
   itemCount: number
@@ -20,6 +33,30 @@ function normalizeRange(
   const start = Math.max(0, Math.min(range.start, itemCount - 1));
   const end = Math.max(start, Math.min(range.end, itemCount - 1));
   return { start, end };
+}
+
+function clampTopInset({
+  itemCount,
+  itemHeight,
+  topInset,
+  viewportHeight,
+}: Pick<
+  FileTreeViewportMetrics,
+  'itemCount' | 'itemHeight' | 'viewportHeight'
+> & {
+  topInset: number;
+}): number {
+  if (itemCount <= 0 || viewportHeight <= 0) {
+    return 0;
+  }
+
+  const requestedInset = Math.max(0, topInset);
+  const maxInset = Math.max(
+    0,
+    viewportHeight - Math.min(itemHeight, viewportHeight)
+  );
+
+  return Math.min(requestedInset, maxInset);
 }
 
 export function rangesEqual(
@@ -110,6 +147,83 @@ export function computeWindowRange(
     metrics.itemCount,
     metrics.overscan ?? FILE_TREE_DEFAULT_OVERSCAN
   );
+}
+
+// Reserves sticky-overlay space by moving the same pixels from the window's
+// flow height into its top offset, which keeps total scroll height constant.
+export function computeInsetWindowLayout({
+  currentRange = EMPTY_RANGE,
+  itemCount,
+  itemHeight,
+  overscan,
+  scrollTop,
+  topInset = 0,
+  viewportHeight,
+}: FileTreeViewportMetrics & {
+  currentRange?: FileTreeRange;
+  topInset?: number;
+}): FileTreeInsetWindowLayout {
+  const resolvedTopInset = clampTopInset({
+    itemCount,
+    itemHeight,
+    topInset,
+    viewportHeight,
+  });
+  const visiblePaneHeight = Math.max(0, viewportHeight - resolvedTopInset);
+  const totalHeight = Math.max(0, itemCount * itemHeight);
+
+  if (itemCount <= 0 || visiblePaneHeight <= 0) {
+    return {
+      contentHeight: 0,
+      firstVisibleIndex: -1,
+      offsetHeight: 0,
+      stickyInset: 0,
+      topInset: 0,
+      totalHeight,
+      visiblePaneHeight,
+      visibleRange: EMPTY_RANGE,
+      windowHeight: 0,
+      windowRange: EMPTY_RANGE,
+    };
+  }
+
+  const visibleRange = computeVisibleRange({
+    itemCount,
+    itemHeight,
+    overscan,
+    scrollTop,
+    viewportHeight: visiblePaneHeight,
+  });
+  const windowRange = computeWindowRange(
+    {
+      itemCount,
+      itemHeight,
+      overscan,
+      scrollTop,
+      viewportHeight: visiblePaneHeight,
+    },
+    currentRange
+  );
+  const contentHeight =
+    windowRange.end < windowRange.start
+      ? 0
+      : (windowRange.end - windowRange.start + 1) * itemHeight;
+
+  return {
+    contentHeight,
+    firstVisibleIndex: visibleRange.start,
+    offsetHeight:
+      windowRange.end < windowRange.start
+        ? 0
+        : windowRange.start * itemHeight + resolvedTopInset,
+    stickyInset: Math.min(0, viewportHeight - contentHeight),
+    topInset: resolvedTopInset,
+    totalHeight,
+    visiblePaneHeight,
+    visibleRange,
+    windowHeight: Math.max(0, contentHeight - resolvedTopInset),
+    windowRange,
+  };
 }
 
 export function computeStickyWindowLayout({
