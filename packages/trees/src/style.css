@@ -547,6 +547,7 @@
   }
 
   [data-file-tree-sticky-overlay-content='true'] {
+    background-color: var(--trees-bg);
     display: flex;
     flex-direction: column;
     pointer-events: none;
@@ -583,6 +584,7 @@
   }
 
   [data-file-tree-virtualized-list='true'] {
+    background-color: var(--trees-bg);
     position: relative;
     min-height: 100%;
     width: 100%;

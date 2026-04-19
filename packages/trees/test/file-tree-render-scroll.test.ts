@@ -225,6 +225,19 @@ function getStickyRowPaths(
     .map((element) => element.dataset.fileTreeStickyPath)
     .filter((path): path is string => path != null);
 }
+function getMountedItemPaths(
+  shadowRoot: ShadowRoot | null | undefined,
+  dom: JSDOM
+): string[] {
+  return Array.from(shadowRoot?.querySelectorAll('[data-type="item"]') ?? [])
+    .filter(
+      (element): element is HTMLButtonElement =>
+        element instanceof dom.window.HTMLButtonElement
+    )
+    .filter((button) => button.dataset.itemParked !== 'true')
+    .map((button) => button.dataset.itemPath)
+    .filter((path): path is string => path != null);
+}
 
 function clickStickyRow(
   shadowRoot: ShadowRoot | null | undefined,
@@ -1235,6 +1248,58 @@ describe('file-tree render + scroll', () => {
     }
   });
 
+  test('sticky folders start sticking on partial occlusion instead of waiting for full occlusion', async () => {
+    const { cleanup, dom } = installDom();
+    try {
+      const FileTree = await loadFileTree();
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+
+      const fileTree = new FileTree({
+        flattenEmptyDirectories: false,
+        initialExpandedPaths: ['src/lib/'],
+        paths: ['README.md', 'src/index.ts', 'src/lib/util.ts', 'zzz.ts'],
+        viewportHeight: 120,
+      });
+
+      fileTree.render({ containerWrapper });
+      await flushDom();
+
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const scrollElement = shadowRoot?.querySelector(
+        '[data-file-tree-virtualized-scroll="true"]'
+      );
+      if (!(scrollElement instanceof dom.window.HTMLElement)) {
+        throw new Error('missing scroll element');
+      }
+
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([]);
+
+      scrollElement.scrollTop = 1;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/']);
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/');
+
+      scrollElement.scrollTop = 30;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/']);
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/');
+
+      scrollElement.scrollTop = 31;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/', 'src/lib/']);
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/');
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/lib/');
+
+      fileTree.cleanUp();
+    } finally {
+      cleanup();
+    }
+  });
+
   test('sticky overlay reserves virtual layout space without changing total height or scrollTop', async () => {
     const { cleanup, dom } = installDom();
     try {
@@ -1518,19 +1583,22 @@ describe('file-tree render + scroll', () => {
       if (!(scrollElement instanceof dom.window.HTMLElement)) {
         throw new Error('missing scroll element');
       }
+      const expectedContentText = getNormalizedText(
+        getItemButton(shadowRoot, dom, 'src/lib/').querySelector(
+          '[data-item-section="content"]'
+        )
+      );
 
       scrollElement.scrollTop = 30;
       scrollElement.dispatchEvent(new dom.window.Event('scroll'));
       await flushDom();
 
       expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/lib/']);
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/lib/');
       const stickyRow = shadowRoot?.querySelector(
         '[data-file-tree-sticky-path="src/lib/"] [data-item-section="content"]'
       );
-      const realRow = getItemButton(shadowRoot, dom, 'src/lib/').querySelector(
-        '[data-item-section="content"]'
-      );
-      expect(getNormalizedText(stickyRow)).toBe(getNormalizedText(realRow));
+      expect(getNormalizedText(stickyRow)).toBe(expectedContentText);
 
       fileTree.cleanUp();
     } finally {

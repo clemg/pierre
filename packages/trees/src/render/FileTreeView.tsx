@@ -227,6 +227,13 @@ function resolveStickyRowsForScroll({
     return [];
   }
 
+  // Use the next row below the top edge as the sticky anchor so a folder starts
+  // sticking as soon as it is partially occluded, not only after it is gone.
+  const stickyAnchorIndex = Math.min(
+    itemCount - 1,
+    Math.max(firstVisibleIndex, Math.ceil(Math.max(0, scrollTop) / itemHeight))
+  );
+
   const maxStickyRowCount = Math.min(
     maxStickyFolderDepth,
     Math.floor(
@@ -246,7 +253,7 @@ function resolveStickyRowsForScroll({
   }
 
   return clampStickyRows(
-    controller.getVisibleAncestorRows(firstVisibleIndex),
+    controller.getVisibleAncestorRows(stickyAnchorIndex),
     maxStickyRowCount
   );
 }
@@ -1072,6 +1079,7 @@ function renderRangeChildren(
   controller: FileTreeController,
   renameView: ReturnType<FileTreeController[typeof FILE_TREE_RENAME_VIEW]>,
   range: { start: number; end: number },
+  hiddenRowPaths: ReadonlySet<string>,
   activeItemPath: string | null,
   contextHoverPath: string | null,
   draggedPathSet: ReadonlySet<string> | null,
@@ -1124,6 +1132,7 @@ function renderRangeChildren(
   // layout shifts during scroll in browsers that track CLS inside scrollers.
   return controller
     .getVisibleRows(range.start, range.end)
+    .filter((row) => !hiddenRowPaths.has(getFileTreeRowPath(row)))
     .map((row, slotIndex) =>
       renderStyledRow(
         controller,
@@ -2308,6 +2317,10 @@ export function FileTreeView({
   const totalScrollableHeight = itemCount * itemHeight;
 
   const stickyOverlayHeight = stickyRows.length * itemHeight;
+  const stickyRowPathSet = useMemo(
+    () => new Set(stickyRows.map((row) => getFileTreeRowPath(row))),
+    [stickyRows]
+  );
 
   useLayoutEffect(() => {
     const scrollElement = scrollRef.current;
@@ -2842,6 +2855,7 @@ export function FileTreeView({
               controller,
               renameView,
               range,
+              stickyRowPathSet,
               visualFocusPath,
               visualContextHoverPath,
               draggedPathSet,
