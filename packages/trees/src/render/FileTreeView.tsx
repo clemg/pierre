@@ -32,6 +32,7 @@ import type {
   FileTreeVisibleRow,
 } from '../model/types';
 import {
+  computeFirstVisibleIndex,
   computeInsetWindowLayout,
   EMPTY_RANGE,
   FILE_TREE_DEFAULT_ITEM_HEIGHT,
@@ -179,83 +180,84 @@ function stickyRowsEqual(
   );
 }
 
-function clampStickyRows(
-  rows: readonly FileTreeVisibleRow[],
-  maxStickyFolderDepth: number
-): readonly FileTreeVisibleRow[] {
-  if (maxStickyFolderDepth <= 0) {
-    return [];
-  }
-
-  return rows.length > maxStickyFolderDepth
-    ? rows.slice(-maxStickyFolderDepth)
-    : rows;
-}
-
-// Sticky folders can only reserve overlay space that still leaves one real row
-// visible below the overlay. The first visible row then anchors which ancestors
-// should mirror in that reserved strip.
+// Sticky folders track the expanded directory chain that still owns the content
+// immediately below each sticky slot. That makes deep folders drop as soon as
+// their subtree stops occupying the space beneath the overlay.
 function resolveStickyRowsForScroll({
   controller,
   itemCount,
   itemHeight,
-  maxStickyFolderDepth,
   scrollTop,
-  viewportHeight,
 }: {
   controller: FileTreeController;
   itemCount: number;
   itemHeight: number;
-  maxStickyFolderDepth: number;
   scrollTop: number;
-  viewportHeight: number;
 }): readonly FileTreeVisibleRow[] {
-  if (maxStickyFolderDepth <= 0) {
+  if (itemCount <= 0 || scrollTop <= 0) {
     return [];
   }
 
-  const firstVisibleIndex = computeInsetWindowLayout({
-    currentRange: EMPTY_RANGE,
-    itemCount,
-    itemHeight,
-    overscan: 0,
-    scrollTop,
-    topInset: 0,
-    viewportHeight,
-  }).firstVisibleIndex;
-  if (firstVisibleIndex < 0) {
+  const getExpandedDirectoryChainAtIndex = (
+    visibleIndex: number
+  ): readonly FileTreeVisibleRow[] => {
+    if (visibleIndex < 0 || visibleIndex >= itemCount) {
+      return [];
+    }
+
+    const row =
+      controller.getVisibleRows(visibleIndex, visibleIndex)[0] ?? null;
+    if (row == null) {
+      return [];
+    }
+
+    const expandedAncestors = controller
+      .getVisibleAncestorRows(visibleIndex)
+      .filter((candidateRow) => candidateRow.isExpanded);
+    if (row.kind !== 'directory' || !row.isExpanded) {
+      return expandedAncestors;
+    }
+
+    return [...expandedAncestors, row];
+  };
+
+  const firstStickyRow = getExpandedDirectoryChainAtIndex(
+    computeFirstVisibleIndex({
+      itemCount,
+      itemHeight,
+      scrollTop,
+    })
+  )[0];
+  if (firstStickyRow == null) {
     return [];
   }
 
-  // Use the next row below the top edge as the sticky anchor so a folder starts
-  // sticking as soon as it is partially occluded, not only after it is gone.
-  const stickyAnchorIndex = Math.min(
-    itemCount - 1,
-    Math.max(firstVisibleIndex, Math.ceil(Math.max(0, scrollTop) / itemHeight))
-  );
+  const stickyRows = [firstStickyRow];
+  for (let slotDepth = 1; slotDepth < itemCount; slotDepth += 1) {
+    const probeIndex = computeFirstVisibleIndex({
+      itemCount,
+      itemHeight,
+      scrollTop,
+      topInset: (slotDepth + 1) * itemHeight,
+    });
+    const candidateRow =
+      getExpandedDirectoryChainAtIndex(probeIndex)[slotDepth];
+    if (candidateRow == null) {
+      break;
+    }
 
-  const maxStickyRowCount = Math.min(
-    maxStickyFolderDepth,
-    Math.floor(
-      computeInsetWindowLayout({
-        currentRange: EMPTY_RANGE,
-        itemCount,
-        itemHeight,
-        overscan: 0,
-        scrollTop,
-        topInset: maxStickyFolderDepth * itemHeight,
-        viewportHeight,
-      }).topInset / itemHeight
-    )
-  );
-  if (maxStickyRowCount <= 0) {
-    return [];
+    const previousStickyPath = stickyRows.at(-1)?.path ?? null;
+    if (
+      previousStickyPath != null &&
+      !candidateRow.ancestorPaths.includes(previousStickyPath)
+    ) {
+      break;
+    }
+
+    stickyRows.push(candidateRow);
   }
 
-  return clampStickyRows(
-    controller.getVisibleAncestorRows(stickyAnchorIndex),
-    maxStickyRowCount
-  );
+  return stickyRows;
 }
 
 const TOUCH_LONG_PRESS_DELAY = 400;
@@ -1175,7 +1177,6 @@ export function FileTreeView({
   icons,
   instanceId,
   itemHeight = FILE_TREE_DEFAULT_ITEM_HEIGHT,
-  maxStickyFolderDepth = 4,
   overscan = FILE_TREE_DEFAULT_OVERSCAN,
   renamingEnabled = false,
   renderRowDecoration,
@@ -2109,9 +2110,7 @@ export function FileTreeView({
             controller,
             itemCount: nextItemCount,
             itemHeight,
-            maxStickyFolderDepth,
             scrollTop,
-            viewportHeight: nextViewportHeight,
           })
         : [];
       setStickyRows((previousRows) =>
@@ -2191,14 +2190,7 @@ export function FileTreeView({
       isScrollingRef.current = false;
       resizeObserver?.disconnect();
     };
-  }, [
-    controller,
-    itemHeight,
-    maxStickyFolderDepth,
-    overscan,
-    stickyFolders,
-    viewportHeight,
-  ]);
+  }, [controller, itemHeight, overscan, stickyFolders, viewportHeight]);
 
   useLayoutEffect(() => {
     if (contextMenuEnabled || contextMenuState == null) {

@@ -80,7 +80,6 @@ export type FileTreeItemHandle = FileTreeDirectoryHandle | FileTreeFileHandle;
 
 export interface FileTreeRenderOptions {
   itemHeight?: number;
-  maxStickyFolderDepth?: number;
   overscan?: number;
   stickyFolders?: boolean;
   viewportHeight?: number;

@@ -1133,13 +1133,10 @@ describe('file-tree render + scroll', () => {
     expect(insetLayout.windowRange).toEqual(scrolledRange);
     expect(insetLayout.topInset).toBe(FILE_TREE_DEFAULT_ITEM_HEIGHT * 3);
     expect(insetLayout.offsetHeight).toBe(
-      scrolledRange.start * FILE_TREE_DEFAULT_ITEM_HEIGHT +
-        FILE_TREE_DEFAULT_ITEM_HEIGHT * 3
+      scrolledRange.start * FILE_TREE_DEFAULT_ITEM_HEIGHT
     );
     expect(insetLayout.contentHeight).toBe(layout.windowHeight);
-    expect(insetLayout.windowHeight + insetLayout.topInset).toBe(
-      insetLayout.contentHeight
-    );
+    expect(insetLayout.windowHeight).toBe(insetLayout.contentHeight);
     expect(insetLayout.stickyInset).toBe(
       Math.min(0, FILE_TREE_DEFAULT_VIEWPORT_HEIGHT - insetLayout.contentHeight)
     );
@@ -1216,11 +1213,17 @@ describe('file-tree render + scroll', () => {
 
       expect(getStickyRowPaths(shadowRoot, dom)).toEqual([]);
 
-      scrollElement.scrollTop = 60;
+      scrollElement.scrollTop = 1;
       scrollElement.dispatchEvent(new dom.window.Event('scroll'));
       await flushDom();
 
-      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/lib/']);
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/', 'src/lib/']);
+
+      scrollElement.scrollTop = 30;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/']);
 
       fileTree.cleanUp();
 
@@ -1248,7 +1251,7 @@ describe('file-tree render + scroll', () => {
     }
   });
 
-  test('sticky folders start sticking on partial occlusion instead of waiting for full occlusion', async () => {
+  test('sticky folders cascade through every partially occluded leading directory', async () => {
     const { cleanup, dom } = installDom();
     try {
       const FileTree = await loadFileTree();
@@ -1257,9 +1260,12 @@ describe('file-tree render + scroll', () => {
 
       const fileTree = new FileTree({
         flattenEmptyDirectories: false,
-        initialExpandedPaths: ['src/lib/'],
-        paths: ['README.md', 'src/index.ts', 'src/lib/util.ts', 'zzz.ts'],
-        viewportHeight: 120,
+        initialExpandedPaths: ['arch/alpha/boot/tools/'],
+        paths: [
+          'arch/alpha/boot/tools/file.ts',
+          ...Array.from({ length: 10 }, (_, index) => `z${index}.ts`),
+        ],
+        viewportHeight: 180,
       });
 
       fileTree.render({ containerWrapper });
@@ -1278,21 +1284,141 @@ describe('file-tree render + scroll', () => {
       scrollElement.scrollTop = 1;
       scrollElement.dispatchEvent(new dom.window.Event('scroll'));
       await flushDom();
-      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/']);
-      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/');
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([
+        'arch/',
+        'arch/alpha/',
+        'arch/alpha/boot/',
+        'arch/alpha/boot/tools/',
+      ]);
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('arch/');
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('arch/alpha/');
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain(
+        'arch/alpha/boot/'
+      );
+      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain(
+        'arch/alpha/boot/tools/'
+      );
 
       scrollElement.scrollTop = 30;
       scrollElement.dispatchEvent(new dom.window.Event('scroll'));
       await flushDom();
-      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/']);
-      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/');
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([
+        'arch/',
+        'arch/alpha/',
+        'arch/alpha/boot/',
+      ]);
 
-      scrollElement.scrollTop = 31;
+      fileTree.cleanUp();
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('sticky folders drop at the exact subtree boundary and keep the list filled', async () => {
+    const { cleanup, dom } = installDom();
+    try {
+      const FileTree = await loadFileTree();
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+
+      const fileTree = new FileTree({
+        flattenEmptyDirectories: false,
+        initialExpandedPaths: ['arch/alpha/boot/tools/'],
+        paths: [
+          'arch/alpha/boot/tools/mkbb.c',
+          'arch/alpha/boot/tools/objstrip.c',
+          'arch/alpha/boot/bootloader.lds',
+          'arch/alpha/boot/bootp.c',
+          'arch/alpha/boot/head.S',
+          'arch/alpha/boot/main.c',
+        ],
+        viewportHeight: 180,
+      });
+
+      fileTree.render({ containerWrapper });
+      await flushDom();
+
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const scrollElement = shadowRoot?.querySelector(
+        '[data-file-tree-virtualized-scroll="true"]'
+      );
+      if (!(scrollElement instanceof dom.window.HTMLElement)) {
+        throw new Error('missing scroll element');
+      }
+
+      scrollElement.scrollTop = 59;
       scrollElement.dispatchEvent(new dom.window.Event('scroll'));
       await flushDom();
-      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/', 'src/lib/']);
-      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/');
-      expect(getMountedItemPaths(shadowRoot, dom)).not.toContain('src/lib/');
+
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([
+        'arch/',
+        'arch/alpha/',
+        'arch/alpha/boot/',
+        'arch/alpha/boot/tools/',
+      ]);
+
+      scrollElement.scrollTop = 60;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([
+        'arch/',
+        'arch/alpha/',
+        'arch/alpha/boot/',
+      ]);
+      const mountedPaths = getMountedItemPaths(shadowRoot, dom);
+      expect(mountedPaths.slice(0, 4)).toEqual([
+        'arch/alpha/boot/tools/',
+        'arch/alpha/boot/tools/mkbb.c',
+        'arch/alpha/boot/tools/objstrip.c',
+        'arch/alpha/boot/bootloader.lds',
+      ]);
+      expect(mountedPaths).not.toContain('arch/');
+      expect(mountedPaths).not.toContain('arch/alpha/');
+      expect(mountedPaths).not.toContain('arch/alpha/boot/');
+
+      fileTree.cleanUp();
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('collapsed directories do not become sticky', async () => {
+    const { cleanup, dom } = installDom();
+    try {
+      const FileTree = await loadFileTree();
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+
+      const fileTree = new FileTree({
+        flattenEmptyDirectories: false,
+        initialExpandedPaths: [],
+        paths: ['src/lib/util.ts', 'z.ts'],
+        viewportHeight: 60,
+      });
+
+      fileTree.render({ containerWrapper });
+      await flushDom();
+
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const scrollElement = shadowRoot?.querySelector(
+        '[data-file-tree-virtualized-scroll="true"]'
+      );
+      if (!(scrollElement instanceof dom.window.HTMLElement)) {
+        throw new Error('missing scroll element');
+      }
+
+      scrollElement.scrollTop = 1;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([]);
+
+      scrollElement.scrollTop = 30;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([]);
 
       fileTree.cleanUp();
     } finally {
@@ -1347,9 +1473,9 @@ describe('file-tree render + scroll', () => {
       });
 
       expect(scrollElement.scrollTop).toBe(60);
-      expect(stickyPaths).toEqual(['src/lib/']);
+      expect(stickyPaths).toEqual(['src/']);
       expect(layout.firstVisibleIndex).toBe(
-        expectedController.getVisibleIndex('src/lib/util.ts')
+        expectedController.getVisibleIndex('src/index.ts')
       );
       expect(
         getPixelStyleValue(getVirtualList(shadowRoot, dom), 'height')
@@ -1472,23 +1598,18 @@ describe('file-tree render + scroll', () => {
       await flushDom();
       expect(fileTree.getSelectedPaths()).toEqual(['src/lib/util.ts']);
 
-      scrollElement.scrollTop = 180;
+      scrollElement.scrollTop = 149;
       scrollElement.dispatchEvent(new dom.window.Event('scroll'));
       await flushDom();
 
-      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/lib/']);
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/', 'src/lib/']);
 
       clickStickyRow(shadowRoot, dom, 'src/lib/');
       await flushDom();
       await flushDom();
 
-      expect(scrollElement.scrollTop).toBeLessThan(180);
-      expect(getFocusedTreeElement(shadowRoot, dom)?.dataset.itemPath).toBe(
-        'src/lib/'
-      );
-      expect(
-        getItemButton(shadowRoot, dom, 'src/lib/').dataset.itemParked
-      ).not.toBe('true');
+      expect(scrollElement.scrollTop).toBeLessThan(149);
+      expect(fileTree.getItem('src/lib/')?.isFocused()).toBe(true);
       expect(fileTree.getSelectedPaths()).toEqual(['src/lib/util.ts']);
 
       fileTree.cleanUp();
@@ -1606,7 +1727,7 @@ describe('file-tree render + scroll', () => {
     }
   });
 
-  test('sticky overlay stays capped by visible space and still honors maxStickyFolderDepth', async () => {
+  test('sticky overlay can fill the viewport for a deep leading folder chain', async () => {
     const { cleanup, dom } = installDom();
     try {
       const FileTree = await loadFileTree();
@@ -1614,70 +1735,55 @@ describe('file-tree render + scroll', () => {
         'a/b/c/d/e/file.ts',
         ...Array.from({ length: 10 }, (_, index) => `z${index}.ts`),
       ];
-
-      const defaultWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(defaultWrapper);
-      const defaultTree = new FileTree({
-        flattenEmptyDirectories: false,
-        initialExpandedPaths: ['a/b/c/d/e/'],
-        paths: deepPaths,
-        viewportHeight: 120,
-      });
-
-      defaultTree.render({ containerWrapper: defaultWrapper });
-      await flushDom();
-
-      const defaultShadowRoot = defaultTree.getFileTreeContainer()?.shadowRoot;
-      const defaultScrollElement = defaultShadowRoot?.querySelector(
-        '[data-file-tree-virtualized-scroll="true"]'
-      );
-      if (!(defaultScrollElement instanceof dom.window.HTMLElement)) {
-        throw new Error('missing default scroll element');
-      }
-
-      defaultScrollElement.scrollTop = 150;
-      defaultScrollElement.dispatchEvent(new dom.window.Event('scroll'));
-      await flushDom();
-
-      expect(getStickyRowPaths(defaultShadowRoot, dom)).toEqual([
+      const expectedStickyPaths = [
+        'a/',
+        'a/b/',
         'a/b/c/',
         'a/b/c/d/',
         'a/b/c/d/e/',
-      ]);
+      ];
 
-      defaultTree.cleanUp();
-
-      const customWrapper = dom.window.document.createElement('div');
-      dom.window.document.body.appendChild(customWrapper);
-      const customTree = new FileTree({
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+      const fileTree = new FileTree({
         flattenEmptyDirectories: false,
         initialExpandedPaths: ['a/b/c/d/e/'],
-        maxStickyFolderDepth: 2,
         paths: deepPaths,
         viewportHeight: 120,
       });
 
-      customTree.render({ containerWrapper: customWrapper });
+      fileTree.render({ containerWrapper });
       await flushDom();
 
-      const customShadowRoot = customTree.getFileTreeContainer()?.shadowRoot;
-      const customScrollElement = customShadowRoot?.querySelector(
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const scrollElement = shadowRoot?.querySelector(
         '[data-file-tree-virtualized-scroll="true"]'
       );
-      if (!(customScrollElement instanceof dom.window.HTMLElement)) {
-        throw new Error('missing custom scroll element');
+      if (!(scrollElement instanceof dom.window.HTMLElement)) {
+        throw new Error('missing scroll element');
       }
 
-      customScrollElement.scrollTop = 150;
-      customScrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual([]);
+
+      scrollElement.scrollTop = 1;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
       await flushDom();
 
-      expect(getStickyRowPaths(customShadowRoot, dom)).toEqual([
-        'a/b/c/d/',
-        'a/b/c/d/e/',
-      ]);
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(expectedStickyPaths);
+      const mountedPaths = getMountedItemPaths(shadowRoot, dom);
+      for (const path of expectedStickyPaths) {
+        expect(mountedPaths).not.toContain(path);
+      }
 
-      customTree.cleanUp();
+      const stickyOverlayContent = shadowRoot?.querySelector(
+        '[data-file-tree-sticky-overlay-content="true"]'
+      );
+      if (!(stickyOverlayContent instanceof dom.window.HTMLElement)) {
+        throw new Error('missing sticky overlay content');
+      }
+      expect(stickyOverlayContent.style.height).toBe('150px');
+
+      fileTree.cleanUp();
     } finally {
       cleanup();
     }
@@ -2837,7 +2943,7 @@ describe('file-tree render + scroll', () => {
       viewport.dispatchEvent(new dom.window.Event('scroll'));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(shadowRoot?.innerHTML).toContain('src/file050.ts');
+      expect(getMountedItemPaths(shadowRoot, dom)[0]).toBe('src/file051.ts');
 
       const sourceDirectory = fileTree.getItem('src/');
       if (
@@ -2851,8 +2957,10 @@ describe('file-tree render + scroll', () => {
       sourceDirectory.collapse();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(shadowRoot?.innerHTML).not.toContain('src/file050.ts');
-      expect(shadowRoot?.innerHTML).toContain('z010.ts');
+      const mountedPathsAfterCollapse = getMountedItemPaths(shadowRoot, dom);
+      expect(mountedPathsAfterCollapse).not.toContain('src/file050.ts');
+      expect(mountedPathsAfterCollapse[0]).toBe('z001.ts');
+      expect(mountedPathsAfterCollapse).toContain('z010.ts');
 
       fileTree.cleanUp();
     } finally {

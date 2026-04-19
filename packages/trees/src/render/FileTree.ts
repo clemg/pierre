@@ -127,11 +127,7 @@ export class FileTree
   readonly #slotHost = new FileTreeManagedSlotHost();
   readonly #viewOptions: Pick<
     FileTreeOptions,
-    | 'itemHeight'
-    | 'maxStickyFolderDepth'
-    | 'overscan'
-    | 'stickyFolders'
-    | 'viewportHeight'
+    'itemHeight' | 'overscan' | 'stickyFolders' | 'viewportHeight'
   >;
   #fileTreeContainer: HTMLElement | undefined;
   #gitStatusState: FileTreeGitStatusState | null;
@@ -149,7 +145,6 @@ export class FileTree
       initialSearchQuery,
       icons,
       itemHeight,
-      maxStickyFolderDepth,
       onSearchChange,
       onSelectionChange,
       overscan,
@@ -170,7 +165,6 @@ export class FileTree
     this.#searchEnabled = search === true;
     this.#viewOptions = {
       itemHeight,
-      maxStickyFolderDepth,
       overscan,
       stickyFolders,
       viewportHeight,
@@ -403,7 +397,6 @@ export class FileTree
 
   #getResolvedViewOptions(host: HTMLElement): {
     itemHeight?: number;
-    maxStickyFolderDepth?: number;
     overscan?: number;
     stickyFolders?: boolean;
     viewportHeight: number;
@@ -415,7 +408,6 @@ export class FileTree
 
     return {
       itemHeight: this.#viewOptions.itemHeight,
-      maxStickyFolderDepth: this.#viewOptions.maxStickyFolderDepth,
       overscan: this.#viewOptions.overscan,
       stickyFolders: this.#viewOptions.stickyFolders,
       viewportHeight,
@@ -635,7 +627,6 @@ export function preloadFileTree(options: FileTreeOptions): FileTreeSsrPayload {
     initialSearchQuery,
     icons,
     itemHeight,
-    maxStickyFolderDepth,
     onSearchChange: _onSearchChange,
     onSelectionChange: _onSelectionChange,
     overscan,
@@ -673,7 +664,6 @@ export function preloadFileTree(options: FileTreeOptions): FileTreeSsrPayload {
       icons,
       instanceId: resolvedId,
       itemHeight,
-      maxStickyFolderDepth,
       overscan,
       renamingEnabled: renaming != null && renaming !== false,
       renderRowDecoration,

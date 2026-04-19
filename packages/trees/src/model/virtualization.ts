@@ -149,8 +149,9 @@ export function computeWindowRange(
   );
 }
 
-// Reserves sticky-overlay space by moving the same pixels from the window's
-// flow height into its top offset, which keeps total scroll height constant.
+// Reserves sticky-overlay space while still selecting rows from the list pane
+// below that overlay. The scroll height stays constant; only the list window's
+// visible coordinates move downward by the resolved inset.
 export function computeInsetWindowLayout({
   currentRange = EMPTY_RANGE,
   itemCount,
@@ -187,11 +188,16 @@ export function computeInsetWindowLayout({
     };
   }
 
+  const maxItemTop = Math.max(0, totalHeight - itemHeight);
+  const effectiveScrollTop = Math.max(
+    0,
+    Math.min(scrollTop + resolvedTopInset, maxItemTop)
+  );
   const visibleRange = computeVisibleRange({
     itemCount,
     itemHeight,
     overscan,
-    scrollTop,
+    scrollTop: effectiveScrollTop,
     viewportHeight: visiblePaneHeight,
   });
   const windowRange = computeWindowRange(
@@ -199,7 +205,7 @@ export function computeInsetWindowLayout({
       itemCount,
       itemHeight,
       overscan,
-      scrollTop,
+      scrollTop: effectiveScrollTop,
       viewportHeight: visiblePaneHeight,
     },
     currentRange
@@ -213,15 +219,13 @@ export function computeInsetWindowLayout({
     contentHeight,
     firstVisibleIndex: visibleRange.start,
     offsetHeight:
-      windowRange.end < windowRange.start
-        ? 0
-        : windowRange.start * itemHeight + resolvedTopInset,
+      windowRange.end < windowRange.start ? 0 : windowRange.start * itemHeight,
     stickyInset: Math.min(0, viewportHeight - contentHeight),
     topInset: resolvedTopInset,
     totalHeight,
     visiblePaneHeight,
     visibleRange,
-    windowHeight: Math.max(0, contentHeight - resolvedTopInset),
+    windowHeight: contentHeight,
     windowRange,
   };
 }
