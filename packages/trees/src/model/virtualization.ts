@@ -1,26 +1,9 @@
-import type {
-  FileTreeRange,
-  FileTreeStickyWindowLayout,
-  FileTreeViewportMetrics,
-} from './types';
+import type { FileTreeRange, FileTreeViewportMetrics } from './types';
 
 export const FILE_TREE_DEFAULT_ITEM_HEIGHT = 30;
 export const FILE_TREE_DEFAULT_OVERSCAN = 10;
 export const FILE_TREE_DEFAULT_VIEWPORT_HEIGHT = 420;
 export const EMPTY_RANGE: FileTreeRange = { start: 0, end: -1 };
-
-export interface FileTreeInsetWindowLayout {
-  contentHeight: number;
-  firstVisibleIndex: number;
-  offsetHeight: number;
-  stickyInset: number;
-  topInset: number;
-  totalHeight: number;
-  visiblePaneHeight: number;
-  visibleRange: FileTreeRange;
-  windowHeight: number;
-  windowRange: FileTreeRange;
-}
 
 function normalizeRange(
   range: FileTreeRange,
@@ -32,38 +15,7 @@ function normalizeRange(
 
   const start = Math.max(0, Math.min(range.start, itemCount - 1));
   const end = Math.max(start, Math.min(range.end, itemCount - 1));
-  return { start, end };
-}
-
-function clampTopInset({
-  itemCount,
-  itemHeight,
-  topInset,
-  viewportHeight,
-}: Pick<
-  FileTreeViewportMetrics,
-  'itemCount' | 'itemHeight' | 'viewportHeight'
-> & {
-  topInset: number;
-}): number {
-  if (itemCount <= 0 || viewportHeight <= 0) {
-    return 0;
-  }
-
-  const requestedInset = Math.max(0, topInset);
-  const maxInset = Math.max(
-    0,
-    viewportHeight - Math.min(itemHeight, viewportHeight)
-  );
-
-  return Math.min(requestedInset, maxInset);
-}
-
-export function rangesEqual(
-  left: FileTreeRange,
-  right: FileTreeRange
-): boolean {
-  return left.start === right.start && left.end === right.end;
+  return { end, start };
 }
 
 export function computeFirstVisibleIndex({
@@ -104,8 +56,8 @@ export function computeVisibleRange({
   }
 
   return {
-    start: Math.max(0, rawStart),
     end: Math.min(itemCount - 1, rawEnd),
+    start: Math.max(0, rawStart),
   };
 }
 
@@ -120,8 +72,8 @@ function expandRange(
 
   return normalizeRange(
     {
-      start: range.start - overscan,
       end: range.end + overscan,
+      start: range.start - overscan,
     },
     itemCount
   );
@@ -147,119 +99,4 @@ export function computeWindowRange(
     metrics.itemCount,
     metrics.overscan ?? FILE_TREE_DEFAULT_OVERSCAN
   );
-}
-
-// Reserves sticky-overlay space while still selecting rows from the list pane
-// below that overlay. The scroll height stays constant; only the list window's
-// visible coordinates move downward by the resolved inset.
-export function computeInsetWindowLayout({
-  currentRange = EMPTY_RANGE,
-  itemCount,
-  itemHeight,
-  overscan,
-  scrollTop,
-  topInset = 0,
-  viewportHeight,
-}: FileTreeViewportMetrics & {
-  currentRange?: FileTreeRange;
-  topInset?: number;
-}): FileTreeInsetWindowLayout {
-  const resolvedTopInset = clampTopInset({
-    itemCount,
-    itemHeight,
-    topInset,
-    viewportHeight,
-  });
-  const visiblePaneHeight = Math.max(0, viewportHeight - resolvedTopInset);
-  const totalHeight = Math.max(0, itemCount * itemHeight);
-
-  if (itemCount <= 0 || visiblePaneHeight <= 0) {
-    return {
-      contentHeight: 0,
-      firstVisibleIndex: -1,
-      offsetHeight: 0,
-      stickyInset: 0,
-      topInset: 0,
-      totalHeight,
-      visiblePaneHeight,
-      visibleRange: EMPTY_RANGE,
-      windowHeight: 0,
-      windowRange: EMPTY_RANGE,
-    };
-  }
-
-  const maxItemTop = Math.max(0, totalHeight - itemHeight);
-  const effectiveScrollTop = Math.max(
-    0,
-    Math.min(scrollTop + resolvedTopInset, maxItemTop)
-  );
-  const visibleRange = computeVisibleRange({
-    itemCount,
-    itemHeight,
-    overscan,
-    scrollTop: effectiveScrollTop,
-    viewportHeight: visiblePaneHeight,
-  });
-  const windowRange = computeWindowRange(
-    {
-      itemCount,
-      itemHeight,
-      overscan,
-      scrollTop: effectiveScrollTop,
-      viewportHeight: visiblePaneHeight,
-    },
-    currentRange
-  );
-  const contentHeight =
-    windowRange.end < windowRange.start
-      ? 0
-      : (windowRange.end - windowRange.start + 1) * itemHeight;
-
-  return {
-    contentHeight,
-    firstVisibleIndex: visibleRange.start,
-    offsetHeight:
-      windowRange.end < windowRange.start ? 0 : windowRange.start * itemHeight,
-    stickyInset: Math.min(0, viewportHeight - contentHeight),
-    topInset: resolvedTopInset,
-    totalHeight,
-    visiblePaneHeight,
-    visibleRange,
-    windowHeight: contentHeight,
-    windowRange,
-  };
-}
-
-export function computeStickyWindowLayout({
-  itemCount,
-  itemHeight,
-  range,
-  viewportHeight,
-}: {
-  itemCount: number;
-  itemHeight: number;
-  range: FileTreeRange;
-  viewportHeight: number;
-}): FileTreeStickyWindowLayout {
-  const totalHeight = Math.max(0, itemCount * itemHeight);
-  if (range.end < range.start) {
-    return {
-      totalHeight,
-      offsetHeight: 0,
-      windowHeight: 0,
-      stickyInset: 0,
-    };
-  }
-
-  const offsetHeight = range.start * itemHeight;
-  const windowHeight = (range.end - range.start + 1) * itemHeight;
-
-  return {
-    totalHeight,
-    offsetHeight,
-    windowHeight,
-    // The sticky window is usually taller than the viewport once overscan is
-    // included, so a negative inset keeps the full overscanned slice pinned.
-    stickyInset: Math.min(0, viewportHeight - windowHeight),
-  };
 }
