@@ -87,8 +87,8 @@ function getItemButton(
 async function loadFileTreeController(): Promise<
   typeof import('../src/index').FileTreeController
 > {
-  const mod = await import('../src/model/FileTreeController');
-  const controller = Object.values(mod).find(
+  const module = await import('../src/model/FileTreeController');
+  const controller = Object.values(module).find(
     (value): value is typeof import('../src/index').FileTreeController =>
       typeof value === 'function' &&
       'prototype' in value &&
@@ -102,8 +102,8 @@ async function loadFileTreeController(): Promise<
 }
 
 async function loadFileTree(): Promise<typeof import('../src/index').FileTree> {
-  const mod = await import('../src/render/FileTree');
-  const fileTree = Object.values(mod).find(
+  const module = await import('../src/render/FileTree');
+  const fileTree = Object.values(module).find(
     (value): value is typeof import('../src/index').FileTree =>
       typeof value === 'function' &&
       'prototype' in value &&

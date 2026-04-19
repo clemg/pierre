@@ -784,43 +784,6 @@ export class FileTreeController
       });
   }
 
-  // Resolves the sticky ancestor chain from actual visible rows so search
-  // filtering and flattened directories stay truthful to what the view renders.
-  public getVisibleAncestorRows(index: number): readonly FileTreeVisibleRow[] {
-    if (index < 0 || index >= this.#visibleCount) {
-      return [];
-    }
-
-    const visibleRow = this.getVisibleRows(index, index)[0] ?? null;
-    if (visibleRow == null || visibleRow.ancestorPaths.length === 0) {
-      return [];
-    }
-
-    const ancestorRows: FileTreeVisibleRow[] = [];
-    for (const ancestorPath of visibleRow.ancestorPaths) {
-      const ancestorIndex = this.#getVisibleIndexByPath(ancestorPath);
-      if (ancestorIndex < 0) {
-        continue;
-      }
-
-      const ancestorRow = this.getVisibleRows(ancestorIndex, ancestorIndex)[0];
-      if (ancestorRow != null) {
-        ancestorRows.push(ancestorRow);
-      }
-    }
-
-    return ancestorRows;
-  }
-
-  // Sticky-row clicks need a stable way to find the real rendered row without
-  // reconstructing search/flattening behavior from paths alone.
-  public getVisibleIndex(path: string): number {
-    const resolvedPath = this.#store.getPathInfo(path)?.path ?? null;
-    return resolvedPath == null
-      ? -1
-      : this.#getVisibleIndexByPath(resolvedPath);
-  }
-
   /**
    * Returns the minimal Phase 2/3 item handle for the given path.
    *

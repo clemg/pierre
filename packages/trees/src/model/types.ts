@@ -168,6 +168,13 @@ export interface FileTreeRange {
   start: number;
 }
 
+export interface FileTreeStickyWindowLayout {
+  offsetHeight: number;
+  stickyInset: number;
+  totalHeight: number;
+  windowHeight: number;
+}
+
 export interface FileTreeViewProps extends FileTreeRenderOptions {
   composition?: FileTreeCompositionOptions;
   controller: import('./FileTreeController').FileTreeController;

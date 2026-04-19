@@ -153,8 +153,8 @@ function getSearchInput(shadowRoot: ShadowRoot, dom: JSDOM): HTMLInputElement {
 }
 
 async function loadFileTree(): Promise<typeof import('../src/index').FileTree> {
-  const mod = await import('../src/render/FileTree');
-  const fileTree = Object.values(mod).find(
+  const module = await import('../src/render/FileTree');
+  const fileTree = Object.values(module).find(
     (value): value is typeof import('../src/index').FileTree =>
       typeof value === 'function' &&
       'prototype' in value &&

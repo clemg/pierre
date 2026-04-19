@@ -4,7 +4,6 @@ import {
   createContext,
   type ReactNode,
   startTransition,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -52,18 +51,18 @@ export function TreesDevSettingsProvider({
   );
   const skipCookieWriteRef = useRef(false);
 
-  const setFlattenEmptyDirectories = useCallback((val: boolean) => {
+  const setFlattenEmptyDirectories = (val: boolean) => {
     startTransition(() => setFlattenEmptyDirectoriesState(val));
-  }, []);
+  };
 
-  const handleResetControls = useCallback(() => {
+  const handleResetControls = () => {
     skipCookieWriteRef.current = true;
     document.cookie = `${FILE_TREE_COOKIE_VERSION_NAME}=; path=/; max-age=0`;
     document.cookie = `${FILE_TREE_COOKIE_FLATTEN}=; path=/; max-age=0`;
     startTransition(() => {
       setFlattenEmptyDirectoriesState(defaultFlattenEmptyDirectories);
     });
-  }, [defaultFlattenEmptyDirectories]);
+  };
 
   const cookieMaxAge = 60 * 60 * 24 * 365;
   useEffect(() => {
@@ -84,7 +83,7 @@ export function TreesDevSettingsProvider({
       setFlattenEmptyDirectories,
       handleResetControls,
     }),
-    [flattenEmptyDirectories, handleResetControls, setFlattenEmptyDirectories]
+    [flattenEmptyDirectories]
   );
 
   return (
