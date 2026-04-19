@@ -21,6 +21,10 @@ import {
   FILE_TREE_RENAME_VIEW,
   FileTreeController,
 } from '../model/FileTreeController';
+import {
+  computeFileTreeLayout,
+  type FileTreeLayoutSnapshot,
+} from '../model/fileTreeLayout';
 import type {
   FileTreeContextMenuItem,
   FileTreeContextMenuOpenContext,
@@ -32,13 +36,9 @@ import type {
   FileTreeVisibleRow,
 } from '../model/types';
 import {
-  computeFirstVisibleIndex,
-  computeInsetWindowLayout,
-  EMPTY_RANGE,
   FILE_TREE_DEFAULT_ITEM_HEIGHT,
   FILE_TREE_DEFAULT_OVERSCAN,
   FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
-  rangesEqual,
 } from '../model/virtualization';
 import type { SVGSpriteNames } from '../sprite';
 import type { GitStatus } from '../types';
@@ -170,94 +170,62 @@ function getFileTreeRowAriaLabel(row: FileTreeVisibleRow): string {
   return flattenedSegments.map((segment) => segment.name).join(' / ');
 }
 
-function stickyRowsEqual(
-  left: readonly FileTreeVisibleRow[],
-  right: readonly FileTreeVisibleRow[]
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every((row, index) => row.path === right[index]?.path)
+type FileTreeViewLayoutState = {
+  snapshot: FileTreeLayoutSnapshot<FileTreeVisibleRow>;
+  visibleRows: readonly FileTreeVisibleRow[];
+};
+
+// Sticky opt-out should only disable sticky membership; it must not change the
+// controller's visible projection or the list geometry derived from that order.
+function getLayoutInputRows(
+  rows: readonly FileTreeVisibleRow[],
+  stickyFolders: boolean
+): readonly FileTreeVisibleRow[] {
+  if (stickyFolders) {
+    return rows;
+  }
+
+  return rows.map((row) =>
+    row.kind === 'directory' && row.isExpanded
+      ? { ...row, isExpanded: false }
+      : row
   );
 }
 
-// Sticky folders track the expanded directory chain that still owns the content
-// immediately below each sticky slot. That makes deep folders drop as soon as
-// their subtree stops occupying the space beneath the overlay.
-function resolveStickyRowsForScroll({
+// Builds one visible-row snapshot so the layout engine and renderer consume the
+// same projection, sticky chain, occlusion window, and mounted list slice.
+function computeFileTreeViewLayoutState({
   controller,
-  itemCount,
   itemHeight,
+  overscan,
   scrollTop,
+  stickyFolders,
+  viewportHeight,
 }: {
   controller: FileTreeController;
-  itemCount: number;
   itemHeight: number;
+  overscan: number;
   scrollTop: number;
-}): readonly FileTreeVisibleRow[] {
-  if (itemCount <= 0 || scrollTop <= 0) {
-    return [];
-  }
-
-  const getExpandedDirectoryChainAtIndex = (
-    visibleIndex: number
-  ): readonly FileTreeVisibleRow[] => {
-    if (visibleIndex < 0 || visibleIndex >= itemCount) {
-      return [];
+  stickyFolders: boolean;
+  viewportHeight: number;
+}): FileTreeViewLayoutState {
+  const visibleCount = controller.getVisibleCount();
+  const visibleRows =
+    visibleCount <= 0 ? [] : controller.getVisibleRows(0, visibleCount - 1);
+  const snapshot = computeFileTreeLayout(
+    getLayoutInputRows(visibleRows, stickyFolders),
+    {
+      itemHeight,
+      overscan,
+      scrollTop,
+      viewportHeight,
     }
+  );
 
-    const row =
-      controller.getVisibleRows(visibleIndex, visibleIndex)[0] ?? null;
-    if (row == null) {
-      return [];
-    }
-
-    const expandedAncestors = controller
-      .getVisibleAncestorRows(visibleIndex)
-      .filter((candidateRow) => candidateRow.isExpanded);
-    if (row.kind !== 'directory' || !row.isExpanded) {
-      return expandedAncestors;
-    }
-
-    return [...expandedAncestors, row];
+  return {
+    snapshot,
+    visibleRows,
   };
-
-  const firstStickyRow = getExpandedDirectoryChainAtIndex(
-    computeFirstVisibleIndex({
-      itemCount,
-      itemHeight,
-      scrollTop,
-    })
-  )[0];
-  if (firstStickyRow == null) {
-    return [];
-  }
-
-  const stickyRows = [firstStickyRow];
-  for (let slotDepth = 1; slotDepth < itemCount; slotDepth += 1) {
-    const probeIndex = computeFirstVisibleIndex({
-      itemCount,
-      itemHeight,
-      scrollTop,
-      topInset: (slotDepth + 1) * itemHeight,
-    });
-    const candidateRow =
-      getExpandedDirectoryChainAtIndex(probeIndex)[slotDepth];
-    if (candidateRow == null) {
-      break;
-    }
-
-    const previousStickyPath = stickyRows.at(-1)?.path ?? null;
-    if (
-      previousStickyPath != null &&
-      !candidateRow.ancestorPaths.includes(previousStickyPath)
-    ) {
-      break;
-    }
-
-    stickyRows.push(candidateRow);
-  }
-
-  return stickyRows;
 }
 
 const TOUCH_LONG_PRESS_DELAY = 400;
@@ -562,6 +530,10 @@ function getParkedFocusedRowOffset(
   range: { start: number; end: number },
   windowHeight: number
 ): number | null {
+  if (range.end < range.start) {
+    return null;
+  }
+
   if (focusedIndex < range.start) {
     return -itemHeight;
   }
@@ -1051,6 +1023,8 @@ function renderStickyRow(
   row: FileTreeVisibleRow,
   resolveIcon: ReturnType<typeof createFileTreeIconResolver>['resolveIcon'],
   itemHeight: number,
+  top: number,
+  zIndex: number,
   onClick: (path: string) => void,
   key: string | number
 ): JSX.Element {
@@ -1069,7 +1043,14 @@ function renderStickyRow(
       onMouseDown={(event) => {
         event.preventDefault();
       }}
-      style={{ minHeight: `${itemHeight}px` }}
+      style={{
+        left: '0',
+        minHeight: `${itemHeight}px`,
+        position: 'absolute',
+        right: '0',
+        top: `${top}px`,
+        zIndex: `${zIndex}`,
+      }}
       tabIndex={-1}
     >
       {renderFileTreeRowContent(row, resolveIcon, null)}
@@ -1080,6 +1061,7 @@ function renderStickyRow(
 function renderRangeChildren(
   controller: FileTreeController,
   renameView: ReturnType<FileTreeController[typeof FILE_TREE_RENAME_VIEW]>,
+  visibleRows: readonly FileTreeVisibleRow[],
   range: { start: number; end: number },
   hiddenRowPaths: ReadonlySet<string>,
   activeItemPath: string | null,
@@ -1132,8 +1114,8 @@ function renderRangeChildren(
   // overscanned window does not make still-visible rows jump to a new slot.
   // That keeps sticky virtualization Safari-friendly while avoiding large
   // layout shifts during scroll in browsers that track CLS inside scrollers.
-  return controller
-    .getVisibleRows(range.start, range.end)
+  return visibleRows
+    .slice(range.start, range.end + 1)
     .filter((row) => !hiddenRowPaths.has(getFileTreeRowPath(row)))
     .map((row, slotIndex) =>
       renderStyledRow(
@@ -1243,28 +1225,17 @@ export function FileTreeView({
 
   const pendingStickyFocusPathRef = useRef<string | null>(null);
 
-  const [itemCount, setItemCount] = useState(() =>
-    controller.getVisibleCount()
-  );
-  const [resolvedViewportHeight, setResolvedViewportHeight] =
-    useState<number>(viewportHeight);
-  const [resolvedScrollTop, setResolvedScrollTop] = useState(0);
-  const [range, setRange] = useState(
-    () =>
-      computeInsetWindowLayout({
-        currentRange: EMPTY_RANGE,
-        itemCount: controller.getVisibleCount(),
-        itemHeight,
-        overscan,
-        scrollTop: 0,
-        topInset: 0,
-        viewportHeight,
-      }).windowRange
+  const [layoutState, setLayoutState] = useState<FileTreeViewLayoutState>(() =>
+    computeFileTreeViewLayoutState({
+      controller,
+      itemHeight,
+      overscan,
+      scrollTop: 0,
+      stickyFolders,
+      viewportHeight,
+    })
   );
   const [hasStickyUiMount, setHasStickyUiMount] = useState(false);
-  const [stickyRows, setStickyRows] = useState<readonly FileTreeVisibleRow[]>(
-    []
-  );
   useEffect(() => {
     setHasStickyUiMount(true);
   }, []);
@@ -1301,8 +1272,21 @@ export function FileTreeView({
   const dragTarget = dragSession?.target ?? null;
   const draggedPrimaryPath = dragSession?.primaryPath ?? null;
   const treeDomId = getFileTreeRootDomId(instanceId);
+  const { snapshot: layoutSnapshot, visibleRows } = layoutState;
+  const resolvedScrollTop = layoutSnapshot.physical.scrollTop;
+  const resolvedViewportHeight = layoutSnapshot.physical.viewportHeight;
+  const range = useMemo(
+    () => ({
+      end: layoutSnapshot.window.endIndex,
+      start: layoutSnapshot.window.startIndex,
+    }),
+    [layoutSnapshot.window.endIndex, layoutSnapshot.window.startIndex]
+  );
+  const stickyRows = layoutSnapshot.sticky.rows;
   const focusedRowIsMounted =
-    focusedIndex >= range.start && focusedIndex <= range.end;
+    focusedIndex >= 0 &&
+    focusedIndex >= range.start &&
+    focusedIndex <= range.end;
   const renderDecorationForRow = useCallback(
     (
       row: FileTreeVisibleRow,
@@ -2089,49 +2073,21 @@ export function FileTreeView({
         nextItemCount * itemHeight - nextViewportHeight
       );
       // Collapse can shrink total height under the current scroll position, so
-      // clamp scrollTop before recomputing the visible window range.
+      // clamp scrollTop before recomputing the projected layout snapshot.
       if (scrollElement.scrollTop > maxScrollTop) {
         scrollElement.scrollTop = maxScrollTop;
       }
-      const scrollTop = Math.min(scrollElement.scrollTop, maxScrollTop);
-      setItemCount((previousCount) =>
-        previousCount === nextItemCount ? previousCount : nextItemCount
-      );
-      setResolvedViewportHeight((previousHeight) =>
-        previousHeight === nextViewportHeight
-          ? previousHeight
-          : nextViewportHeight
-      );
-      setResolvedScrollTop((previousScrollTop) =>
-        previousScrollTop === scrollTop ? previousScrollTop : scrollTop
-      );
-      const nextStickyRows = stickyFolders
-        ? resolveStickyRowsForScroll({
-            controller,
-            itemCount: nextItemCount,
-            itemHeight,
-            scrollTop,
-          })
-        : [];
-      setStickyRows((previousRows) =>
-        stickyRowsEqual(previousRows, nextStickyRows)
-          ? previousRows
-          : nextStickyRows
-      );
-      setRange((previousRange) => {
-        const nextRange = computeInsetWindowLayout({
-          currentRange: previousRange,
-          itemCount: nextItemCount,
+
+      setLayoutState(
+        computeFileTreeViewLayoutState({
+          controller,
           itemHeight,
           overscan,
-          scrollTop,
-          topInset: nextStickyRows.length * itemHeight,
+          scrollTop: Math.min(scrollElement.scrollTop, maxScrollTop),
+          stickyFolders,
           viewportHeight: nextViewportHeight,
-        }).windowRange;
-        return rangesEqual(previousRange, nextRange)
-          ? previousRange
-          : nextRange;
-      });
+        })
+      );
     };
 
     updateViewportRef.current = update;
@@ -2306,11 +2262,11 @@ export function FileTreeView({
     };
   }, [closeContextMenu, contextMenuState]);
 
-  const totalScrollableHeight = itemCount * itemHeight;
+  const totalScrollableHeight = layoutSnapshot.physical.totalHeight;
 
-  const stickyOverlayHeight = stickyRows.length * itemHeight;
+  const stickyOverlayHeight = layoutSnapshot.sticky.height;
   const stickyRowPathSet = useMemo(
-    () => new Set(stickyRows.map((row) => getFileTreeRowPath(row))),
+    () => new Set(stickyRows.map((entry) => getFileTreeRowPath(entry.row))),
     [stickyRows]
   );
 
@@ -2434,12 +2390,12 @@ export function FileTreeView({
     itemHeight,
     isRenaming,
     isSearchOpen,
-    itemCount,
     range,
     resolvedViewportHeight,
     searchEnabled,
-    totalScrollableHeight,
     stickyOverlayHeight,
+    totalScrollableHeight,
+    visibleRows,
   ]);
 
   const focusTriggerPath =
@@ -2460,11 +2416,11 @@ export function FileTreeView({
         : (rowButtonRefs.current.get(triggerPath) ?? null);
     updateTriggerPosition(triggerButton);
   }, [
-    itemCount,
     range,
     resolvedViewportHeight,
     triggerPath,
     updateTriggerPosition,
+    visibleRows,
   ]);
 
   const handleTreePointerOver = useCallback((event: Event): void => {
@@ -2586,27 +2542,9 @@ export function FileTreeView({
     dragRowSnapshotRef.current = null;
   };
 
-  const stickyLayout = useMemo(
-    () =>
-      computeInsetWindowLayout({
-        currentRange: range,
-        itemCount,
-        itemHeight,
-        overscan,
-        scrollTop: resolvedScrollTop,
-        topInset: stickyOverlayHeight,
-        viewportHeight: resolvedViewportHeight,
-      }),
-    [
-      itemCount,
-      itemHeight,
-      overscan,
-      range,
-      resolvedScrollTop,
-      resolvedViewportHeight,
-      stickyOverlayHeight,
-    ]
-  );
+  const windowHeight = layoutSnapshot.window.height;
+  const windowOffsetTop = layoutSnapshot.window.offsetTop;
+  const windowTranslateY = windowOffsetTop - resolvedScrollTop;
   const shouldRenderParkedFocusedRow =
     activeItemPath === focusedPath ||
     restoreTreeFocusAfterSearchCloseRef.current;
@@ -2615,7 +2553,7 @@ export function FileTreeView({
     shouldRenderParkedFocusedRow &&
     !focusedRowIsMounted &&
     focusedIndex >= 0
-      ? (controller.getVisibleRows(focusedIndex, focusedIndex)[0] ?? null)
+      ? (visibleRows[focusedIndex] ?? null)
       : null;
   const parkedFocusedRowOffset =
     parkedFocusedRow == null
@@ -2624,7 +2562,7 @@ export function FileTreeView({
           focusedIndex,
           itemHeight,
           range,
-          stickyLayout.contentHeight
+          windowHeight
         );
   const draggedRowSnapshot = dragRowSnapshotRef.current;
   const draggedRowIsMounted =
@@ -2648,12 +2586,10 @@ export function FileTreeView({
           parkedDraggedRow.index,
           itemHeight,
           range,
-          stickyLayout.contentHeight
+          windowHeight
         );
   const focusedVisibleRow =
-    focusedIndex >= 0
-      ? (controller.getVisibleRows(focusedIndex, focusedIndex)[0] ?? null)
-      : null;
+    focusedIndex >= 0 ? (visibleRows[focusedIndex] ?? null) : null;
   const guideStyleText = getFileTreeGuideStyleText(
     focusedVisibleRow?.ancestorPaths.at(-1) ?? null
   );
@@ -2811,15 +2747,17 @@ export function FileTreeView({
           <div aria-hidden="true" data-file-tree-sticky-overlay="true">
             <div
               data-file-tree-sticky-overlay-content="true"
-              style={{ height: `${stickyRows.length * itemHeight}px` }}
+              style={{ height: `${stickyOverlayHeight}px` }}
             >
-              {stickyRows.map((row) =>
+              {stickyRows.map((entry, index) =>
                 renderStickyRow(
-                  row,
+                  entry.row,
                   resolveIcon,
                   itemHeight,
+                  entry.top,
+                  stickyRows.length - index,
                   handleStickyRowClick,
-                  `sticky:${getFileTreeRowPath(row)}`
+                  `sticky:${getFileTreeRowPath(entry.row)}`
                 )
               )}
             </div>
@@ -2828,24 +2766,24 @@ export function FileTreeView({
         <div
           ref={listRef}
           data-file-tree-virtualized-list="true"
-          style={{ height: `${stickyLayout.totalHeight}px` }}
+          style={{ height: `${totalScrollableHeight}px` }}
         >
           <div
             data-file-tree-virtualized-sticky-offset="true"
             aria-hidden="true"
-            style={{ height: `${stickyLayout.offsetHeight}px` }}
+            style={{ height: '0px' }}
           />
           <div
             data-file-tree-virtualized-sticky="true"
             style={{
-              height: `${stickyLayout.windowHeight}px`,
-              top: `${stickyLayout.stickyInset}px`,
-              bottom: `${stickyLayout.stickyInset}px`,
+              height: `${windowHeight}px`,
+              transform: `translateY(${windowTranslateY}px)`,
             }}
           >
             {renderRangeChildren(
               controller,
               renameView,
+              visibleRows,
               range,
               stickyRowPathSet,
               visualFocusPath,
