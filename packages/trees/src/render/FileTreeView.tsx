@@ -32,9 +32,8 @@ import type {
   FileTreeVisibleRow,
 } from '../model/types';
 import {
-  computeFirstVisibleIndex,
-  computeStickyWindowLayout,
-  computeWindowRange,
+  computeInsetWindowLayout,
+  EMPTY_RANGE,
   FILE_TREE_DEFAULT_ITEM_HEIGHT,
   FILE_TREE_DEFAULT_OVERSCAN,
   FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
@@ -193,69 +192,63 @@ function clampStickyRows(
     : rows;
 }
 
+// Sticky folders can only reserve overlay space that still leaves one real row
+// visible below the overlay. The first visible row then anchors which ancestors
+// should mirror in that reserved strip.
 function resolveStickyRowsForScroll({
   controller,
   itemCount,
   itemHeight,
   maxStickyFolderDepth,
   scrollTop,
+  viewportHeight,
 }: {
   controller: FileTreeController;
   itemCount: number;
   itemHeight: number;
   maxStickyFolderDepth: number;
   scrollTop: number;
+  viewportHeight: number;
 }): readonly FileTreeVisibleRow[] {
   if (maxStickyFolderDepth <= 0) {
     return [];
   }
 
-  const rawFirstVisibleIndex = computeFirstVisibleIndex({
+  const firstVisibleIndex = computeInsetWindowLayout({
+    currentRange: EMPTY_RANGE,
     itemCount,
     itemHeight,
+    overscan: 0,
     scrollTop,
     topInset: 0,
-  });
-  if (rawFirstVisibleIndex < 0) {
+    viewportHeight,
+  }).firstVisibleIndex;
+  if (firstVisibleIndex < 0) {
     return [];
   }
 
-  const stickyRows = [
-    ...clampStickyRows(
-      controller.getVisibleAncestorRows(rawFirstVisibleIndex),
-      maxStickyFolderDepth
-    ),
-  ];
-  const maxIterations = Math.max(1, Math.min(maxStickyFolderDepth, itemCount));
-  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
-    const compensatedFirstVisibleIndex = computeFirstVisibleIndex({
-      itemCount,
-      itemHeight,
-      scrollTop,
-      topInset: stickyRows.length * itemHeight,
-    });
-    const hiddenIndex = compensatedFirstVisibleIndex - 1;
-    if (hiddenIndex < 0 || hiddenIndex < rawFirstVisibleIndex) {
-      return stickyRows;
-    }
-
-    const hiddenRow =
-      controller.getVisibleRows(hiddenIndex, hiddenIndex)[0] ?? null;
-    if (hiddenRow == null || hiddenRow.kind !== 'directory') {
-      return stickyRows;
-    }
-
-    if (stickyRows.some((row) => row.path === hiddenRow.path)) {
-      return stickyRows;
-    }
-
-    stickyRows.push(hiddenRow);
-    if (stickyRows.length > maxStickyFolderDepth) {
-      stickyRows.splice(0, stickyRows.length - maxStickyFolderDepth);
-    }
+  const maxStickyRowCount = Math.min(
+    maxStickyFolderDepth,
+    Math.floor(
+      computeInsetWindowLayout({
+        currentRange: EMPTY_RANGE,
+        itemCount,
+        itemHeight,
+        overscan: 0,
+        scrollTop,
+        topInset: maxStickyFolderDepth * itemHeight,
+        viewportHeight,
+      }).topInset / itemHeight
+    )
+  );
+  if (maxStickyRowCount <= 0) {
+    return [];
   }
 
-  return stickyRows;
+  return clampStickyRows(
+    controller.getVisibleAncestorRows(firstVisibleIndex),
+    maxStickyRowCount
+  );
 }
 
 const TOUCH_LONG_PRESS_DELAY = 400;
@@ -1219,10 +1212,7 @@ export function FileTreeView({
   const touchLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
-  const ignoredInheritanceCache = useMemo(
-    () => new Map<string, boolean>(),
-    [ignoredGitDirectories]
-  );
+  const ignoredInheritanceCache = useMemo(() => new Map<string, boolean>(), []);
   const [, setControllerRevision] = useState(0);
   const [activeItemPath, setActiveItemPath] = useState<string | null>(null);
   const [contextHoverPath, setContextHoverPath] = useState<string | null>(null);
@@ -1248,14 +1238,18 @@ export function FileTreeView({
   );
   const [resolvedViewportHeight, setResolvedViewportHeight] =
     useState<number>(viewportHeight);
-  const [range, setRange] = useState(() =>
-    computeWindowRange({
-      itemCount: controller.getVisibleCount(),
-      itemHeight,
-      overscan,
-      scrollTop: 0,
-      viewportHeight,
-    })
+  const [resolvedScrollTop, setResolvedScrollTop] = useState(0);
+  const [range, setRange] = useState(
+    () =>
+      computeInsetWindowLayout({
+        currentRange: EMPTY_RANGE,
+        itemCount: controller.getVisibleCount(),
+        itemHeight,
+        overscan,
+        scrollTop: 0,
+        topInset: 0,
+        viewportHeight,
+      }).windowRange
   );
   const [hasStickyUiMount, setHasStickyUiMount] = useState(false);
   const [stickyRows, setStickyRows] = useState<readonly FileTreeVisibleRow[]>(
@@ -2098,6 +2092,9 @@ export function FileTreeView({
           ? previousHeight
           : nextViewportHeight
       );
+      setResolvedScrollTop((previousScrollTop) =>
+        previousScrollTop === scrollTop ? previousScrollTop : scrollTop
+      );
       const nextStickyRows = stickyFolders
         ? resolveStickyRowsForScroll({
             controller,
@@ -2105,6 +2102,7 @@ export function FileTreeView({
             itemHeight,
             maxStickyFolderDepth,
             scrollTop,
+            viewportHeight: nextViewportHeight,
           })
         : [];
       setStickyRows((previousRows) =>
@@ -2113,16 +2111,15 @@ export function FileTreeView({
           : nextStickyRows
       );
       setRange((previousRange) => {
-        const nextRange = computeWindowRange(
-          {
-            itemCount: nextItemCount,
-            itemHeight,
-            overscan,
-            scrollTop,
-            viewportHeight: nextViewportHeight,
-          },
-          previousRange
-        );
+        const nextRange = computeInsetWindowLayout({
+          currentRange: previousRange,
+          itemCount: nextItemCount,
+          itemHeight,
+          overscan,
+          scrollTop,
+          topInset: nextStickyRows.length * itemHeight,
+          viewportHeight: nextViewportHeight,
+        }).windowRange;
         return rangesEqual(previousRange, nextRange)
           ? previousRange
           : nextRange;
@@ -2586,13 +2583,24 @@ export function FileTreeView({
 
   const stickyLayout = useMemo(
     () =>
-      computeStickyWindowLayout({
+      computeInsetWindowLayout({
+        currentRange: range,
         itemCount,
         itemHeight,
-        range,
+        overscan,
+        scrollTop: resolvedScrollTop,
+        topInset: stickyOverlayHeight,
         viewportHeight: resolvedViewportHeight,
       }),
-    [itemCount, itemHeight, range, resolvedViewportHeight]
+    [
+      itemCount,
+      itemHeight,
+      overscan,
+      range,
+      resolvedScrollTop,
+      resolvedViewportHeight,
+      stickyOverlayHeight,
+    ]
   );
   const shouldRenderParkedFocusedRow =
     activeItemPath === focusedPath ||
@@ -2611,7 +2619,7 @@ export function FileTreeView({
           focusedIndex,
           itemHeight,
           range,
-          stickyLayout.windowHeight
+          stickyLayout.contentHeight
         );
   const draggedRowSnapshot = dragRowSnapshotRef.current;
   const draggedRowIsMounted =
@@ -2635,7 +2643,7 @@ export function FileTreeView({
           parkedDraggedRow.index,
           itemHeight,
           range,
-          stickyLayout.windowHeight
+          stickyLayout.contentHeight
         );
   const focusedVisibleRow =
     focusedIndex >= 0
@@ -2700,10 +2708,6 @@ export function FileTreeView({
         return;
       }
 
-      const overlayRowCount = scrollElement.querySelectorAll(
-        '[data-file-tree-sticky-path]'
-      ).length;
-      const overlayHeight = overlayRowCount * itemHeight;
       domFocusOwnerRef.current = true;
       scrollFocusedRowToViewportOffset(
         scrollElement,
@@ -2711,13 +2715,19 @@ export function FileTreeView({
         itemHeight,
         resolvedViewportHeight,
         totalScrollableHeight,
-        overlayHeight
+        stickyOverlayHeight
       );
       updateViewportRef.current();
       pendingStickyFocusPathRef.current = path;
       controller.focusPath(path);
     },
-    [controller, itemHeight, resolvedViewportHeight, totalScrollableHeight]
+    [
+      controller,
+      itemHeight,
+      resolvedViewportHeight,
+      stickyOverlayHeight,
+      totalScrollableHeight,
+    ]
   );
 
   const openMenuFromTrigger = (): void => {
