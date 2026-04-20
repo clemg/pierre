@@ -26,6 +26,45 @@ import { Switch } from '@/components/ui/switch';
 import type { FileTreePathOptions } from '@/lib/fileTreePathOptions';
 import type { GitStatusEntry } from '@/lib/treesCompat';
 
+const GIT_STATUS_ROWS = [
+  {
+    label: 'added',
+    indicator: 'A',
+    description: 'New file staged or present in the working tree',
+  },
+  {
+    label: 'modified',
+    indicator: 'M',
+    description: 'Tracked file changed since the last commit',
+  },
+  {
+    label: 'deleted',
+    indicator: 'D',
+    description: 'Tracked file removed from the working tree',
+  },
+  {
+    label: 'renamed',
+    indicator: 'R',
+    description: 'Tracked file moved or renamed',
+  },
+  {
+    label: 'untracked',
+    indicator: 'U',
+    description: 'New file not yet tracked by Git',
+  },
+  {
+    label: 'ignored',
+    indicator: null,
+    description: 'Ignored by Git rules; rows inherit muted styling',
+  },
+  {
+    label: 'descendant',
+    indicator: 'dot',
+    description:
+      'Folder contains changed descendants even when the folder itself has no direct status',
+  },
+] as const;
+
 function escapePathForRegex(path: string): string {
   return path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -183,15 +222,63 @@ export function DemoGitStatus({ preloadedData }: DemoGitStatusProps) {
           </ButtonGroup>
         </div>
 
-        <FileTree
-          className={getDefaultFileTreePanelClass(colorMode)}
-          model={model}
-          preloadedData={activePreloadedData}
-          style={{
-            ...panelStyle,
-            height: `${String(viewportHeight)}px`,
-          }}
-        />
+        <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
+          <FileTree
+            className={getDefaultFileTreePanelClass(colorMode)}
+            model={model}
+            preloadedData={activePreloadedData}
+            style={{
+              ...panelStyle,
+              height: `${String(viewportHeight)}px`,
+            }}
+          />
+          <div className="overflow-hidden rounded-lg border border-[var(--color-border)]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50 border-b border-[var(--color-border)]">
+                  <th className="px-4 py-2.5 text-left font-medium">Status</th>
+                  <th className="px-4 py-2.5 text-left font-medium">
+                    Indicator
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-medium">Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                {GIT_STATUS_ROWS.map(({ label, indicator, description }) => (
+                  <tr
+                    key={label}
+                    className="border-b border-[var(--color-border)] last:border-b-0"
+                  >
+                    <td className="px-4 py-2 align-top">
+                      <code className="bg-muted rounded-sm border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-xs">
+                        {label}
+                      </code>
+                    </td>
+                    <td className="px-4 py-2 align-top">
+                      {indicator === 'dot' ? (
+                        <span
+                          aria-label="Dot indicator"
+                          className="bg-foreground/60 mt-1 inline-block size-1.5 rounded-full align-top"
+                        />
+                      ) : indicator == null ? (
+                        <span className="text-muted-foreground text-xs">
+                          None
+                        </span>
+                      ) : (
+                        <code className="bg-muted rounded-sm border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-xs">
+                          {indicator}
+                        </code>
+                      )}
+                    </td>
+                    <td className="text-muted-foreground px-4 py-2">
+                      {description}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </TreeExampleSection>
   );
