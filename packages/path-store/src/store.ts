@@ -45,8 +45,6 @@ import { getFlattenedChildDirectoryId } from './flatten';
 import {
   getNodeDepth,
   isDirectoryNode,
-  PATH_STORE_NODE_FLAG_ROOT,
-  PATH_STORE_NODE_KIND_DIRECTORY,
   type NodeId,
   type PreparedPath,
 } from './internal-types';
@@ -1235,7 +1233,7 @@ export class PathStore {
 
     while (true) {
       const node = requireNode(this.#state, nodeId);
-      if (node.kind !== PATH_STORE_NODE_KIND_DIRECTORY) {
+      if (!isDirectoryNode(node)) {
         return materializeNodePath(this.#state, nodeId);
       }
 

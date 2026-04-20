@@ -1,4 +1,7 @@
-import { preloadFileTree } from '@pierre/trees/ssr';
+import {
+  preloadFileTree,
+  serializeFileTreeSsrPayload,
+} from '@pierre/trees/ssr';
 
 import { RevealLoadingDemoClient } from '../_demos/RevealLoadingDemoClient';
 import { createPresortedPreparedInput } from '../_lib/createPresortedPreparedInput';
@@ -10,13 +13,16 @@ export default function TreesDevRevealPage() {
   const payload = preloadFileTree({
     flattenEmptyDirectories: false,
     id: 'trees-dev-reveal-ssr',
+    initialVisibleRowCount: FILE_TREE_PROOF_VIEWPORT_HEIGHT / 30,
     paths: REVEAL_DEMO_ROOT_PATHS,
     preparedInput: createPresortedPreparedInput(REVEAL_DEMO_ROOT_PATHS),
     search: true,
-    viewportHeight: FILE_TREE_PROOF_VIEWPORT_HEIGHT,
   });
 
   return (
-    <RevealLoadingDemoClient mountId={mountId} payloadHtml={payload.html} />
+    <RevealLoadingDemoClient
+      mountId={mountId}
+      payloadHtml={serializeFileTreeSsrPayload(payload, 'dom')}
+    />
   );
 }

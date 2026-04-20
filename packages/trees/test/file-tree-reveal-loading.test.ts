@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  FileTreeController,
-  type FileTreeDirectoryHandle,
-  type FileTreeRevealDirectoryBatchResult,
-  type FileTreeRevealDirectorySnapshot,
-  type FileTreeRevealLoadingSource,
+import type {
+  FileTreeDirectoryHandle,
+  FileTreeRevealDirectoryBatchResult,
+  FileTreeRevealDirectorySnapshot,
+  FileTreeRevealLoadingSource,
 } from '../src/index';
+import { FileTreeController } from '../src/model/FileTreeController';
 
 function createDeferred<TValue>() {
   let resolvePromise!: (value: TValue) => void;

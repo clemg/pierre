@@ -1,4 +1,7 @@
-import { preloadFileTree } from '@pierre/trees/ssr';
+import {
+  preloadFileTree,
+  serializeFileTreeSsrPayload,
+} from '@pierre/trees/ssr';
 
 import { DebugStaticClient } from '../_demos/DebugStaticClient';
 import { createPresortedPreparedInput } from '../_lib/createPresortedPreparedInput';
@@ -11,16 +14,16 @@ export default function TreesDevDebugStaticPage() {
   const payload = preloadFileTree({
     flattenEmptyDirectories: false,
     id: 'trees-dev-debug-static',
+    initialVisibleRowCount: FILE_TREE_PROOF_VIEWPORT_HEIGHT / 30,
     paths: DEBUG_STATIC_PATHS,
     preparedInput,
-    viewportHeight: FILE_TREE_PROOF_VIEWPORT_HEIGHT,
   });
 
   return (
     <DebugStaticClient
       mountId={mountId}
       mountMode="hydrate"
-      payloadHtml={payload.html}
+      payloadHtml={serializeFileTreeSsrPayload(payload, 'dom')}
     />
   );
 }

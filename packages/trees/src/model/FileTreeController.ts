@@ -11,7 +11,11 @@ import type {
   PathStoreVisibleTreeProjectionData,
 } from '@pierre/path-store';
 
-import type { FileTreePreparedInput } from '../preparedInput';
+import {
+  type FileTreePreparedInput,
+  preparePresortedFileTreeInput,
+  toPathStorePreparedInput,
+} from '../preparedInput';
 import { renameFileTreePaths } from '../utils/renameFileTreePaths';
 import {
   buildDropOperations,
@@ -671,15 +675,18 @@ export class FileTreeController
       loading,
       renaming,
       onSearchChange,
-      paths = [],
+      paths,
       preparedInput,
       ...storeOptions
     } = options;
-    const resolvedInput = resolveFileTreeInput(
-      { paths, preparedInput },
-      'constructor',
-      storeOptions.sort
-    );
+    const resolvedInput =
+      paths == null && preparedInput == null
+        ? { paths: [] as readonly string[], preparedInput: undefined }
+        : resolveFileTreeInput(
+            { paths, preparedInput },
+            'constructor',
+            storeOptions.sort
+          );
     this.#loading = loading;
     this.#storeOptions = storeOptions as Omit<
       PathStoreConstructorOptions,
@@ -2049,7 +2056,7 @@ export class FileTreeController
 
     this.resetPaths(this.#bulkSeedPaths, {
       initialExpandedPaths: this.#getExpandedDirectoryPaths(),
-      preparedInput: PathStore.preparePresortedInput(this.#bulkSeedPaths),
+      preparedInput: preparePresortedFileTreeInput(this.#bulkSeedPaths),
     });
   }
 
@@ -2112,7 +2119,7 @@ export class FileTreeController
       preparedInput:
         preparedInput == null
           ? undefined
-          : (preparedInput as unknown as { paths: readonly string[] }),
+          : toPathStorePreparedInput(preparedInput),
       ...(initialExpandedPathsOverride !== undefined
         ? { initialExpandedPaths: initialExpandedPathsOverride }
         : {}),

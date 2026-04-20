@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  type FileTreeBulkIngestSource,
-  FileTreeController,
-  type FileTreeDirectoryHandle,
+import type {
+  FileTreeBulkIngestSource,
+  FileTreeDirectoryHandle,
 } from '../src/index';
-import { FILE_TREE_RENAME_VIEW } from '../src/model/FileTreeController';
+import {
+  FILE_TREE_RENAME_VIEW,
+  FileTreeController,
+} from '../src/model/FileTreeController';
 
 function createDeferred<TValue>() {
   let resolvePromise!: (value: TValue) => void;

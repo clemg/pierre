@@ -3,11 +3,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   FileTree,
   type FileTreeBulkIngestSource,
-  FileTreeController,
   type FileTreeControllerOptions,
   type FileTreeOptions,
   type FileTreeRevealLoadingSource,
 } from '../src/index';
+import { FileTreeController } from '../src/model/FileTreeController';
 
 async function* emptyBulkChunks() {}
 

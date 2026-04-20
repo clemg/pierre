@@ -1,4 +1,7 @@
-import { preloadFileTree } from '@pierre/trees/ssr';
+import {
+  preloadFileTree,
+  serializeFileTreeSsrPayload,
+} from '@pierre/trees/ssr';
 
 import { BulkIngestDemoClient } from '../_demos/BulkIngestDemoClient';
 import {
@@ -27,16 +30,16 @@ export default async function TreesDevBulkPage({
       routeState.workloadName,
       routeState.expansionMode
     ),
+    initialVisibleRowCount: FILE_TREE_PROOF_VIEWPORT_HEIGHT / 30,
     paths: previewData.previewPaths,
     preparedInput: createPresortedPreparedInput(previewData.previewPaths),
     search: true,
-    viewportHeight: FILE_TREE_PROOF_VIEWPORT_HEIGHT,
   });
 
   return (
     <BulkIngestDemoClient
       key={JSON.stringify(routeState)}
-      payloadHtml={payload.html}
+      payloadHtml={serializeFileTreeSsrPayload(payload, 'dom')}
       {...routeState}
     />
   );

@@ -77,17 +77,17 @@ describe('file-tree hydration updates', () => {
   test('hydrated trees rerender visible rows after an external expand mutation', async () => {
     const { cleanup, dom } = installDom();
     try {
-      const { FileTree, preloadFileTree } =
+      const { FileTree, preloadFileTree, serializeFileTreeSsrPayload } =
         await import('../src/render/FileTree');
       const payload = preloadFileTree({
         flattenEmptyDirectories: false,
         id: 'hydration-update-test',
+        initialVisibleRowCount: 8,
         paths: ['art/a.ts', 'art/b.ts', 'src/index.ts'],
-        viewportHeight: 240,
       });
 
       const mount = dom.window.document.createElement('div');
-      mount.innerHTML = payload.html;
+      mount.innerHTML = serializeFileTreeSsrPayload(payload, 'dom');
       dom.window.document.body.appendChild(mount);
 
       const host = mount.querySelector('file-tree-container');
@@ -98,8 +98,8 @@ describe('file-tree hydration updates', () => {
       const fileTree = new FileTree({
         flattenEmptyDirectories: false,
         id: payload.id,
+        initialVisibleRowCount: 8,
         paths: ['art/a.ts', 'art/b.ts', 'src/index.ts'],
-        viewportHeight: 240,
       });
       fileTree.hydrate({ fileTreeContainer: host });
       await flushDom();

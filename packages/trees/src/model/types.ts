@@ -1,4 +1,5 @@
 import type { PathStoreDirectoryLoadState } from '@pierre/path-store';
+
 import type { FileTreeIcons, RemappedIcon } from '../iconConfig';
 import type { FileTreePreparedInput } from '../preparedInput';
 import type {

@@ -18,7 +18,15 @@ export {
   prepareFileTreeInput,
   preparePresortedFileTreeInput,
 } from './preparedInput';
-export { FILE_TREE_DEFAULT_ITEM_HEIGHT } from './model/virtualization';
+export {
+  computeStickyWindowLayout,
+  computeVisibleRange,
+  computeWindowRange,
+  FILE_TREE_DEFAULT_ITEM_HEIGHT,
+  FILE_TREE_DEFAULT_OVERSCAN,
+  FILE_TREE_DEFAULT_VIEWPORT_HEIGHT,
+} from './model/virtualization';
+export { FileTreeController } from './model/FileTreeController';
 export {
   FILE_TREE_DENSITY_PRESETS,
   type FileTreeDensity,
