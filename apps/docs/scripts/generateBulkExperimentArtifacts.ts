@@ -5,10 +5,15 @@ import { resolve as resolvePath } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
 import {
+  AOSP_PREVIEW_PATHS,
+  AOSP_TOTAL_PATH_COUNT,
+} from '../app/trees-dev/_lib/aospPreview';
+import {
   BULK_EXPERIMENT_WORKLOAD_NAMES,
   BULK_PREVIEW_PATH_COUNT,
 } from '../app/trees-dev/_lib/bulkExperimentMeta';
 import { deriveAllExpandedPaths } from '../app/trees-dev/_lib/deriveAllExpandedPaths';
+import { AOSP_UPGRADE_DATA_URL } from '../app/trees-dev/_lib/workloadMeta';
 
 interface GeneratedPreviewEntry {
   previewPaths: readonly string[];
@@ -26,6 +31,15 @@ const previewEntries: Record<string, GeneratedPreviewEntry> = {};
 mkdirSync(outputDir, { recursive: true });
 
 for (const workloadName of BULK_EXPERIMENT_WORKLOAD_NAMES) {
+  if (workloadName === 'aosp') {
+    previewEntries[workloadName] = {
+      previewPaths: AOSP_PREVIEW_PATHS.slice(0, BULK_PREVIEW_PATH_COUNT),
+      totalPathCount: AOSP_TOTAL_PATH_COUNT,
+    };
+    console.log(`[bulk] aosp preview reuses ${AOSP_UPGRADE_DATA_URL}`);
+    continue;
+  }
+
   const workload = getVirtualizationWorkload(workloadName);
   const allExpandedPaths = deriveAllExpandedPaths(workload.presortedFiles);
   const payload = JSON.stringify({

@@ -1,6 +1,14 @@
-import { getWorkloadOption, type TreesWorkloadOption } from './workloadMeta';
+import {
+  AOSP_UPGRADE_DATA_URL,
+  getWorkloadOption,
+  type TreesWorkloadOption,
+} from './workloadMeta';
 
-export type BulkExperimentWorkloadName = 'linux-1x' | 'linux-5x' | 'linux-10x';
+export type BulkExperimentWorkloadName =
+  | 'linux-1x'
+  | 'linux-5x'
+  | 'linux-10x'
+  | 'aosp';
 export type BulkExperimentIngestMode = 'chunked' | 'oneshot';
 export type BulkExperimentExpansionMode = 'all-open' | 'all-closed' | 'seeded';
 
@@ -17,6 +25,7 @@ export const BULK_EXPERIMENT_WORKLOAD_NAMES = [
   'linux-1x',
   'linux-5x',
   'linux-10x',
+  'aosp',
 ] as const satisfies readonly BulkExperimentWorkloadName[];
 
 export const BULK_EXPERIMENT_WORKLOAD_OPTIONS =
@@ -45,12 +54,25 @@ const BULK_WORKLOAD_ASSET_URL_BY_NAME = {
   'linux-1x': '/trees-dev/linux-1x.json.gz',
   'linux-5x': '/trees-dev/linux-5x.json.gz',
   'linux-10x': '/trees-dev/linux-10x.json.gz',
+  aosp: AOSP_UPGRADE_DATA_URL,
 } as const satisfies Record<BulkExperimentWorkloadName, string>;
 
 const SEEDED_RELATIVE_EXPANDED_PATHS = [
   'arch/',
   'drivers/',
   'include/',
+] as const;
+const AOSP_SEEDED_EXPANDED_PATHS = [
+  'art',
+  'art/artd',
+  'art/artd/binder',
+  'art/artd/tests',
+  'art/benchmark',
+  'art/build',
+  'art/build/apex',
+  'art/build/boot',
+  'art/build/flags',
+  'art/build/sdk',
 ] as const;
 
 function createReplicaRootNames(count: number): string[] {
@@ -63,6 +85,10 @@ function createReplicaRootNames(count: number): string[] {
 export function getBulkExperimentSeededExpandedPaths(
   workloadName: BulkExperimentWorkloadName
 ): readonly string[] {
+  if (workloadName === 'aosp') {
+    return [...AOSP_SEEDED_EXPANDED_PATHS];
+  }
+
   if (workloadName === 'linux-1x') {
     return [...SEEDED_RELATIVE_EXPANDED_PATHS];
   }
