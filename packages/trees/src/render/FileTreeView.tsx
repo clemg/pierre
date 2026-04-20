@@ -629,19 +629,47 @@ function createAnchorRectFromPoint(
   };
 }
 
-// The floating trigger lives outside the virtual rows, so we convert a row's
-// viewport rect back into scroll-content coordinates before positioning it.
+// The floating trigger is positioned against the root container, not the
+// scrollbox. Using root-relative coordinates keeps sticky rows aligned even
+// during the native scroll step before React processes the new layout.
 function getContextMenuAnchorTop(
-  scrollElement: HTMLElement | null,
+  rootElement: HTMLElement | null,
   itemElement: HTMLElement
 ): number {
-  if (scrollElement == null) {
+  if (rootElement == null) {
     return itemElement.offsetTop;
   }
 
   const itemRect = itemElement.getBoundingClientRect();
-  const scrollRect = scrollElement.getBoundingClientRect();
-  return itemRect.top - scrollRect.top + scrollElement.scrollTop;
+  const rootRect = rootElement.getBoundingClientRect();
+  return itemRect.top - rootRect.top;
+}
+
+function setButtonRef(
+  buttonRefs: Map<string, HTMLElement>,
+  path: string,
+  element: HTMLElement | null
+): void {
+  if (element == null) {
+    buttonRefs.delete(path);
+    return;
+  }
+
+  buttonRefs.set(path, element);
+}
+
+// Sticky overlay rows are separate DOM mirrors of the real row. Prefer them
+// when positioning the floating trigger so it follows the row the user can see.
+function getContextMenuAnchorButton(
+  path: string | null,
+  stickyButtonRefs: ReadonlyMap<string, HTMLElement>,
+  rowButtonRefs: ReadonlyMap<string, HTMLElement>
+): HTMLElement | null {
+  if (path == null) {
+    return null;
+  }
+
+  return stickyButtonRefs.get(path) ?? rowButtonRefs.get(path) ?? null;
 }
 
 function createContextMenuItem(
@@ -756,7 +784,7 @@ function renderFileTreeRowContent(
     renameInput?: JSX.Element | null;
     showDecorativeActionAffordance?: boolean;
   } = {}
- ): JSX.Element {
+): JSX.Element {
   const targetPath = getFileTreeRowPath(row);
 
   return (
@@ -1078,13 +1106,37 @@ function renderStyledRow(
   );
 }
 
+// Sticky overlay rows rely on the floating trigger for context menus, so they
+// intentionally omit the inline action lane that normal rows reserve.
+
 function renderStickyRow(
   row: FileTreeVisibleRow,
   resolveIcon: ReturnType<typeof createFileTreeIconResolver>['resolveIcon'],
   itemHeight: number,
   top: number,
   zIndex: number,
-  onClick: (path: string) => void,
+  {
+    contextMenuEnabled,
+    contextMenuRightClickEnabled,
+    onClick,
+    openContextMenuForRow,
+    registerButton,
+    shouldSuppressContextMenu,
+  }: {
+    contextMenuEnabled: boolean;
+    contextMenuRightClickEnabled: boolean;
+    onClick: (path: string) => void;
+    openContextMenuForRow: (
+      row: FileTreeVisibleRow,
+      targetPath: string,
+      options?: {
+        anchorRect?: FileTreeContextMenuOpenContext['anchorRect'];
+        source?: 'button' | 'keyboard' | 'right-click';
+      }
+    ) => void;
+    registerButton: (path: string, element: HTMLElement | null) => void;
+    shouldSuppressContextMenu: () => boolean;
+  },
   key: string | number
 ): JSX.Element {
   const targetPath = getFileTreeRowPath(row);
@@ -1093,14 +1145,43 @@ function renderStickyRow(
     <button
       key={key}
       type="button"
+      aria-expanded={row.kind === 'directory' ? row.isExpanded : undefined}
+      aria-haspopup={contextMenuEnabled ? 'menu' : undefined}
       aria-label={getFileTreeRowAriaLabel(row)}
       data-file-tree-sticky-path={targetPath}
       data-file-tree-sticky-row="true"
+      data-item-type={row.kind === 'directory' ? 'folder' : 'file'}
       onClick={() => {
         onClick(targetPath);
       }}
+      onContextMenu={
+        contextMenuEnabled
+          ? (event: MouseEvent) => {
+              if (shouldSuppressContextMenu()) {
+                event.preventDefault();
+                return;
+              }
+
+              event.preventDefault();
+              if (!contextMenuRightClickEnabled) {
+                return;
+              }
+
+              openContextMenuForRow(row, targetPath, {
+                anchorRect: createAnchorRectFromPoint(
+                  event.clientX,
+                  event.clientY
+                ),
+                source: 'right-click',
+              });
+            }
+          : undefined
+      }
       onMouseDown={(event) => {
         event.preventDefault();
+      }}
+      ref={(element) => {
+        registerButton(targetPath, element);
       }}
       style={{
         left: '0',
@@ -1244,6 +1325,7 @@ export function FileTreeView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const rowButtonRefs = useRef(new Map<string, HTMLElement>());
+  const stickyRowButtonRefs = useRef(new Map<string, HTMLElement>());
   const updateViewportRef = useRef<() => void>(() => {});
   const domFocusOwnerRef = useRef(false);
   const previousFocusedPathRef = useRef<string | null>(null);
@@ -1291,6 +1373,8 @@ export function FileTreeView({
   contextMenuStateRef.current = contextMenuState;
 
   const pendingStickyFocusPathRef = useRef<string | null>(null);
+  const debugContextMenuTriggerPathRef = useRef<string | null>(null);
+  const debugDisableScrollSuppressionRef = useRef(false);
 
   const [layoutState, setLayoutState] = useState<FileTreeViewLayoutState>(() =>
     computeFileTreeViewLayoutState({
@@ -1322,6 +1406,75 @@ export function FileTreeView({
   const contextMenuRightClickEnabled =
     contextMenuTriggerMode === 'both' ||
     contextMenuTriggerMode === 'right-click';
+  useLayoutEffect(() => {
+    const rootElement = rootRef.current;
+    if (rootElement == null) {
+      return;
+    }
+
+    const handleDebugSetContextMenuTrigger = (event: Event): void => {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+      const detail = event.detail as { path?: string | null } | null;
+      const nextPath = detail?.path ?? null;
+      debugContextMenuTriggerPathRef.current = nextPath;
+      setContextHoverPath(nextPath);
+      setLastContextMenuInteraction(nextPath == null ? null : 'pointer');
+    };
+
+    const handleDebugSetScrollSuppression = (event: Event): void => {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+      const detail = event.detail as { disabled?: boolean } | null;
+      debugDisableScrollSuppressionRef.current = detail?.disabled === true;
+    };
+
+    rootElement.addEventListener(
+      'file-tree-debug-set-context-menu-trigger',
+      handleDebugSetContextMenuTrigger as EventListener
+    );
+    rootElement.addEventListener(
+      'file-tree-debug-set-scroll-suppression',
+      handleDebugSetScrollSuppression as EventListener
+    );
+
+    return () => {
+      rootElement.removeEventListener(
+        'file-tree-debug-set-context-menu-trigger',
+        handleDebugSetContextMenuTrigger as EventListener
+      );
+      rootElement.removeEventListener(
+        'file-tree-debug-set-scroll-suppression',
+        handleDebugSetScrollSuppression as EventListener
+      );
+    };
+  }, []);
+
+  const registerRowButton = useCallback(
+    (path: string, element: HTMLElement | null): void => {
+      setButtonRef(rowButtonRefs.current, path, element);
+    },
+    []
+  );
+  const registerStickyRowButton = useCallback(
+    (path: string, element: HTMLElement | null): void => {
+      setButtonRef(stickyRowButtonRefs.current, path, element);
+    },
+    []
+  );
+  const getTriggerAnchorButton = useCallback(
+    (path: string | null): HTMLElement | null => {
+      return getContextMenuAnchorButton(
+        path,
+        stickyRowButtonRefs.current,
+        rowButtonRefs.current
+      );
+    },
+    []
+  );
+
   const gitLaneActive =
     gitStatusByPath != null ||
     ignoredGitDirectories != null ||
@@ -1422,7 +1575,7 @@ export function FileTreeView({
       const nextTop =
         itemButton == null
           ? null
-          : getContextMenuAnchorTop(scrollRef.current, itemButton);
+          : getContextMenuAnchorTop(rootRef.current, itemButton);
       setContextMenuAnchorTop((previousTop) =>
         previousTop === nextTop ? previousTop : nextTop
       );
@@ -1444,7 +1597,7 @@ export function FileTreeView({
       }
 
       item.focus();
-      updateTriggerPosition(rowButtonRefs.current.get(targetPath) ?? null);
+      updateTriggerPosition(getTriggerAnchorButton(targetPath));
       shouldRestoreContextMenuFocusRef.current = true;
       setContextMenuState({
         anchorRect: options?.anchorRect ?? null,
@@ -1453,7 +1606,7 @@ export function FileTreeView({
         source: options?.source ?? 'keyboard',
       });
     },
-    [controller, updateTriggerPosition]
+    [controller, getTriggerAnchorButton, updateTriggerPosition]
   );
   const startRenameFromPath = useCallback(
     (path?: string): void => {
@@ -2174,27 +2327,31 @@ export function FileTreeView({
       if (contextMenuStateRef.current != null) {
         closeContextMenuRef.current();
       }
-      isScrollingRef.current = true;
-      setContextHoverPath((previousPath) =>
-        previousPath == null ? previousPath : null
-      );
+      const disableScrollSuppression =
+        debugDisableScrollSuppressionRef.current === true;
+      isScrollingRef.current = disableScrollSuppression ? false : true;
+      if (!disableScrollSuppression) {
+        setContextHoverPath((previousPath) =>
+          previousPath == null ? previousPath : null
+        );
 
-      // Mark the list as scrolling to suppress hover styles on items.
-      // Applied to the list (inside the scroll container) so the container
-      // itself still receives scroll events.
-      if (listElement != null) {
-        listElement.dataset.isScrolling ??= '';
-      }
-      if (scrollTimer != null) {
-        clearTimeout(scrollTimer);
-      }
-      scrollTimer = setTimeout(() => {
+        // Mark the list as scrolling to suppress hover styles on items.
+        // Applied to the list (inside the scroll container) so the container
+        // itself still receives scroll events.
         if (listElement != null) {
-          delete listElement.dataset.isScrolling;
+          listElement.dataset.isScrolling ??= '';
         }
-        isScrollingRef.current = false;
-        scrollTimer = null;
-      }, 50);
+        if (scrollTimer != null) {
+          clearTimeout(scrollTimer);
+        }
+        scrollTimer = setTimeout(() => {
+          if (listElement != null) {
+            delete listElement.dataset.isScrolling;
+          }
+          isScrollingRef.current = false;
+          scrollTimer = null;
+        }, 50);
+      }
     };
 
     scrollElement.addEventListener('scroll', onScroll, { passive: true });
@@ -2476,6 +2633,7 @@ export function FileTreeView({
     domFocusOwnerRef.current === true ? (activeItemPath ?? focusedPath) : null;
   const triggerPath =
     contextMenuState?.path ??
+    debugContextMenuTriggerPathRef.current ??
     (lastContextMenuInteraction === 'pointer'
       ? contextHoverPath
       : lastContextMenuInteraction === 'focus'
@@ -2484,14 +2642,12 @@ export function FileTreeView({
   const isPointerContextMenuOpen = contextMenuState?.source === 'right-click';
 
   useLayoutEffect(() => {
-    const triggerButton =
-      triggerPath == null
-        ? null
-        : (rowButtonRefs.current.get(triggerPath) ?? null);
-    updateTriggerPosition(triggerButton);
+    updateTriggerPosition(getTriggerAnchorButton(triggerPath));
   }, [
+    getTriggerAnchorButton,
     range,
     resolvedViewportHeight,
+    stickyRows,
     triggerPath,
     updateTriggerPosition,
     visibleRows,
@@ -2517,11 +2673,16 @@ export function FileTreeView({
       return;
     }
 
+    const stickyRowButton = target.closest?.(
+      '[data-file-tree-sticky-row="true"]'
+    );
     const rowButton = target.closest?.('[data-type="item"]');
     const nextPath =
-      rowButton instanceof HTMLElement
-        ? (rowButton.dataset.itemPath ?? null)
-        : null;
+      stickyRowButton instanceof HTMLElement
+        ? (stickyRowButton.dataset.fileTreeStickyPath ?? null)
+        : rowButton instanceof HTMLElement
+          ? (rowButton.dataset.itemPath ?? null)
+          : null;
 
     if (nextPath != null) {
       setLastContextMenuInteraction((previousMode) =>
@@ -2678,10 +2839,7 @@ export function FileTreeView({
   const visualFocusPath =
     contextMenuState?.path ?? (isSearchOpen ? focusedPath : activeItemPath);
   const visualContextHoverPath = contextMenuState?.path ?? contextHoverPath;
-  const triggerButton =
-    triggerPath == null
-      ? null
-      : (rowButtonRefs.current.get(triggerPath) ?? null);
+  const triggerButton = getTriggerAnchorButton(triggerPath);
   const triggerButtonVisible =
     contextMenuEnabled &&
     contextMenuButtonTriggerEnabled &&
@@ -2854,7 +3012,14 @@ export function FileTreeView({
                   itemHeight,
                   entry.top,
                   stickyRows.length - index,
-                  handleStickyRowClick,
+                  {
+                    contextMenuEnabled,
+                    contextMenuRightClickEnabled,
+                    onClick: handleStickyRowClick,
+                    openContextMenuForRow,
+                    registerButton: registerStickyRowButton,
+                    shouldSuppressContextMenu,
+                  },
                   `sticky:${getFileTreeRowPath(entry.row)}`
                 )
               )}
@@ -2908,14 +3073,7 @@ export function FileTreeView({
               (element) => {
                 renameInputRef.current = element;
               },
-              (path, element) => {
-                if (element == null) {
-                  rowButtonRefs.current.delete(path);
-                  return;
-                }
-
-                rowButtonRefs.current.set(path, element);
-              },
+              registerRowButton,
               resolveIcon,
               renderDecorationForRow,
               openContextMenuForRow,
@@ -2950,14 +3108,7 @@ export function FileTreeView({
                   (element) => {
                     renameInputRef.current = element;
                   },
-                  (path, element) => {
-                    if (element == null) {
-                      rowButtonRefs.current.delete(path);
-                      return;
-                    }
-
-                    rowButtonRefs.current.set(path, element);
-                  },
+                  registerRowButton,
                   resolveIcon,
                   renderDecorationForRow,
                   openContextMenuForRow,
@@ -3008,14 +3159,7 @@ export function FileTreeView({
                   (element) => {
                     renameInputRef.current = element;
                   },
-                  (path, element) => {
-                    if (element == null) {
-                      rowButtonRefs.current.delete(path);
-                      return;
-                    }
-
-                    rowButtonRefs.current.set(path, element);
-                  },
+                  registerRowButton,
                   resolveIcon,
                   renderDecorationForRow,
                   openContextMenuForRow,
@@ -3036,45 +3180,46 @@ export function FileTreeView({
               : null}
           </div>
         </div>
-        {contextMenuEnabled ? (
-          <div
-            ref={contextMenuAnchorRef}
-            data-type="context-menu-anchor"
-            data-visible={contextMenuAnchorVisible ? 'true' : 'false'}
-            style={contextMenuAnchorStyle}
-          >
-            <button
-              ref={contextMenuTriggerRef}
-              type="button"
-              data-type={CONTEXT_MENU_TRIGGER_TYPE}
-              aria-label="Options"
-              aria-haspopup="menu"
-              aria-expanded={contextMenuState != null ? 'true' : 'false'}
-              data-visible={triggerButtonVisible ? 'true' : 'false'}
-              onMouseDown={(event) => {
-                event.preventDefault();
-              }}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                if (contextMenuState != null) {
-                  closeContextMenu();
-                  return;
-                }
-
-                openMenuFromTrigger();
-              }}
-              tabIndex={-1}
-              style={contextMenuTriggerStyle}
-            >
-              <Icon {...resolveIcon('file-tree-icon-ellipsis')} />
-            </button>
-            {contextMenuState != null ? (
-              <slot name={CONTEXT_MENU_SLOT_NAME} />
-            ) : null}
-          </div>
-        ) : null}
       </div>
+      {contextMenuEnabled ? (
+        <div
+          ref={contextMenuAnchorRef}
+          data-type="context-menu-anchor"
+          data-visible={contextMenuAnchorVisible ? 'true' : 'false'}
+          style={contextMenuAnchorStyle}
+        >
+          <button
+            ref={contextMenuTriggerRef}
+            type="button"
+            data-type={CONTEXT_MENU_TRIGGER_TYPE}
+            aria-label="Options"
+            aria-haspopup="menu"
+            aria-expanded={contextMenuState != null ? 'true' : 'false'}
+            data-visible={triggerButtonVisible ? 'true' : 'false'}
+            onMouseDown={(event) => {
+              event.preventDefault();
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (contextMenuState != null) {
+                closeContextMenu();
+                return;
+              }
+
+              openMenuFromTrigger();
+            }}
+            tabIndex={-1}
+            style={contextMenuTriggerStyle}
+          >
+            <Icon {...resolveIcon('file-tree-icon-ellipsis')} />
+          </button>
+          {contextMenuState != null ? (
+            <slot name={CONTEXT_MENU_SLOT_NAME} />
+          ) : null}
+        </div>
+      ) : null}
+
       {contextMenuState != null ? (
         <div
           data-type="context-menu-wash"

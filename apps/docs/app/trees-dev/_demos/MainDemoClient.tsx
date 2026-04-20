@@ -489,7 +489,6 @@ export function MainDemoClient({
     () => ({
       composition: {
         contextMenu: {
-          buttonVisibility: 'always',
           enabled: true,
           triggerMode: 'both',
         },

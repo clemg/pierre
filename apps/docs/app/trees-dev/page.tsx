@@ -35,7 +35,6 @@ export default async function TreesDevIndexPage({
   const sharedOptions: Omit<FileTreeOptions, 'id' | 'preparedInput'> = {
     composition: {
       contextMenu: {
-        buttonVisibility: 'always',
         enabled: true,
         triggerMode: 'both',
       },

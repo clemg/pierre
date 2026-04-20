@@ -1533,6 +1533,59 @@ describe('file-tree render + scroll', () => {
     }
   });
 
+  test('sticky overlay rows omit the inline context-menu action lane', async () => {
+    const { cleanup, dom } = installDom();
+    try {
+      const FileTree = await loadFileTree();
+      const containerWrapper = dom.window.document.createElement('div');
+      dom.window.document.body.appendChild(containerWrapper);
+
+      const fileTree = new FileTree({
+        composition: {
+          contextMenu: {
+            enabled: true,
+            triggerMode: 'button',
+          },
+        },
+        flattenEmptyDirectories: true,
+        initialExpandedPaths: ['src/lib/'],
+        paths: ['README.md', 'src/lib/util.ts', 'src/lib/helpers.ts'],
+        stickyFolders: true,
+        viewportHeight: 60,
+      });
+
+      fileTree.render({ containerWrapper });
+      await flushDom();
+
+      const shadowRoot = fileTree.getFileTreeContainer()?.shadowRoot;
+      const scrollElement = shadowRoot?.querySelector(
+        '[data-file-tree-virtualized-scroll="true"]'
+      );
+      if (!(scrollElement instanceof dom.window.HTMLElement)) {
+        throw new Error('missing scroll element');
+      }
+
+      scrollElement.scrollTop = 30;
+      scrollElement.dispatchEvent(new dom.window.Event('scroll'));
+      await flushDom();
+
+      const stickyButton = getStickyRowButton(shadowRoot, dom, 'src/lib/');
+      const visibleButton = getItemButton(shadowRoot, dom, 'src/lib/util.ts');
+
+      expect(getStickyRowPaths(shadowRoot, dom)).toEqual(['src/lib/']);
+      expect(
+        stickyButton.querySelector('[data-item-section="action"]')
+      ).toBeNull();
+      expect(
+        visibleButton.querySelector('[data-item-section="action"]')
+      ).not.toBeNull();
+
+      fileTree.cleanUp();
+    } finally {
+      cleanup();
+    }
+  });
+
   test('sticky overlay can fill the viewport for a deep leading folder chain', async () => {
     const { cleanup, dom } = installDom();
     try {
