@@ -1,6 +1,6 @@
 'use client';
 
-import { IconFilePlus, IconFolderPlus, IconRefresh } from '@pierre/icons';
+import { IconRefresh } from '@pierre/icons';
 import type {
   ContextMenuTriggerMode,
   FileTreeCompositionOptions,
