@@ -16,6 +16,7 @@ export default {
           'screen',
           'theme',
           'custom-variant',
+          'source',
         ],
       },
     ],

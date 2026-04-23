@@ -216,11 +216,11 @@ function readAospFixture(): {
 } {
   const fixturePath = resolve(
     getRepoRoot(),
-    'apps/docs/public/trees-dev/aosp-files.json.gz'
+    'apps/docs-trees/public/trees-dev/aosp-files.json.gz'
   );
   if (!existsSync(fixturePath)) {
     throw new Error(
-      `Missing AOSP benchmark fixture at ${fixturePath}. Run apps/docs/scripts/generateAospArtifacts.ts first.`
+      `Missing AOSP benchmark fixture at ${fixturePath}. Run apps/docs-trees/scripts/generateAospArtifacts.ts first.`
     );
   }
 

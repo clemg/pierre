@@ -2,7 +2,7 @@
 # Targets browsers with native light-dark() support (May 2024+)
 #
 # Used by:
-# - apps/docs (Next.js + Tailwind CSS v4)
+# - apps/docs-diffs and apps/docs-trees (Next.js + Tailwind CSS v4)
 # - packages/diffs (tsdown + postcss)
 
 chrome >= 123

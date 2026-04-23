@@ -28,8 +28,8 @@ export AGENT=1
   - **NEVER run `bun add <package>` inside a package directory** - this will add
     a version number directly which breaks our catalog pattern.
   - This rule is sometimes broken in packages that are published, in order to
-    make sure that end-users aren't forced to our specific version. `apps/docs`
-    would use the catalog version and `diffs` _may_ choose to use a range.
+    make sure that end-users aren't forced to our specific version. The docs
+    apps would use the catalog version and `diffs` _may_ choose to use a range.
 - npm "scripts" should work from inside the folder of the given package, but
   common scripts are often "mirrored" into the root `package.json`. In general
   the root scripts should not do something different than the package-level

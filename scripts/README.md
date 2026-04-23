@@ -49,7 +49,7 @@ requires it. The only flag `ws` itself eats is `-v` / `--verbose`.
 
 In priority order:
 
-1. **Exact path** (`packages/diffs`, `apps/docs`) — filesystem directory, used
+1. **Exact path** (`packages/diffs`, `apps/docs-diffs`) — filesystem directory, used
    verbatim.
 2. **Short name** (`diffs`) — tried as `packages/diffs`, then `apps/diffs`.
 3. **Glob** (`packages/*`, `*`) — delegated to `bun run -F <filter>`.
@@ -58,7 +58,8 @@ In priority order:
 
 ```bash
 bun ws diffs build           # build packages/diffs
-bun ws docs trees:dev        # run the docs trees dev server
+bun ws docs-diffs dev        # run the diffs docs app
+bun ws docs-trees dev        # run the trees docs app
 bun ws trees test            # bun test in packages/trees
 bun ws 'packages/*' build    # build every package
 bun ws '*' tsc               # typecheck everything
@@ -183,8 +184,8 @@ Agents in particular should run `bun run wt clean` before ending their turn
 
 ### `wt ps` — see what's listening
 
-Prints a table with one row per worktree and one column per service (diffs/trees
-dev, docs/trees/path-store E2E, chrome debug). Each cell is either the port
+Prints a table with one row per worktree and one column per service (diffs docs,
+trees docs, trees/path-store E2E, chrome debug). Each cell is either the port
 number + PID if something is listening, or just the port number if it's free.
 Great for answering "wait, which worktree is on 3711 again?"
 
@@ -202,9 +203,10 @@ Each of our dev/test services has a **base port**:
 
 | Service                   | Base port |
 | ------------------------- | --------- |
-| `apps/docs` diffs dev     | 3690      |
-| `apps/docs` trees dev     | 3691      |
-| `apps/docs` E2E           | 4174      |
+| `apps/docs-diffs` dev     | 3690      |
+| `apps/docs-trees` dev     | 3691      |
+| `apps/docs-diffs` E2E     | 4174      |
+| `apps/docs-trees` E2E     | 4175      |
 | `packages/trees` E2E      | 4173      |
 | `packages/path-store` E2E | 4176      |
 | Chrome remote debug       | 9222      |
@@ -228,12 +230,12 @@ of truth. There is no central registry file.
    PIERRE_WORKTREE_SLUG=drag-drop-fix
    PIERRE_PORT_OFFSET=30
    ```
-2. When you run `bun ws docs trees:dev`, `ws` walks up from your cwd, finds
+2. When you run `bun ws docs-trees dev`, `ws` walks up from your cwd, finds
    `.env.worktree`, and injects its keys into the child env.
 3. The package.json script itself uses shell arithmetic to derive the final
    port:
    ```json
-   "trees:dev": "export NEXT_PUBLIC_SITE=trees PORT=$((${PIERRE_PORT_OFFSET:-0} + 3691)) && …"
+   "dev": "export PORT=$((${PIERRE_PORT_OFFSET:-0} + 3691)) && …"
    ```
    In the main clone `PIERRE_PORT_OFFSET` is unset, so PORT is 3691. In a
    worktree with offset 30, PORT is 3721.
@@ -283,7 +285,7 @@ permissions dialog hadn't finished resolving yet.
 ```bash
 bun run wt new drag-drop-fix
 cd ~/pierre/pierre-worktrees/drag-drop-fix
-bun ws docs trees:dev
+bun ws docs-trees dev
 # → serves on http://localhost:<3691 + offset>, tab title prefixed with
 #   an emoji + "[drag-drop-fix]"
 ```
@@ -347,7 +349,7 @@ bun install
   `.env.worktree` for `ws` to find, so `${PIERRE_PORT_OFFSET:-0}` resolves to 0.
   Don't drop a `.env.worktree` in the main clone; it's in `.gitignore` but a
   stray copy there would shift your main-clone ports.
-- **Direct invocations bypass `ws`.** If you `cd apps/docs && bun run trees:dev`
+- **Direct invocations bypass `ws`.** If you `cd apps/docs-trees && bun run dev`
   (without going through `bun ws`), `ws` is not in the call chain and won't
   inject `PIERRE_PORT_OFFSET` into the shell that computes `PORT`. The
   package.json script still resolves `${PIERRE_PORT_OFFSET:-0}` to `0` and the

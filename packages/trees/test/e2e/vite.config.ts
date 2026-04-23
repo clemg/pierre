@@ -12,7 +12,7 @@ export default defineConfig({
     '..',
     '..',
     '..',
-    'apps/docs/public'
+    'apps/docs-trees/public'
   ),
   root: resolve(import.meta.dirname, '..', '..'),
   server: {

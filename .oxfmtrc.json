@@ -42,8 +42,7 @@
     ".next",
     ".source",
     ".vercel",
-    "apps/docs/public/r/*",
-    "apps/docs/next-env.d.ts",
+    "apps/docs-trees/next-env.d.ts",
     "packages/tree-test-data/*-files.json",
     "*.patch",
     "README"

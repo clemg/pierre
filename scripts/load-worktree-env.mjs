@@ -6,8 +6,9 @@
 // root with `PIERRE_WORKTREE_SLUG` / `PIERRE_PORT_OFFSET`. Neither Bun nor Next
 // nor Playwright auto-load a file with that non-standard name — only the
 // conventional `.env*` variants. `scripts/ws.ts` injects those vars when it is
-// in the call chain, but direct invocations (e.g. `bun run trees:dev` inside
-// `apps/docs`, or `bunx playwright test` inside a package) skip `ws` entirely.
+// in the call chain, but direct invocations (e.g. `bun run dev` inside
+// `apps/docs-diffs`, or `bunx playwright test` inside a package) skip `ws`
+// entirely.
 // This helper closes that gap by letting configs pull the file in themselves.
 //
 // The walk starts at `startDir` (defaults to `process.cwd()`) and stops at

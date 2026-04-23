@@ -1,8 +1,13 @@
 #!/usr/bin/env bun
 
 import { execSync, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 
-const stagedFiles = execSync('git diff --cached --name-only', {
+// `--diff-filter=d` excludes deletions, including the old-path side of
+// renames. Without this, renaming a workspace dir (e.g. `apps/diffs-docs`
+// -> `apps/docs-diffs`) makes `--name-only` emit both paths and we'd try
+// to run tsc inside the now-nonexistent old directory.
+const stagedFiles = execSync('git diff --cached --name-only --diff-filter=d', {
   encoding: 'utf8',
 })
   .split('\n')
@@ -14,7 +19,12 @@ const workspaceDirs = new Set<string>();
 for (const file of stagedFiles) {
   const parts = file.split('/');
   if (parts.length >= 2 && (parts[0] === 'apps' || parts[0] === 'packages')) {
-    workspaceDirs.add(`${parts[0]}/${parts[1]}`);
+    const workspace = `${parts[0]}/${parts[1]}`;
+    // Defensive: skip workspaces that no longer exist on disk (e.g. a stash
+    // or partial revert that re-stages a deleted directory).
+    if (existsSync(workspace)) {
+      workspaceDirs.add(workspace);
+    }
   }
 }
 
