@@ -6,25 +6,67 @@
   "exports": {
     "./components/CustomScrollbarCSS": "./src/components/CustomScrollbarCSS.ts",
     "./components/Button.module.css": "./src/components/Button.module.css",
-    "./components/*": "./src/components/*.tsx",
-    "./components/ui/*": "./src/components/ui/*.tsx",
-    "./docs/types": "./src/docs/types.ts",
-    "./docs/*": "./src/docs/*.tsx",
-    "./lib/mdx": "./src/lib/mdx.tsx",
-    "./lib/*": "./src/lib/*.ts",
-    "./config/products": "./src/config/products.ts",
-    "./site/SiteContext": "./src/site/SiteContext.tsx",
-    "./layout/RootLayoutShell": "./src/layout/RootLayoutShell.tsx",
-    "./layout/buildDocsMetadata": "./src/layout/buildDocsMetadata.ts",
-    "./layout/themeBootstrap": "./src/layout/themeBootstrap.ts",
-    "./layout/viewport": "./src/layout/viewport.ts",
-    "./layout/worktreeTitlePrefix": "./src/layout/worktreeTitlePrefix.ts",
+    "./components/*": {
+      "types": "./src/components/*.tsx",
+      "import": "./dist/components/*.js"
+    },
+    "./components/ui/*": {
+      "types": "./src/components/ui/*.tsx",
+      "import": "./dist/components/ui/*.js"
+    },
+    "./docs/types": {
+      "types": "./src/docs/types.ts",
+      "import": "./dist/docs/types.js"
+    },
+    "./docs/*": {
+      "types": "./src/docs/*.tsx",
+      "import": "./dist/docs/*.js"
+    },
+    "./lib/mdx": {
+      "types": "./src/lib/mdx.tsx",
+      "import": "./dist/lib/mdx.js"
+    },
+    "./lib/*": {
+      "types": "./src/lib/*.ts",
+      "import": "./dist/lib/*.js"
+    },
+    "./config/products": {
+      "types": "./src/config/products.ts",
+      "import": "./dist/config/products.js"
+    },
+    "./site/SiteContext": {
+      "types": "./src/site/SiteContext.tsx",
+      "import": "./dist/site/SiteContext.js"
+    },
+    "./layout/RootLayoutShell": {
+      "types": "./src/layout/RootLayoutShell.tsx",
+      "import": "./dist/layout/RootLayoutShell.js"
+    },
+    "./layout/buildDocsMetadata": {
+      "types": "./src/layout/buildDocsMetadata.ts",
+      "import": "./dist/layout/buildDocsMetadata.js"
+    },
+    "./layout/themeBootstrap": {
+      "types": "./src/layout/themeBootstrap.ts",
+      "import": "./dist/layout/themeBootstrap.js"
+    },
+    "./layout/viewport": {
+      "types": "./src/layout/viewport.ts",
+      "import": "./dist/layout/viewport.js"
+    },
+    "./layout/worktreeTitlePrefix": {
+      "types": "./src/layout/worktreeTitlePrefix.ts",
+      "import": "./dist/layout/worktreeTitlePrefix.js"
+    },
     "./styles/globals.css": "./src/styles/globals.css",
     "./styles/prose.css": "./src/styles/prose.css",
     "./testing/*": "./src/testing/*.ts",
     "./postcss": "./postcss.config.mjs"
   },
   "scripts": {
+    "build": "tsdown && bun run build:assets",
+    "build:assets": "mkdir -p dist/components && cp src/components/Button.module.css dist/components/Button.module.css",
+    "dev": "bun run build:assets && echo 'Watching for changes…' && tsdown --watch --log-level error",
     "tsc": "tsgo --noEmit --pretty"
   },
   "dependencies": {
@@ -69,6 +111,7 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@typescript/native-preview": "catalog:",
+    "tsdown": "catalog:",
     "typescript": "catalog:"
   }
 }

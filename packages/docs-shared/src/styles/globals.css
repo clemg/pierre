@@ -5,12 +5,17 @@
  * Tailwind v4's automatic content detection skips descending into nested
  * packages (anything with its own `package.json`), so when the consuming app
  * imports this stylesheet from `@pierre/docs-shared`, none of the shared
- * components are scanned by default. Explicitly point Tailwind at the shared
- * `src` tree so utilities used by `Header.tsx`, `DocsSidebar.tsx`, etc. are
- * generated. Auto-detection still picks up each app's own `app/`, `features/`,
- * `components/`, and `lib/` directories.
+ * components are scanned by default. Explicitly point Tailwind at this
+ * package's `src/` tree so utilities used by `Header.tsx`, `DocsSidebar.tsx`,
+ * etc. are generated. Auto-detection still picks up each app's own `app/`,
+ * `features/`, `components/`, and `lib/` directories.
+ *
+ * IMPORTANT: keep this scoped to `src/`, not the package root. Explicit
+ * `@source` paths bypass Tailwind's default `.gitignore` filter, so pointing
+ * at `../..` would walk `node_modules/` (hundreds of MB once symlinks are
+ * followed) and balloon dev-server memory by orders of magnitude.
  */
-@source "../..";
+@source "../../src";
 
 @custom-variant light (&:is(.light *));
 @custom-variant dark (&:is(.dark *, .dark));

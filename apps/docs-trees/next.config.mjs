@@ -23,9 +23,11 @@ const nextConfig = {
   },
   // Resolve and transpile workspace packages so subpath exports (e.g.
   // @pierre/trees/react) resolve correctly when Next follows client-component
-  // imports from the server. `@pierre/docs-shared` is source-only and lives in
-  // this list so Next compiles its TS/TSX/CSS directly.
-  transpilePackages: ['@pierre/diffs', '@pierre/docs-shared', '@pierre/trees'],
+  // imports from the server. `@pierre/docs-shared` is intentionally NOT in this
+  // list: it ships pre-built JS to `dist/` so React Compiler / Turbopack treat
+  // it like a normal node_modules dep and skip recompiling its 30-odd
+  // `'use client'` shadcn/Radix wrappers on every dev build.
+  transpilePackages: ['@pierre/diffs', '@pierre/trees'],
   // Opt the /trees-dev route out of bfcache / HTTP document caching.
   // iOS Safari kills tabs that briefly hold two copies of the 1.6M-path AOSP
   // tree during a refresh; no-store tells the browser to fully release the old

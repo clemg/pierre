@@ -32,7 +32,13 @@ function MdxLink(props: ComponentPropsWithoutRef<'a'>) {
   return <a target="_blank" rel="noopener noreferrer" {...props} />;
 }
 
-export type MDXComponents = Record<string, ComponentType<unknown>>;
+// MDX's component slot is intentionally open-ended: each entry can be a
+// component with any prop shape. `React.ComponentType<P>` is contravariant in
+// `P`, so substituting `unknown` (or any concrete record) here would reject
+// well-typed app components like `MultiFileDiff`. The upstream `mdx/types`
+// `MDXComponents` alias uses the same `any` for the same reason.
+// oxlint-disable-next-line typescript-eslint/no-explicit-any
+export type MDXComponents = Record<string, ComponentType<any>>;
 
 /** Components that are universally available in every docs MDX file. */
 export const baseMDXComponents = {
@@ -55,7 +61,7 @@ export interface RenderMDXOptions {
    */
   filePath: string;
   /** App-specific MDX components merged on top of {@link baseMDXComponents}. */
-  components?: Record<string, ComponentType<any>>;
+  components?: MDXComponents;
   /** Data passed to MDX scope - available as variables in MDX. */
   scope?: Record<string, unknown>;
   /**
@@ -105,7 +111,7 @@ export async function renderMDX({
 export async function renderMDXWithPreloadedFiles(
   filePath: string,
   files: Readonly<Record<string, PreloadFileOptions<unknown>>>,
-  components?: Record<string, ComponentType<any>>,
+  components?: MDXComponents,
   appCwd?: string
 ) {
   const entries = Object.entries(files);
@@ -124,12 +130,12 @@ export async function renderMDXWithPreloadedFiles(
  * MDX components map (and its `app/` cwd if it differs from `process.cwd()`).
  */
 export function createRenderMDX(
-  defaultComponents: Record<string, ComponentType<any>>,
+  defaultComponents: MDXComponents,
   appCwd?: string
 ) {
   function appRenderMDX(
     options: Omit<RenderMDXOptions, 'components' | 'appCwd'> & {
-      components?: Record<string, ComponentType<any>>;
+      components?: MDXComponents;
     }
   ) {
     return renderMDX({
@@ -142,7 +148,7 @@ export function createRenderMDX(
   function appRenderMDXWithPreloadedFiles(
     filePath: string,
     files: Readonly<Record<string, PreloadFileOptions<unknown>>>,
-    components?: Record<string, ComponentType<any>>
+    components?: MDXComponents
   ) {
     return renderMDXWithPreloadedFiles(
       filePath,
