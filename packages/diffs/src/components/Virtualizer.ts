@@ -4,6 +4,7 @@ import { areVirtualWindowSpecsEqual } from '../utils/areVirtualWindowSpecsEqual'
 import { createWindowFromScrollPosition } from '../utils/createWindowFromScrollPosition';
 
 interface SubscribedInstance {
+  getEstimatedBottom?(): number | undefined;
   onRender(dirty: boolean): boolean;
   reconcileHeights(): void;
   setVisibility(visible: boolean): void;
@@ -19,7 +20,10 @@ interface ScrollAnchor {
 
 // 800 seems like the healthy overscan required to
 // keep safari from blanking... if we catch it tho, maybe 900
-const DEFAULT_OVERSCROLL_SIZE = 1000;
+const DEFAULT_OVERSCROLL_SIZE = 800;
+// The initial top-of-page render now limits synchronous visibility to the
+// viewport, so keep the render window itself on the normal safer overscan.
+const INITIAL_TOP_OVERSCROLL_SIZE = DEFAULT_OVERSCROLL_SIZE;
 const INTERSECTION_OBSERVER_MARGIN = DEFAULT_OVERSCROLL_SIZE * 4;
 const INTERSECTION_OBSERVER_THRESHOLD = [0, 0.000001, 0.99999, 1];
 
@@ -109,8 +113,10 @@ export class Virtualizer {
       this.connect(container, instance);
     }
     this.connectQueue.clear();
-    this.markDOMDirty();
-    queueRender(this.computeRenderRangeAndEmit);
+    if (this.observers.size > 0) {
+      this.markDOMDirty();
+      queueRender(this.computeRenderRangeAndEmit);
+    }
   }
 
   instanceChanged(instance: SubscribedInstance): void {
@@ -121,12 +127,16 @@ export class Virtualizer {
 
   getWindowSpecs(): VirtualWindowSpecs {
     if (this.windowSpecs.top === 0 && this.windowSpecs.bottom === 0) {
+      const scrollTop = this.getScrollTop();
       this.windowSpecs = createWindowFromScrollPosition({
-        scrollTop: this.getScrollTop(),
+        scrollTop,
         height: this.getHeight(),
         scrollHeight: this.getScrollHeight(),
         fitPerfectly: false,
-        overscrollSize: this.config.overscrollSize,
+        overscrollSize:
+          scrollTop === 0
+            ? INITIAL_TOP_OVERSCROLL_SIZE
+            : this.config.overscrollSize,
       });
     }
     return this.windowSpecs;
@@ -135,7 +145,10 @@ export class Virtualizer {
   isInstanceVisible(elementTop: number, elementHeight: number): boolean {
     const scrollTop = this.getScrollTop();
     const height = this.getHeight();
-    const margin = this.config.intersectionObserverMargin;
+    // Before IntersectionObserver has delivered its first visibility update,
+    // render only the actual top viewport synchronously. The observer still
+    // uses the larger margin to pre-render near-viewport files for scrolling.
+    const margin = scrollTop === 0 ? 0 : this.config.intersectionObserverMargin;
     const top = scrollTop - margin;
     const bottom = scrollTop + height + margin;
     return !(elementTop < top - elementHeight || elementTop > bottom);
@@ -239,6 +252,14 @@ export class Virtualizer {
     );
   }
 
+  getEstimatedOffsetAfterPrevious(element: HTMLElement): number | undefined {
+    const previous = element.previousElementSibling;
+    if (!(previous instanceof HTMLElement)) {
+      return undefined;
+    }
+    return this.observers.get(previous)?.getEstimatedBottom?.();
+  }
+
   connect(container: HTMLElement, instance: SubscribedInstance): () => void {
     if (this.observers.has(container)) {
       throw new Error('Virtualizer.connect: instance is already connected...');
@@ -251,9 +272,6 @@ export class Virtualizer {
       // FIXME(amadeus): Go through the connection phase a bit more closely...
       this.intersectionObserver.observe(container);
       this.observers.set(container, instance);
-      this.instancesChanged.add(instance);
-      this.markDOMDirty();
-      queueRender(this.computeRenderRangeAndEmit);
     }
     return () => this.disconnect(container);
   }
@@ -326,12 +344,16 @@ export class Virtualizer {
     // the window check first and attempt to render with existing logic first
     // and then queue up a corrected render after
     if (this.instancesChanged.size === 0) {
+      const scrollTop = this.getScrollTop();
       const windowSpecs = createWindowFromScrollPosition({
-        scrollTop: this.getScrollTop(),
+        scrollTop,
         height: this.getHeight(),
         scrollHeight: this.getScrollHeight(),
         fitPerfectly: false,
-        overscrollSize: this.config.overscrollSize,
+        overscrollSize:
+          scrollTop === 0
+            ? INITIAL_TOP_OVERSCROLL_SIZE
+            : this.config.overscrollSize,
       });
       if (
         areVirtualWindowSpecsEqual(this.windowSpecs, windowSpecs) &&
@@ -345,7 +367,10 @@ export class Virtualizer {
     }
     this.visibleInstancesDirty = false;
     this.renderedObservers = this.observers.size;
-    const anchor = this.getScrollAnchor(this.height);
+    // At the top of the scroller, browser scroll anchoring does not need help.
+    // Avoid querying visible line positions during initial top-of-page renders.
+    const anchor =
+      this.getScrollTop() > 0 ? this.getScrollAnchor(this.height) : undefined;
     const updatedInstances = new Set<SubscribedInstance>();
     // NOTE(amadeus): If the wrapper is dirty, we need to force every component
     // to re-render
@@ -586,10 +611,19 @@ export class Virtualizer {
         return 0;
       }
       if (this.root instanceof Document) {
-        return window.scrollY;
+        const scrollY = window.scrollY;
+        if (scrollY <= 0) {
+          return 0;
+        }
+        return scrollY;
       }
       return this.root.scrollTop;
     })();
+
+    if (scrollTop <= 0) {
+      this.scrollTop = 0;
+      return 0;
+    }
 
     // Lets always make sure to clamp scroll position cases of
     // over/bounce scroll

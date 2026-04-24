@@ -18,6 +18,7 @@ import { getHighlighterThemeStyles } from '../utils/getHighlighterThemeStyles';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
 import { upsertHostThemeStyle } from '../utils/hostTheme';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
+import { ensureDiffsShadowRoot } from './web-components';
 
 export interface FileStreamOptions extends BaseCodeOptions {
   lang?: SupportedLanguages;
@@ -336,8 +337,7 @@ export class FileStream {
     themeType: ThemeTypes,
     baseThemeType?: 'light' | 'dark'
   ): void {
-    const shadowRoot =
-      container.shadowRoot ?? container.attachShadow({ mode: 'open' });
+    const shadowRoot = ensureDiffsShadowRoot(container);
     const effectiveThemeType = baseThemeType ?? themeType;
     if (
       this.themeCSSStyle?.parentNode === shadowRoot &&

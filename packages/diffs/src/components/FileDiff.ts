@@ -60,7 +60,7 @@ import { parseDiffFromFile } from '../utils/parseDiffFromFile';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
 import type { WorkerPoolManager } from '../worker';
-import { DiffsContainerLoaded } from './web-components';
+import { DiffsContainerLoaded, ensureDiffsShadowRoot } from './web-components';
 
 export interface FileDiffRenderProps<LAnnotation> {
   fileDiff?: FileDiffMetadata;
@@ -401,6 +401,7 @@ export class FileDiff<LAnnotation = undefined> {
     lineAnnotations: DiffLineAnnotation<LAnnotation>[]
   ): void {
     this.lineAnnotations = lineAnnotations;
+    this.hunksRenderer.setLineAnnotations(lineAnnotations);
   }
 
   private canPartiallyRender(
@@ -611,7 +612,11 @@ export class FileDiff<LAnnotation = undefined> {
     this.renderGutterUtility();
     this.injectUnsafeCSS();
     this.interactionManager.setup(this.pre);
-    this.resizeManager.setup(this.pre, overflow === 'wrap');
+    if (overflow === 'wrap' || this.lineAnnotations.length > 0) {
+      this.resizeManager.setup(this.pre, overflow === 'wrap');
+    } else {
+      this.resizeManager.cleanUp();
+    }
     if (overflow === 'scroll' && diffStyle === 'split') {
       this.scrollSyncManager.setup(
         this.pre,
@@ -729,8 +734,6 @@ export class FileDiff<LAnnotation = undefined> {
       return false;
     }
     this.hunksRenderer.setOptions(this.getHunksRendererOptions(this.options));
-
-    this.hunksRenderer.setLineAnnotations(this.lineAnnotations);
 
     const {
       diffStyle = 'split',
@@ -850,7 +853,11 @@ export class FileDiff<LAnnotation = undefined> {
       this.renderGutterUtility();
 
       this.interactionManager.setup(pre);
-      this.resizeManager.setup(pre, overflow === 'wrap');
+      if (overflow === 'wrap' || this.lineAnnotations.length > 0) {
+        this.resizeManager.setup(pre, overflow === 'wrap');
+      } else {
+        this.resizeManager.cleanUp();
+      }
       if (overflow === 'scroll' && diffStyle === 'split') {
         this.scrollSyncManager.setup(
           pre,
@@ -927,12 +934,12 @@ export class FileDiff<LAnnotation = undefined> {
     this.cleanChildNodes();
 
     if (this.placeHolder == null) {
-      const shadowRoot =
-        this.fileContainer.shadowRoot ??
-        this.fileContainer.attachShadow({ mode: 'open' });
+      const shadowRoot = ensureDiffsShadowRoot(this.fileContainer, false);
       this.placeHolder = document.createElement('div');
       this.placeHolder.dataset.placeholder = '';
+      this.placeHolder.style.cssText = `contain: strict; height: ${height}px;`;
       shadowRoot.appendChild(this.placeHolder);
+      return true;
     }
     this.placeHolder.style.setProperty('height', `${height}px`);
     return true;
@@ -1103,16 +1110,24 @@ export class FileDiff<LAnnotation = undefined> {
     if (parentNode != null && this.fileContainer.parentNode !== parentNode) {
       parentNode.appendChild(this.fileContainer);
     }
-    if (this.spriteSVG == null) {
-      const fragment = document.createElement('div');
-      fragment.innerHTML = SVGSpriteSheet;
-      const firstChild = fragment.firstChild;
-      if (firstChild instanceof SVGElement) {
-        this.spriteSVG = firstChild;
-        this.fileContainer.shadowRoot?.appendChild(this.spriteSVG);
-      }
-    }
     return this.fileContainer;
+  }
+
+  private ensureSpriteSVG(container: HTMLElement): void {
+    if (this.spriteSVG != null) {
+      return;
+    }
+    const shadowRoot = container.shadowRoot;
+    if (shadowRoot == null) {
+      return;
+    }
+    const fragment = document.createElement('div');
+    fragment.innerHTML = SVGSpriteSheet;
+    const firstChild = fragment.firstChild;
+    if (firstChild instanceof SVGElement) {
+      this.spriteSVG = firstChild;
+      shadowRoot.appendChild(this.spriteSVG);
+    }
   }
 
   protected getFileContainer(): HTMLElement | undefined {
@@ -1120,8 +1135,7 @@ export class FileDiff<LAnnotation = undefined> {
   }
 
   private getOrCreatePreNode(container: HTMLElement): HTMLPreElement {
-    const shadowRoot =
-      container.shadowRoot ?? container.attachShadow({ mode: 'open' });
+    const shadowRoot = ensureDiffsShadowRoot(container);
     // If we haven't created a pre element yet, lets go ahead and do that
     if (this.pre == null) {
       this.pre = document.createElement('pre');
@@ -1167,6 +1181,8 @@ export class FileDiff<LAnnotation = undefined> {
     container: HTMLElement
   ): void {
     this.cleanupErrorWrapper();
+    const shadowRoot = ensureDiffsShadowRoot(container);
+    this.ensureSpriteSVG(container);
     this.placeHolder?.remove();
     this.placeHolder = undefined;
     const { fileDiff } = this;
@@ -1179,9 +1195,9 @@ export class FileDiff<LAnnotation = undefined> {
         return;
       }
       if (this.headerElement != null) {
-        container.shadowRoot?.replaceChild(newHeader, this.headerElement);
+        shadowRoot.replaceChild(newHeader, this.headerElement);
       } else {
-        container.shadowRoot?.prepend(newHeader);
+        shadowRoot.prepend(newHeader);
       }
       this.headerElement = newHeader;
       this.lastRenderedHeaderHTML = headerHTML;
@@ -1312,8 +1328,7 @@ export class FileDiff<LAnnotation = undefined> {
     themeType: ThemeTypes,
     baseThemeType?: 'light' | 'dark'
   ): void {
-    const shadowRoot =
-      container.shadowRoot ?? container.attachShadow({ mode: 'open' });
+    const shadowRoot = ensureDiffsShadowRoot(container);
     const effectiveThemeType = baseThemeType ?? themeType;
     if (
       this.themeCSSStyle?.parentNode === shadowRoot &&
@@ -1346,14 +1361,26 @@ export class FileDiff<LAnnotation = undefined> {
       (this.options.hunkSeparators ?? 'line-info') === 'line-info';
     const rowSpan = overflow === 'wrap' ? result.rowCount : undefined;
     this.cleanupErrorWrapper();
+    if (this.fileContainer != null) {
+      this.ensureSpriteSVG(this.fileContainer);
+    }
     this.applyPreNodeAttributes(pre, result);
 
     let shouldReplace = false;
     // Create code elements and insert HTML content
     const codeElements: HTMLElement[] = [];
-    const unifiedAST = this.hunksRenderer.renderCodeAST('unified', result);
-    const deletionsAST = this.hunksRenderer.renderCodeAST('deletions', result);
-    const additionsAST = this.hunksRenderer.renderCodeAST('additions', result);
+    const unifiedAST =
+      result.unifiedContentAST != null
+        ? this.hunksRenderer.renderCodeAST('unified', result)
+        : undefined;
+    const deletionsAST =
+      result.deletionsContentAST != null
+        ? this.hunksRenderer.renderCodeAST('deletions', result)
+        : undefined;
+    const additionsAST =
+      result.additionsContentAST != null
+        ? this.hunksRenderer.renderCodeAST('additions', result)
+        : undefined;
     if (unifiedAST != null) {
       shouldReplace =
         this.codeUnified == null ||
@@ -2086,8 +2113,7 @@ export class FileDiff<LAnnotation = undefined> {
     pre.remove();
     this.pre = undefined;
     this.appliedPreAttributes = undefined;
-    const shadowRoot =
-      container.shadowRoot ?? container.attachShadow({ mode: 'open' });
+    const shadowRoot = ensureDiffsShadowRoot(container);
     this.errorWrapper ??= document.createElement('div');
     this.errorWrapper.dataset.errorWrapper = '';
     this.errorWrapper.innerHTML = '';

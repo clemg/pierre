@@ -45,7 +45,7 @@ import { upsertHostThemeStyle } from '../utils/hostTheme';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
 import type { WorkerPoolManager } from '../worker';
-import { DiffsContainerLoaded } from './web-components';
+import { DiffsContainerLoaded, ensureDiffsShadowRoot } from './web-components';
 
 const EMPTY_STRINGS: string[] = [];
 
@@ -572,9 +572,7 @@ export class File<LAnnotation = undefined> {
     this.cleanChildNodes();
 
     if (this.placeHolder == null) {
-      const shadowRoot =
-        this.fileContainer.shadowRoot ??
-        this.fileContainer.attachShadow({ mode: 'open' });
+      const shadowRoot = ensureDiffsShadowRoot(this.fileContainer, false);
       this.placeHolder = document.createElement('div');
       this.placeHolder.dataset.placeholder = '';
       shadowRoot.appendChild(this.placeHolder);
@@ -726,8 +724,7 @@ export class File<LAnnotation = undefined> {
     themeType: ThemeTypes,
     baseThemeType?: 'light' | 'dark'
   ): void {
-    const shadowRoot =
-      container.shadowRoot ?? container.attachShadow({ mode: 'open' });
+    const shadowRoot = ensureDiffsShadowRoot(container);
     const effectiveThemeType = baseThemeType ?? themeType;
     if (
       this.themeCSSStyle?.parentNode === shadowRoot &&
@@ -1017,6 +1014,7 @@ export class File<LAnnotation = undefined> {
     const { file } = this;
     if (file == null) return;
     this.cleanupErrorWrapper();
+    const shadowRoot = ensureDiffsShadowRoot(container);
     this.placeHolder?.remove();
     this.placeHolder = undefined;
     const headerHTML = toHtml(headerAST);
@@ -1028,9 +1026,9 @@ export class File<LAnnotation = undefined> {
         return;
       }
       if (this.headerElement != null) {
-        container.shadowRoot?.replaceChild(newHeader, this.headerElement);
+        shadowRoot.replaceChild(newHeader, this.headerElement);
       } else {
-        container.shadowRoot?.prepend(newHeader);
+        shadowRoot.prepend(newHeader);
       }
       this.headerElement = newHeader;
       this.lastRenderedHeaderHTML = headerHTML;
@@ -1136,20 +1134,20 @@ export class File<LAnnotation = undefined> {
       parentNode.appendChild(this.fileContainer);
     }
     if (this.spriteSVG == null) {
+      const shadowRoot = ensureDiffsShadowRoot(this.fileContainer);
       const fragment = document.createElement('div');
       fragment.innerHTML = SVGSpriteSheet;
       const firstChild = fragment.firstChild;
       if (firstChild instanceof SVGElement) {
         this.spriteSVG = firstChild;
-        this.fileContainer.shadowRoot?.appendChild(this.spriteSVG);
+        shadowRoot.appendChild(this.spriteSVG);
       }
     }
     return this.fileContainer;
   }
 
   private getOrCreatePreNode(container: HTMLElement): HTMLPreElement {
-    const shadowRoot =
-      container.shadowRoot ?? container.attachShadow({ mode: 'open' });
+    const shadowRoot = ensureDiffsShadowRoot(container);
     // If we haven't created a pre element yet, lets go ahead and do that
     if (this.pre == null) {
       this.pre = document.createElement('pre');
@@ -1160,7 +1158,7 @@ export class File<LAnnotation = undefined> {
     // If we have a new parent container for the pre element, lets go ahead and
     // move it into the new container
     else if (this.pre.parentNode !== shadowRoot) {
-      container.shadowRoot?.appendChild(this.pre);
+      shadowRoot.appendChild(this.pre);
       this.appliedPreAttributes = undefined;
     }
 
@@ -1211,8 +1209,7 @@ export class File<LAnnotation = undefined> {
     pre.remove();
     this.pre = undefined;
     this.appliedPreAttributes = undefined;
-    const shadowRoot =
-      container.shadowRoot ?? container.attachShadow({ mode: 'open' });
+    const shadowRoot = ensureDiffsShadowRoot(container);
     this.errorWrapper ??= document.createElement('div');
     this.errorWrapper.dataset.errorWrapper = '';
     this.errorWrapper.innerHTML = '';

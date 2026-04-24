@@ -24,50 +24,52 @@ export class ResizeManager {
 
     const observedNodes = new Map(this.observedNodes);
     this.observedNodes.clear();
-    for (const codeElement of codeElements) {
-      let item: ObservedGridNodes | ObservedAnnotationNodes | undefined =
-        observedNodes.get(codeElement);
-      if (item != null && item.type !== 'code') {
-        throw new Error(
-          'ResizeManager.setup: somehow a code node is being used for an annotation, should be impossible'
-        );
-      }
-
-      let numberElement = codeElement.firstElementChild;
-      if (!(numberElement instanceof HTMLElement)) {
-        numberElement = null;
-      }
-
-      if (item != null) {
-        this.observedNodes.set(codeElement, item);
-        observedNodes.delete(codeElement);
-        if (item.numberElement !== numberElement) {
-          if (item.numberElement != null) {
-            this.resizeObserver.unobserve(item.numberElement);
-          }
-          if (numberElement != null) {
-            this.resizeObserver.observe(numberElement);
-            observedNodes.delete(numberElement);
-            this.observedNodes.set(numberElement, item);
-          }
-          item.numberElement = numberElement;
-        } else if (item.numberElement != null) {
-          observedNodes.delete(item.numberElement);
-          this.observedNodes.set(item.numberElement, item);
+    if (disableAnnotations) {
+      for (const codeElement of codeElements) {
+        let item: ObservedGridNodes | ObservedAnnotationNodes | undefined =
+          observedNodes.get(codeElement);
+        if (item != null && item.type !== 'code') {
+          throw new Error(
+            'ResizeManager.setup: somehow a code node is being used for an annotation, should be impossible'
+          );
         }
-      } else {
-        item = {
-          type: 'code',
-          codeElement,
-          numberElement,
-          codeWidth: 'auto',
-          numberWidth: 0,
-        };
-        this.observedNodes.set(codeElement, item);
-        this.resizeObserver.observe(codeElement);
-        if (numberElement != null) {
-          this.observedNodes.set(numberElement, item);
-          this.resizeObserver.observe(numberElement);
+
+        let numberElement = codeElement.firstElementChild;
+        if (!(numberElement instanceof HTMLElement)) {
+          numberElement = null;
+        }
+
+        if (item != null) {
+          this.observedNodes.set(codeElement, item);
+          observedNodes.delete(codeElement);
+          if (item.numberElement !== numberElement) {
+            if (item.numberElement != null) {
+              this.resizeObserver.unobserve(item.numberElement);
+            }
+            if (numberElement != null) {
+              this.resizeObserver.observe(numberElement);
+              observedNodes.delete(numberElement);
+              this.observedNodes.set(numberElement, item);
+            }
+            item.numberElement = numberElement;
+          } else if (item.numberElement != null) {
+            observedNodes.delete(item.numberElement);
+            this.observedNodes.set(item.numberElement, item);
+          }
+        } else {
+          item = {
+            type: 'code',
+            codeElement,
+            numberElement,
+            codeWidth: 'auto',
+            numberWidth: 0,
+          };
+          this.observedNodes.set(codeElement, item);
+          this.resizeObserver.observe(codeElement);
+          if (numberElement != null) {
+            this.observedNodes.set(numberElement, item);
+            this.resizeObserver.observe(numberElement);
+          }
         }
       }
     }
@@ -134,21 +136,15 @@ export class ResizeManager {
           column1: {
             container: container1,
             child: child1,
-            childHeight: child1.getBoundingClientRect().height,
+            childHeight: 0,
           },
           column2: {
             container: container2,
             child: child2,
-            childHeight: child2.getBoundingClientRect().height,
+            childHeight: 0,
           },
           currentHeight: 'auto',
         };
-
-        const newHeight = Math.max(
-          item.column1.childHeight,
-          item.column2.childHeight
-        );
-        this.applyNewHeight(item, newHeight);
 
         this.observedNodes.set(child1, item);
         this.observedNodes.set(child2, item);
@@ -244,16 +240,6 @@ export class ResizeManager {
               '--diffs-column-width',
               `${typeof item.codeWidth === 'number' ? `${item.codeWidth}px` : 'auto'}`
             );
-          }
-          if (
-            item.numberElement != null &&
-            typeof item.codeWidth === 'number' &&
-            item.numberWidth === 0
-          ) {
-            updates.push([
-              item.numberElement,
-              item.numberElement.getBoundingClientRect().width,
-            ]);
           }
         } else if (target === item.numberElement) {
           const inlineSize = Math.max(Math.ceil(targetInlineSize), 0);

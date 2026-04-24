@@ -43,7 +43,7 @@ export const CORE_CSS_ATTRIBUTE = 'data-core-css';
 
 export const DEFAULT_COLLAPSED_CONTEXT_THRESHOLD = 1;
 export const DEFAULT_VIRTUAL_FILE_METRICS: VirtualFileMetrics = {
-  hunkLineCount: 50,
+  hunkLineCount: 75,
   lineHeight: 20,
   diffHeaderHeight: 44,
   hunkSeparatorHeight: 32,

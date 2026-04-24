@@ -133,21 +133,27 @@ export class VirtualizedFileDiff<
         if (lineIndexAttr == null) continue;
 
         const lineIndex = parseLineIndex(lineIndexAttr, diffStyle);
-        let measuredHeight = line.getBoundingClientRect().height;
-        let hasMetadata = false;
-        // Annotations or noNewline metadata increase the size of the their
-        // attached line
-        if (
+        const metadataElement =
           line.nextElementSibling instanceof HTMLElement &&
           ('lineAnnotation' in line.nextElementSibling.dataset ||
             'noNewline' in line.nextElementSibling.dataset)
-        ) {
-          if ('noNewline' in line.nextElementSibling.dataset) {
-            hasMetadata = true;
+            ? line.nextElementSibling
+            : undefined;
+
+        if (metadataElement == null) {
+          if (this.heightCache.delete(lineIndex)) {
+            hasLineHeightChange = true;
           }
-          measuredHeight +=
-            line.nextElementSibling.getBoundingClientRect().height;
+          continue;
         }
+
+        const hasMetadata = 'noNewline' in metadataElement.dataset;
+        // In scroll mode normal rows use the configured line height. Measuring
+        // only rows with attached metadata avoids forcing layout for every
+        // visible line while still correcting rows whose height can change.
+        const measuredHeight =
+          line.getBoundingClientRect().height +
+          metadataElement.getBoundingClientRect().height;
         const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);
 
         if (measuredHeight === expectedHeight) {
@@ -173,6 +179,10 @@ export class VirtualizedFileDiff<
     if (hasLineHeightChange || this.virtualizer.config.resizeDebugging) {
       this.computeApproximateSize();
     }
+  }
+
+  public getEstimatedBottom(): number | undefined {
+    return this.top == null ? undefined : this.top + this.height;
   }
 
   public onRender = (dirty: boolean): boolean => {
@@ -366,14 +376,14 @@ export class VirtualizedFileDiff<
     if (!isSetup) {
       this.computeApproximateSize();
       this.virtualizer.connect(fileContainer, this);
-      this.top ??= this.virtualizer.getOffsetInScrollContainer(fileContainer);
+      this.top ??= this.getInitialTop(fileContainer);
       this.isVisible = this.virtualizer.isInstanceVisible(
         this.top,
         this.height
       );
       this.isSetup = true;
     } else {
-      this.top ??= this.virtualizer.getOffsetInScrollContainer(fileContainer);
+      this.top ??= this.getInitialTop(fileContainer);
     }
 
     if (!this.isVisible) {
@@ -394,6 +404,17 @@ export class VirtualizedFileDiff<
       newFile,
       ...props,
     });
+  }
+
+  // Use the previous virtualized sibling's estimated bottom to avoid forcing
+  // layout for every file during the initial sequential render. If another
+  // element, such as patch metadata, breaks the sequence we fall back to a real
+  // DOM measurement for that file.
+  private getInitialTop(fileContainer: HTMLElement): number {
+    return (
+      this.virtualizer.getEstimatedOffsetAfterPrevious?.(fileContainer) ??
+      this.virtualizer.getOffsetInScrollContainer(fileContainer)
+    );
   }
 
   private getDiffStyle(): 'split' | 'unified' {

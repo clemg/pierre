@@ -16,6 +16,27 @@ import { areSelectionPointsEqual } from '../utils/areSelectionPointsEqual';
 import { areSelectionsEqual } from '../utils/areSelectionsEqual';
 import { createGutterUtilityElement } from '../utils/createGutterUtilityElement';
 
+const DEFAULT_GUTTER_UTILITY_HTML = toHtml(createGutterUtilityElement());
+let gutterUtilityTemplate: HTMLTemplateElement | undefined;
+
+function createDefaultGutterUtilityButton(): HTMLButtonElement | undefined {
+  const template = (gutterUtilityTemplate ??=
+    document.createElement('template'));
+  if (template.content != null) {
+    if (template.innerHTML === '') {
+      template.innerHTML = DEFAULT_GUTTER_UTILITY_HTML;
+    }
+    const element = template.content.firstElementChild?.cloneNode(true);
+    return element instanceof HTMLButtonElement ? element : undefined;
+  }
+
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = DEFAULT_GUTTER_UTILITY_HTML;
+  return tempDiv.firstElementChild instanceof HTMLButtonElement
+    ? tempDiv.firstElementChild
+    : undefined;
+}
+
 interface TokenCache {
   tokenElement: HTMLElement;
   lineCharStart: number;
@@ -1012,15 +1033,12 @@ export class InteractionManager<TMode extends InteractionManagerMode> {
       this.gutterUtilitySlot?.remove();
       this.gutterUtilitySlot = undefined;
       if (this.gutterUtilityButton == null) {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = toHtml(createGutterUtilityElement());
-        const utilityButton = tempDiv.firstElementChild;
-        if (!(utilityButton instanceof HTMLButtonElement)) {
+        const utilityButton = createDefaultGutterUtilityButton();
+        if (utilityButton == null) {
           throw new Error(
             'InteractionManager.ensureGutterUtilityNode: Node element should be a button'
           );
         }
-        utilityButton.remove();
         this.gutterUtilityButton = utilityButton;
       }
       if (this.gutterUtilityButton.parentNode !== this.gutterUtilityContainer) {
