@@ -131,6 +131,7 @@ interface PlaygroundControlsContentProps {
   setSelectedRange: (v: SelectedLineRange | null) => void;
   handleCopyLink: () => void;
   hideShare?: boolean;
+  hideLayoutToggle?: boolean;
 }
 
 function PlaygroundControlsContent({
@@ -164,6 +165,7 @@ function PlaygroundControlsContent({
   setSelectedRange,
   handleCopyLink,
   hideShare = false,
+  hideLayoutToggle = false,
 }: PlaygroundControlsContentProps) {
   const interactionMode: 'select' | 'comment' | 'none' = enableHoverUtility
     ? 'comment'
@@ -194,19 +196,25 @@ function PlaygroundControlsContent({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <ButtonGroup
-          value={diffStyle}
-          onValueChange={(value) => setDiffStyle(value as 'split' | 'unified')}
-        >
-          <ButtonGroupItem value="split">
-            <IconDiffSplit />
-          </ButtonGroupItem>
-          <ButtonGroupItem value="unified">
-            <IconDiffUnified />
-          </ButtonGroupItem>
-        </ButtonGroup>
+        {!hideLayoutToggle && (
+          <>
+            <ButtonGroup
+              value={diffStyle}
+              onValueChange={(value) =>
+                setDiffStyle(value as 'split' | 'unified')
+              }
+            >
+              <ButtonGroupItem value="split">
+                <IconDiffSplit />
+              </ButtonGroupItem>
+              <ButtonGroupItem value="unified">
+                <IconDiffUnified />
+              </ButtonGroupItem>
+            </ButtonGroup>
 
-        <div className="bg-border h-6 w-px" />
+            <div className="bg-border h-6 w-px" />
+          </>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -709,6 +717,9 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
   const canSelectLines =
     enableLineSelection && !enableHoverUtility && !hasOpenCommentForm;
 
+  const isNarrow = useIsNarrow();
+  const effectiveDiffStyle = isNarrow ? 'unified' : diffStyle;
+
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const closeControls = useCallback(() => setIsControlsOpen(false), []);
 
@@ -800,7 +811,11 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
                 Close
               </Button>
             </div>
-            <PlaygroundControlsContent {...controlsContentProps} hideShare />
+            <PlaygroundControlsContent
+              {...controlsContentProps}
+              hideShare
+              hideLayoutToggle
+            />
           </div>
         </div>
       </div>
@@ -812,7 +827,7 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
         lineAnnotations={showAnnotations ? annotations : []}
         options={{
           ...prerenderedDiff.options,
-          diffStyle,
+          diffStyle: effectiveDiffStyle,
           diffIndicators,
           lineDiffType,
           hunkSeparators,
@@ -849,6 +864,18 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
       />
     </div>
   );
+}
+
+function useIsNarrow() {
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767.98px)');
+    const update = () => setIsNarrow(mql.matches);
+    update();
+    mql.addEventListener('change', update);
+    return () => mql.removeEventListener('change', update);
+  }, []);
+  return isNarrow;
 }
 
 function ToggleButton({
