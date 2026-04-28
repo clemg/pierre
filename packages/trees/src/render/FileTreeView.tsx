@@ -270,7 +270,40 @@ function getPointElement(
     pointRoot.elementFromPoint?.(clientX, clientY) ??
     documentElementFromPoint?.(clientX, clientY) ??
     null;
+  if (
+    rootNode instanceof ShadowRoot &&
+    (element == null || !rootNode.contains(element))
+  ) {
+    return getShadowPointElementByGeometry(rootNode, clientX, clientY);
+  }
+
   return element instanceof HTMLElement ? element : null;
+}
+
+function getShadowPointElementByGeometry(
+  rootNode: ShadowRoot,
+  clientX: number,
+  clientY: number
+): HTMLElement | null {
+  const candidates = Array.from(
+    rootNode.querySelectorAll<HTMLElement>(
+      '[data-type="item"], [data-item-flattened-subitem]'
+    )
+  );
+  for (let index = candidates.length - 1; index >= 0; index--) {
+    const candidate = candidates[index];
+    const rect = candidate.getBoundingClientRect();
+    if (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    ) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function resolveDropTargetFromElement(
@@ -1224,6 +1257,7 @@ export function FileTreeView({
   const [lastContextMenuInteraction, setLastContextMenuInteraction] = useState<
     'focus' | 'pointer' | null
   >(null);
+  const [scrollSettledRevision, setScrollSettledRevision] = useState(0);
   const [contextMenuState, setContextMenuState] = useState<{
     anchorRect: FileTreeContextMenuOpenContext['anchorRect'] | null;
     item: FileTreeContextMenuItem;
@@ -1433,6 +1467,14 @@ export function FileTreeView({
     focusedIndex >= 0 &&
     focusedIndex >= range.start &&
     focusedIndex <= range.end;
+  const focusedRowIsVisible =
+    focusedIndex >= 0 &&
+    focusedIndex >= layoutSnapshot.visible.startIndex &&
+    focusedIndex <= layoutSnapshot.visible.endIndex;
+  const focusedRowIsSticky =
+    focusedPath != null &&
+    stickyRows.some((entry) => getFileTreeRowPath(entry.row) === focusedPath);
+  const focusedRowHasVisibleAnchor = focusedRowIsVisible || focusedRowIsSticky;
   const renderDecorationForRow = useCallback(
     (
       row: FileTreeVisibleRow,
@@ -1889,7 +1931,9 @@ export function FileTreeView({
     touchSourceElementRef.current = dragSource;
     dragSource.setAttribute('draggable', 'false');
 
-    const clearPendingTouchStart = (): void => {
+    const clearPendingTouchStart = ({
+      restoreNativeDraggable = true,
+    }: { restoreNativeDraggable?: boolean } = {}): void => {
       if (touchLongPressTimerRef.current != null) {
         clearTimeout(touchLongPressTimerRef.current);
         touchLongPressTimerRef.current = null;
@@ -1900,7 +1944,7 @@ export function FileTreeView({
       if (touchCleanupRef.current === clearPendingTouchStart) {
         touchCleanupRef.current = null;
       }
-      if (!touchDragActiveRef.current) {
+      if (restoreNativeDraggable) {
         dragSource.setAttribute('draggable', 'true');
         if (touchSourceElementRef.current === dragSource) {
           touchSourceElementRef.current = null;
@@ -1939,7 +1983,10 @@ export function FileTreeView({
     document.addEventListener('touchcancel', handlePendingTouchEnd);
     touchCleanupRef.current = clearPendingTouchStart;
     touchLongPressTimerRef.current = setTimeout(() => {
-      clearPendingTouchStart();
+      // Keep native draggable disabled while the custom touch drag activates.
+      // iOS Safari can otherwise promote the same long press into its native
+      // HTML drag flow before the touch-specific listeners take over.
+      clearPendingTouchStart({ restoreNativeDraggable: false });
       if (controller.startDrag(targetPath) === false) {
         dragSource.setAttribute('draggable', 'true');
         if (touchSourceElementRef.current === dragSource) {
@@ -2258,6 +2305,17 @@ export function FileTreeView({
       return;
     }
 
+    let nullFocusOutTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearNullFocusOutTimer = (): void => {
+      if (nullFocusOutTimer == null) {
+        return;
+      }
+
+      clearTimeout(nullFocusOutTimer);
+      nullFocusOutTimer = null;
+    };
+
     const updateActiveItemPath = (): void => {
       const activeTreeElement = getActiveTreeElement(rootElement);
       const nextActiveItemPath = activeTreeElement?.dataset.itemPath ?? null;
@@ -2267,6 +2325,7 @@ export function FileTreeView({
     };
 
     const onFocusIn = (): void => {
+      clearNullFocusOutTimer();
       domFocusOwnerRef.current = true;
       updateActiveItemPath();
     };
@@ -2274,22 +2333,43 @@ export function FileTreeView({
       const nextTarget = event.relatedTarget;
       if (nextTarget == null) {
         // Virtualization can swap the focused row between rendered and parked
-        // states before the replacement element receives focus.
+        // states before the replacement element receives focus. Defer the
+        // ownership check so a true blur to the page can still clear visual
+        // focus once the browser has finished moving focus.
+        clearNullFocusOutTimer();
+        nullFocusOutTimer = setTimeout(() => {
+          nullFocusOutTimer = null;
+          if (getActiveTreeElement(rootElement) != null) {
+            updateActiveItemPath();
+            return;
+          }
+
+          domFocusOwnerRef.current = false;
+          setActiveItemPath(null);
+        }, 0);
         return;
       }
 
       if (!(nextTarget instanceof Node) || !rootElement.contains(nextTarget)) {
+        clearNullFocusOutTimer();
         domFocusOwnerRef.current = false;
         setActiveItemPath(null);
         return;
       }
 
-      updateActiveItemPath();
+      const nextActiveItemPath =
+        nextTarget instanceof HTMLElement
+          ? (nextTarget.dataset.itemPath ?? null)
+          : null;
+      setActiveItemPath((previousPath) =>
+        previousPath === nextActiveItemPath ? previousPath : nextActiveItemPath
+      );
     };
 
     rootElement.addEventListener('focusin', onFocusIn);
     rootElement.addEventListener('focusout', onFocusOut);
     return () => {
+      clearNullFocusOutTimer();
       rootElement.removeEventListener('focusin', onFocusIn);
       rootElement.removeEventListener('focusout', onFocusOut);
     };
@@ -2382,6 +2462,7 @@ export function FileTreeView({
           delete rootElement.dataset.isScrolling;
         }
         isScrollingRef.current = false;
+        setScrollSettledRevision((revision) => revision + 1);
         scrollTimer = null;
       }, 50);
     };
@@ -2790,7 +2871,9 @@ export function FileTreeView({
   ]);
 
   const focusTriggerPath =
-    contextMenuButtonTriggerEnabled && domFocusOwnerRef.current === true
+    contextMenuButtonTriggerEnabled &&
+    domFocusOwnerRef.current === true &&
+    focusedRowHasVisibleAnchor
       ? focusedPath
       : null;
   const pointerTriggerPath =
@@ -2804,11 +2887,17 @@ export function FileTreeView({
   const isPointerContextMenuOpen = contextMenuState?.source === 'right-click';
 
   useLayoutEffect(() => {
+    if (isScrollingRef.current && contextMenuState == null) {
+      return;
+    }
+
     updateTriggerPosition(getTriggerAnchorButton(triggerPath));
   }, [
+    contextMenuState,
     getTriggerAnchorButton,
     range,
     resolvedViewportHeight,
+    scrollSettledRevision,
     stickyRows,
     triggerPath,
     updateTriggerPosition,
@@ -3136,6 +3225,10 @@ export function FileTreeView({
       return;
     }
 
+    if (isScrollingRef.current && contextMenuState == null) {
+      return;
+    }
+
     if (triggerPath == null || triggerButton == null) {
       return;
     }
@@ -3144,7 +3237,6 @@ export function FileTreeView({
     if (triggerItem == null) {
       return;
     }
-
     updateTriggerPosition(triggerButton);
     shouldRestoreContextMenuFocusRef.current = true;
     setContextMenuState({
