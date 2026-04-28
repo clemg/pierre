@@ -128,6 +128,7 @@
       --trees-padding-inline-override
     */
 
+    --trees-accent: var(--trees-accent-override, #009fff);
     --trees-fg: var(
       --trees-fg-override,
       var(--trees-theme-sidebar-fg, light-dark(#6c6c71, #adadb1))
@@ -159,7 +160,6 @@
         )
       )
     );
-    --trees-accent: var(--trees-accent-override, #009fff);
     --trees-input-bg: var(
       --trees-input-bg-override,
       light-dark(#f8f8f8, #070707)
@@ -573,26 +573,57 @@
     font-weight: var(--trees-font-weight-regular);
   }
 
-  :host([data-file-tree-virtualized='true']) {
+  :host(
+    [data-file-tree-virtualized='true']:not(
+      [data-file-tree-scroll-mode='external']
+    )
+  ) {
     height: 100%;
     overflow: hidden;
+  }
+
+  :host([data-file-tree-scroll-mode='external']) {
+    height: auto;
+    overflow: visible;
   }
 
   [data-file-tree-virtualized-wrapper='true'] {
-    height: 100%;
-    overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  [data-file-tree-virtualized-wrapper='true']:not(
+    [data-file-tree-scroll-mode='external']
+  ) {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  [data-file-tree-virtualized-wrapper='true'][data-file-tree-scroll-mode='external'] {
+    height: auto;
+    overflow: visible;
   }
 
   [data-file-tree-virtualized-root='true'] {
-    height: 100%;
     display: flex;
     flex-direction: column;
+  }
+
+  [data-file-tree-virtualized-root='true']:not(
+    [data-file-tree-scroll-mode='external']
+  ) {
+    height: 100%;
     overflow: hidden;
   }
 
-  [data-file-tree-virtualized-scroll='true'],
+  [data-file-tree-virtualized-root='true'][data-file-tree-scroll-mode='external'] {
+    height: auto;
+    overflow: visible;
+  }
+
+  [data-file-tree-virtualized-scroll='true']:not(
+    [data-file-tree-scroll-mode='external']
+  ),
   [data-file-tree-scrollbar-measure='true'] {
     overflow-y: auto;
     scrollbar-gutter: stable;
@@ -633,7 +664,9 @@
   }
 
   @supports (-moz-appearance: none) {
-    [data-file-tree-virtualized-scroll='true'],
+    [data-file-tree-virtualized-scroll='true']:not(
+      [data-file-tree-scroll-mode='external']
+    ),
     [data-file-tree-scrollbar-measure='true'] {
       scrollbar-width: thin;
       scrollbar-color: var(--trees-scrollbar-thumb) transparent;
@@ -665,6 +698,12 @@
         ),
         0px
       );
+  }
+
+  [data-file-tree-virtualized-scroll='true'][data-file-tree-scroll-mode='external'] {
+    overflow: visible;
+    flex: 0 0 auto;
+    min-height: 0;
   }
 
   @supports (-moz-appearance: none) {
@@ -829,6 +868,7 @@
     --truncate-marker-background-color: var(--trees-bg);
     --truncate-marker-background-overlay-color: transparent;
     --truncate-marker-block-inset: 0px;
+
     &:hover,
     &[data-item-context-hover='true'] {
       background-color: var(--trees-bg-muted);
