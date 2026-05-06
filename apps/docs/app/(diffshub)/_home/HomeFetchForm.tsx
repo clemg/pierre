@@ -1,72 +1,74 @@
 'use client';
 
-import { IconArrow, IconRefresh } from '@pierre/icons';
+import { IconBrandGithub } from '@pierre/icons';
 import { useRouter } from 'next/navigation';
+import { memo, useState } from 'react';
+
 import {
-  type FormEvent,
-  memo,
-  useCallback,
-  useState,
-  useTransition,
-} from 'react';
+  codeViewPanelClass,
+  CodeViewUrlForm,
+} from '../(view)/_components/CodeViewUrlForm';
+import { setCachedPatchText } from '../(view)/_components/patchCache';
+import { getGitHubPath } from '../(view)/_components/utils';
+import { cn } from '@/lib/utils';
 
-import { getPatchViewerHref } from '../(view)/_components/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+const DEFAULT_PR_URL = 'https://github.com/nodejs/node/pull/59805';
 
-// Submitting the home form should move to the shareable viewer URL first. The
-// viewer route owns fetching and renders its own loading state there.
+// Submitting the home form pre-fetches the patch and caches it so the viewer
+// can render immediately on arrival without a second round trip.
 export const HomeFetchForm = memo(function HomeFetchForm() {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [url, setUrl] = useState(DEFAULT_PR_URL);
+  const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setErrorMessage(null);
+  async function handleSubmit(rawUrl: string) {
+    setErrorMessage(null);
 
-      const formData = new FormData(event.currentTarget);
-      const urlField = formData.get('url');
-      const rawUrl = typeof urlField === 'string' ? urlField.trim() : '';
-      const viewerHref = getPatchViewerHref(rawUrl);
-      if (viewerHref == null) {
-        setErrorMessage('Enter a valid GitHub URL.');
-        return;
+    const prPath = getGitHubPath(rawUrl.trim());
+    if (prPath == null) {
+      setErrorMessage('Enter a valid GitHub pull request URL.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch(
+        `/api/fetch-pr-patch?path=${encodeURIComponent(prPath)}`
+      );
+      if (!response.ok) {
+        const detail = (await response.text()).trim();
+        throw new Error(
+          detail.length > 0 ? detail : `Request failed (${response.status}).`
+        );
       }
-
-      startTransition(() => router.push(viewerHref));
-    },
-    [router]
-  );
+      const patchText = await response.text();
+      setCachedPatchText(prPath, patchText);
+      router.push(prPath);
+    } catch (error) {
+      setSubmitting(false);
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to fetch the diff.'
+      );
+    }
+  }
 
   return (
     <div className="my-5 space-y-2">
-      <form onSubmit={handleSubmit} className="flex max-w-2xl gap-2">
-        <Input
-          type="url"
-          name="url"
-          inputSize="lg"
-          placeholder="Enter any GitHub URL…"
-          required
-          disabled={isPending}
-          className="text-md bg-background h-11 rounded-lg sm:flex-1"
-        />
-        <Button
-          type="submit"
-          variant="default"
-          size="icon"
-          className="size-11 rounded-lg"
-          disabled={isPending}
-          aria-label={isPending ? 'Opening…' : 'Fetch'}
-        >
-          {isPending ? (
-            <IconRefresh className="size-4 animate-spin" />
-          ) : (
-            <IconArrow className="size-4 rotate-180" />
-          )}
-        </Button>
-      </form>
+      <CodeViewUrlForm
+        className={cn(codeViewPanelClass)}
+        icon={
+          <div className="flex size-8 items-center justify-center">
+            <IconBrandGithub className="text-muted-foreground size-6 shrink-0" />
+          </div>
+        }
+        value={url}
+        onChange={setUrl}
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+        onSubmit={handleSubmit}
+        placeholder="Enter a GitHub pull request URL"
+        submitting={submitting}
+      />
       {errorMessage != null && (
         <p className="text-destructive text-sm" role="alert">
           {errorMessage}

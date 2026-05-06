@@ -1,21 +1,18 @@
 import type { DiffIndicators } from '@pierre/diffs';
 import { useStableCallback } from '@pierre/diffs/react';
 import {
-  IconArrow,
   IconCodeStyleBars,
   IconDiffSplit,
   IconDiffUnified,
   IconEyeSlash,
   IconFileTreeFill,
   IconGearFill,
-  IconRefresh,
   IconSymbolDiffstat,
 } from '@pierre/icons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   type Dispatch,
-  type FormEvent,
   memo,
   type SetStateAction,
   useEffect,
@@ -23,8 +20,9 @@ import {
   useTransition,
 } from 'react';
 
+import { codeViewPanelClass, CodeViewUrlForm } from './CodeViewUrlForm';
 import { DiffsHubLogo } from './DiffsHubLogo';
-import { getPatchViewerHref } from './utils';
+import { getGitHubPath } from './utils';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup, ButtonGroupItem } from '@/components/ui/button-group';
 import {
@@ -87,63 +85,42 @@ export const CodeViewHeader = memo(function CodeViewHeader({
     setURL(initialUrl);
   }, [initialUrl]);
 
-  const handleSubmit = useStableCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const normalizedURL = url.trim();
-      const viewerHref = getPatchViewerHref(normalizedURL);
-      if (viewerHref == null) {
-        console.error('Invalid URL', normalizedURL);
-        return;
-      }
-
-      setURL(normalizedURL);
-      startTransition(() => {
-        router.push(viewerHref);
-      });
+  const handleSubmit = useStableCallback((value: string) => {
+    const normalizedURL = value.trim();
+    const githubPath = getGitHubPath(normalizedURL);
+    if (githubPath == null) {
+      console.error('Invalid URL', normalizedURL);
+      return;
     }
-  );
+    setURL(normalizedURL);
+    startTransition(() => {
+      router.push(githubPath);
+    });
+  });
 
   return (
     <div
       className={cn(
-        'z-10 md:m-3 md:mb-0 contain-layout contain-paint flex flex-wrap md:flex-nowrap border-[rgb(0_0_0_/0.1)] bg-background bg-clip-padding items-center gap-2.5 md:rounded-xl border-b md:border p-3 md:py-2 md:shadow-xs dark:border-[rgb(255_255_255_/0.1)]',
+        codeViewPanelClass,
+        'z-10 m-2 mb-0 contain-layout contain-paint flex flex-wrap md:flex-nowrap items-center gap-2.5 md:py-2',
         className
       )}
     >
-      <Link
-        href="/"
-        className="absolute top-3 left-[50%] inline-flex -translate-x-1/2 transition-transform duration-200 hover:scale-110 md:static md:translate-x-0"
-      >
-        <DiffsHubLogo />
-      </Link>
-      <span className="text-md hidden text-neutral-300 md:-mr-2 md:inline-flex">
-        /
-      </span>
-      <form
-        className="order-last flex w-full gap-2 md:order-none md:gap-2"
+      <CodeViewUrlForm
+        className="order-last w-full md:order-none"
+        icon={
+          <Link
+            href="/"
+            className="absolute top-3 left-[50%] inline-flex -translate-x-1/2 transition-transform duration-200 hover:scale-110 md:static md:translate-x-0"
+          >
+            <DiffsHubLogo />
+          </Link>
+        }
+        value={url}
+        onChange={setURL}
         onSubmit={handleSubmit}
-      >
-        <input
-          className="text-md focus:bg-accent block h-9 w-full min-w-[220px] rounded-md px-2 text-center focus-visible:outline-none md:text-left"
-          value={url}
-          onChange={({ currentTarget }) => setURL(currentTarget.value)}
-          placeholder="e.g. https://github.com/nodejs/node/pull/59805"
-        />
-        <Button
-          type="submit"
-          variant="default"
-          size="icon"
-          aria-busy={busy || undefined}
-          aria-label={busy ? 'Loading diff' : 'Submit'}
-        >
-          {busy ? (
-            <IconRefresh className="size-4 -scale-x-100 animate-spin [animation-direction:reverse]" />
-          ) : (
-            <IconArrow className="size-4 rotate-180" />
-          )}
-        </Button>
-      </form>
+        submitting={busy}
+      />
       <div className="bg-border mx-1 hidden h-5 w-px md:block" />
       <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-end">
         <Button
