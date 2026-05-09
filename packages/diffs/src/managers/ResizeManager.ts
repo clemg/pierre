@@ -26,8 +26,9 @@ export class ResizeManager {
     this.resizeObserver ??= new ResizeObserver(this.handleResizeObserver);
     const annotationUpdates = new Set<AnnotationSetup>();
     let columnCount = 0;
-    const observedNodes = new Map(this.observedNodes);
-    this.observedNodes.clear();
+    const { observedNodes, resizeObserver } = this;
+    const lastObservedNodes = new Map(this.observedNodes);
+    observedNodes.clear();
 
     for (const element of pre.children) {
       if (columnCount === 2) {
@@ -44,7 +45,7 @@ export class ResizeManager {
       }
       columnCount++;
       let item: ObservedGridNodes | ObservedAnnotationNodes | undefined =
-        observedNodes.get(codeElement);
+        lastObservedNodes.get(codeElement);
       if (item != null && item.type !== 'code') {
         throw new Error(
           'ResizeManager.setup: somehow a code node is being used for an annotation, should be impossible'
@@ -56,23 +57,24 @@ export class ResizeManager {
         numberElement = null;
       }
       if (item != null) {
-        this.observedNodes.set(codeElement, item);
-        observedNodes.delete(codeElement);
-        if (item.numberElement !== numberElement) {
-          if (item.numberElement != null) {
-            this.resizeObserver.unobserve(item.numberElement);
-            observedNodes.delete(item.numberElement);
+        observedNodes.set(codeElement, item);
+        lastObservedNodes.delete(codeElement);
+        const previousNumberElement = item.numberElement;
+        if (previousNumberElement !== numberElement) {
+          if (previousNumberElement != null) {
+            resizeObserver.unobserve(previousNumberElement);
+            lastObservedNodes.delete(previousNumberElement);
           }
           if (numberElement != null) {
-            this.resizeObserver.observe(numberElement);
-            observedNodes.delete(numberElement);
-            this.observedNodes.set(numberElement, item);
+            resizeObserver.observe(numberElement);
+            lastObservedNodes.delete(numberElement);
+            observedNodes.set(numberElement, item);
           }
           item.numberElement = numberElement;
           item.numberWidth = 0;
-        } else if (item.numberElement != null) {
-          observedNodes.delete(item.numberElement);
-          this.observedNodes.set(item.numberElement, item);
+        } else if (previousNumberElement != null) {
+          lastObservedNodes.delete(previousNumberElement);
+          observedNodes.set(previousNumberElement, item);
           // If there is a resize, let the resize handler handle it...
         } else {
           item.numberWidth = 0;
@@ -85,11 +87,11 @@ export class ResizeManager {
           codeWidth: 'auto',
           numberWidth: 0,
         };
-        this.observedNodes.set(codeElement, item);
-        this.resizeObserver.observe(codeElement);
+        observedNodes.set(codeElement, item);
+        resizeObserver.observe(codeElement);
         if (numberElement != null) {
-          this.observedNodes.set(numberElement, item);
-          this.resizeObserver.observe(numberElement);
+          observedNodes.set(numberElement, item);
+          resizeObserver.observe(numberElement);
         }
       }
     }
@@ -144,13 +146,13 @@ export class ResizeManager {
           continue;
         }
 
-        let item = observedNodes.get(child1);
+        let item = lastObservedNodes.get(child1);
 
         if (item != null) {
-          this.observedNodes.set(child1, item);
-          this.observedNodes.set(child2, item);
-          observedNodes.delete(child1);
-          observedNodes.delete(child2);
+          observedNodes.set(child1, item);
+          observedNodes.set(child2, item);
+          lastObservedNodes.delete(child1);
+          lastObservedNodes.delete(child2);
           continue;
         }
 
@@ -183,8 +185,8 @@ export class ResizeManager {
       // reads and writes for every annotation pair.
       for (const pendingUpdate of annotationUpdates) {
         this.applyNewHeight(pendingUpdate.item, pendingUpdate.newHeight);
-        this.observedNodes.set(pendingUpdate.child1, pendingUpdate.item);
-        this.observedNodes.set(pendingUpdate.child2, pendingUpdate.item);
+        observedNodes.set(pendingUpdate.child1, pendingUpdate.item);
+        observedNodes.set(pendingUpdate.child2, pendingUpdate.item);
         this.resizeObserver.observe(pendingUpdate.child1);
         this.resizeObserver.observe(pendingUpdate.child2);
       }
@@ -192,7 +194,7 @@ export class ResizeManager {
     }
 
     // Cleanup any old nodes that might still be observed
-    for (const [element, item] of observedNodes) {
+    for (const [element, item] of lastObservedNodes) {
       this.resizeObserver.unobserve(element);
       if (item.type === 'code') {
         cleanupStaleCodeItem(item);
@@ -200,7 +202,7 @@ export class ResizeManager {
         cleanupStaleAnnotationItem(item);
       }
     }
-    observedNodes.clear();
+    lastObservedNodes.clear();
   }
 
   cleanUp(): void {
@@ -297,16 +299,17 @@ export class ResizeManager {
 
       item.codeWidth = nextCodeWidth;
       item.numberWidth = nextNumberWidth;
+      const { style: codeStyle } = item.codeElement;
 
       if (codeWidthChanged) {
-        item.codeElement.style.setProperty(
+        codeStyle.setProperty(
           '--diffs-column-width',
           `${typeof nextCodeWidth === 'number' ? `${nextCodeWidth}px` : 'auto'}`
         );
       }
 
       if (numberWidthChanged) {
-        item.codeElement.style.setProperty(
+        codeStyle.setProperty(
           '--diffs-column-number-width',
           `${nextNumberWidth === 0 ? 'auto' : `${nextNumberWidth}px`}`
         );
@@ -320,7 +323,7 @@ export class ResizeManager {
           typeof nextCodeWidth === 'number'
             ? Math.max(nextCodeWidth - nextNumberWidth, 0)
             : 0;
-        item.codeElement.style.setProperty(
+        codeStyle.setProperty(
           '--diffs-column-content-width',
           `${targetWidth > 0 ? `${targetWidth}px` : 'auto'}`
         );

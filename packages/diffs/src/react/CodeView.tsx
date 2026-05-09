@@ -18,19 +18,21 @@ import {
 import { createPortal, flushSync } from 'react-dom';
 
 import {
-  areOptionsEqual,
   CodeView as CodeViewClass,
   type CodeViewCoordinator,
-  type CodeViewItem,
   type CodeViewLineSelection,
   type CodeViewOptions,
   type CodeViewRenderedItem,
-  type CodeViewScrollTarget,
-  type DiffLineAnnotation,
-  type GetHoveredLineResult,
-  type LineAnnotation,
-} from '../index';
+} from '../components/CodeView';
+import type { GetHoveredLineResult } from '../managers/InteractionManager';
+import type {
+  CodeViewItem,
+  CodeViewScrollTarget,
+  DiffLineAnnotation,
+  LineAnnotation,
+} from '../types';
 import { areManagedSnapshotsEqual } from '../utils/areManagedSnapshotsEqual';
+import { areOptionsEqual } from '../utils/areOptionsEqual';
 import { renderDiffChildren } from './utils/renderDiffChildren';
 import { renderFileChildren } from './utils/renderFileChildren';
 import { useStableCallback } from './utils/useStableCallback';

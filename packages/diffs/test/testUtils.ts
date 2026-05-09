@@ -84,7 +84,7 @@ export interface VerifyResult {
   errors: string[];
 }
 
-export function verifyHunkLineValues(
+function verifyHunkLineValues(
   file: FileDiffMetadata,
   prefix: string = 'file'
 ): string[] {

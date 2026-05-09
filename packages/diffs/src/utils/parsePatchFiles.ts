@@ -148,13 +148,17 @@ export function processFile(
             : [],
         cacheKey,
       };
+      const {
+        additionLines: currentAdditionLines,
+        deletionLines: currentDeletionLines,
+      } = currentFile;
       // If either file is technically empty, then we should empty the
       // arrays respectively
-      if (currentFile.additionLines.length === 1 && newFile?.contents === '') {
-        currentFile.additionLines.length = 0;
+      if (currentAdditionLines.length === 1 && newFile?.contents === '') {
+        currentAdditionLines.length = 0;
       }
-      if (currentFile.deletionLines.length === 1 && oldFile?.contents === '') {
-        currentFile.deletionLines.length = 0;
+      if (currentDeletionLines.length === 1 && oldFile?.contents === '') {
+        currentDeletionLines.length = 0;
       }
 
       // Push that first line back into the group of lines so we can properly
@@ -293,6 +297,7 @@ export function processFile(
       }
       continue;
     }
+    const { hunkContent } = hunkData;
 
     // Now we process each line of the hunk
     let parsedAdditionLines = 0;
@@ -327,7 +332,7 @@ export function processFile(
             deletionLineIndex,
             additionLineIndex
           );
-          hunkData.hunkContent.push(currentContent);
+          hunkContent.push(currentContent);
         }
         additionLineIndex++;
         parsedAdditionLines++;
@@ -344,7 +349,7 @@ export function processFile(
             deletionLineIndex,
             additionLineIndex
           );
-          hunkData.hunkContent.push(currentContent);
+          hunkContent.push(currentContent);
         }
         deletionLineIndex++;
         parsedDeletionLines++;
@@ -361,7 +366,7 @@ export function processFile(
             deletionLineIndex,
             additionLineIndex
           );
-          hunkData.hunkContent.push(currentContent);
+          hunkContent.push(currentContent);
         }
         additionLineIndex++;
         deletionLineIndex++;
@@ -418,7 +423,7 @@ export function processFile(
     );
     currentFile.hunks.push(hunkData);
     lastHunkEnd = hunkData.additionStart + hunkData.additionCount - 1;
-    for (const content of hunkData.hunkContent) {
+    for (const content of hunkContent) {
       if (content.type === 'context') {
         hunkData.splitLineCount += content.lines;
         hunkData.unifiedLineCount += content.lines;

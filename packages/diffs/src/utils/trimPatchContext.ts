@@ -73,13 +73,10 @@ export function trimPatchContext(patch: string, contextSize = 10): string {
     if (line.startsWith(' ')) {
       currentHunk.contextLines.push(line);
     } else if (line !== '') {
-      if (
-        currentHunk.hunkLines.length > 0 &&
-        currentHunk.contextLines.length > contextSize * 2
-      ) {
-        const omittedContextLineCount =
-          currentHunk.contextLines.length - contextSize * 2;
-        const nextContextLines = currentHunk.contextLines.slice(-contextSize);
+      const { contextLines, hunkLines } = currentHunk;
+      if (hunkLines.length > 0 && contextLines.length > contextSize * 2) {
+        const omittedContextLineCount = contextLines.length - contextSize * 2;
+        const nextContextLines = contextLines.slice(-contextSize);
         flushContextLines(currentHunk, contextSize, 'trailing');
         const {
           additionCount: emittedAdditionCount,

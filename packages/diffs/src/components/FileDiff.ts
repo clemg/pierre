@@ -1793,13 +1793,16 @@ export class FileDiff<LAnnotation = undefined> {
         throw new Error('FileDiff.trimColumnRows: invalid row elements');
       }
 
+      const { dataset: gutterDataset } = gutterElement;
+      const { dataset: contentDataset } = contentElement;
+
       if (pendingMetadataTrim) {
         pendingMetadataTrim = false;
         if (
-          (gutterElement.dataset.gutterBuffer === 'annotation' &&
-            'lineAnnotation' in contentElement.dataset) ||
-          (gutterElement.dataset.gutterBuffer === 'metadata' &&
-            'noNewline' in contentElement.dataset)
+          (gutterDataset.gutterBuffer === 'annotation' &&
+            'lineAnnotation' in contentDataset) ||
+          (gutterDataset.gutterBuffer === 'metadata' &&
+            'noNewline' in contentDataset)
         ) {
           gutterElement.remove();
           contentElement.remove();
@@ -1809,10 +1812,7 @@ export class FileDiff<LAnnotation = undefined> {
       }
 
       // If we found a line element, lets trim it if necessary
-      if (
-        'lineIndex' in gutterElement.dataset &&
-        'lineIndex' in contentElement.dataset
-      ) {
+      if ('lineIndex' in gutterDataset && 'lineIndex' in contentDataset) {
         if (
           preTrimCount > 0 ||
           (hasPostTrim && visibleLineIndex >= postTrimStart)
@@ -1849,8 +1849,8 @@ export class FileDiff<LAnnotation = undefined> {
 
       // Annotations should be removed, but don't count towards line indices
       if (
-        gutterElement.dataset.gutterBuffer === 'annotation' &&
-        'lineAnnotation' in contentElement.dataset
+        gutterDataset.gutterBuffer === 'annotation' &&
+        'lineAnnotation' in contentDataset
       ) {
         if (
           preTrimCount > 0 ||
@@ -1864,8 +1864,8 @@ export class FileDiff<LAnnotation = undefined> {
       }
 
       if (
-        gutterElement.dataset.gutterBuffer === 'metadata' &&
-        'noNewline' in contentElement.dataset
+        gutterDataset.gutterBuffer === 'metadata' &&
+        'noNewline' in contentDataset
       ) {
         if (
           preTrimCount > 0 ||

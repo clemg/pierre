@@ -29,9 +29,11 @@ export function getMeasuredScrollbarGutter(
   wrapper.setAttribute(DIFFS_SCROLLBAR_MEASURE_ATTRIBUTE, 'true');
 
   const child = document.createElement('div');
-  child.style.position = 'relative';
-  child.style.width = '200%';
-  child.style.height = '200%';
+  Object.assign(child.style, {
+    height: '200%',
+    position: 'relative',
+    width: '200%',
+  });
   wrapper.appendChild(child);
 
   shadowRoot.appendChild(wrapper);

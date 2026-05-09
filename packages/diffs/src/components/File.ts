@@ -984,7 +984,9 @@ export class File<LAnnotation = undefined> {
     container: HTMLElement,
     boundaries: number[]
   ): Map<number, number> {
-    const sortedBoundaries = [...new Set(boundaries)].sort((a, b) => a - b);
+    const sortedBoundaries = Array.from(new Set(boundaries)).sort(
+      (a, b) => a - b
+    );
     const boundaryIndices = new Map<number, number>();
     if (sortedBoundaries.length === 0) {
       return boundaryIndices;

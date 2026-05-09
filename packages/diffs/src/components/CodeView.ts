@@ -495,13 +495,17 @@ export class CodeView<LAnnotation = undefined> {
     this.workerManager = workerManager;
     this.isContainerManaged = isContainerManaged;
 
-    this.stickyOffset.style.contain = 'layout size';
-    this.stickyContainer.style.position = 'sticky';
-    this.stickyContainer.style.width = '100%';
-    this.stickyContainer.style.contain = 'layout style inline-size';
-    this.stickyContainer.style.isolation = 'isolate';
-    this.stickyContainer.style.display = 'flex';
-    this.stickyContainer.style.flexDirection = 'column';
+    Object.assign(this.stickyOffset.style, {
+      contain: 'layout size',
+    });
+    Object.assign(this.stickyContainer.style, {
+      contain: 'layout style inline-size',
+      display: 'flex',
+      flexDirection: 'column',
+      isolation: 'isolate',
+      position: 'sticky',
+      width: '100%',
+    });
   }
 
   private getViewerMetrics(): CodeViewMetrics {
@@ -2260,8 +2264,10 @@ export class CodeView<LAnnotation = undefined> {
     const randomOffset = ((Math.random() * itemMetrics.lineHeight) >> 0) * -1;
     const stickyJitter =
       -Math.max(stickyContainerHeight + randomOffset, 0) + height;
-    this.stickyContainer.style.top = `${stickyJitter}px`;
-    this.stickyContainer.style.bottom = `${stickyJitter + itemMetrics.diffHeaderHeight}px`;
+    Object.assign(this.stickyContainer.style, {
+      bottom: `${stickyJitter + itemMetrics.diffHeaderHeight}px`,
+      top: `${stickyJitter}px`,
+    });
   }
 
   private syncPagedScrollScaffolding(windowSpecs: VirtualWindowSpecs): void {

@@ -161,7 +161,7 @@ function summarizeCase(
     };
   }
 
-  const sortedSamples = [...samples].sort((left, right) => left - right);
+  const sortedSamples = samples.toSorted((left, right) => left - right);
   const total = samples.reduce((sum, value) => sum + value, 0);
   const mean = total / samples.length;
   const variance =

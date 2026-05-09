@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { DIFFS_SCROLLBAR_GUTTER_MEASURED_PROPERTY } from '../src/constants';
 import {
@@ -65,6 +65,10 @@ const originalValues = {
   document: Reflect.get(globalThis, 'document'),
   HTMLElement: Reflect.get(globalThis, 'HTMLElement'),
 };
+
+beforeEach(() => {
+  resetMeasuredScrollbarGutterForTests();
+});
 
 function installDomConstructors(): void {
   Object.assign(globalThis, {

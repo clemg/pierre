@@ -1632,10 +1632,15 @@ export class InteractionManager<TMode extends InteractionManagerMode> {
     element: HTMLElement,
     split: boolean
   ): number | undefined {
-    const lineIndexes = (element.getAttribute('data-line-index') ?? '')
-      .split(',')
-      .map((value) => Number.parseInt(value, 10))
-      .filter((value) => !Number.isNaN(value));
+    const lineIndexes: number[] = [];
+    for (const value of (element.getAttribute('data-line-index') ?? '').split(
+      ','
+    )) {
+      const lineIndex = Number.parseInt(value, 10);
+      if (!Number.isNaN(lineIndex)) {
+        lineIndexes.push(lineIndex);
+      }
+    }
 
     if (split && lineIndexes.length === 2) {
       return lineIndexes[1];

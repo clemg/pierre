@@ -172,16 +172,15 @@ export class VirtualizedFile<
       let hasMetadata = false;
 
       // Annotations or noNewline metadata increase the size of their attached line
-      if (
-        line.nextElementSibling instanceof HTMLElement &&
-        ('lineAnnotation' in line.nextElementSibling.dataset ||
-          'noNewline' in line.nextElementSibling.dataset)
-      ) {
-        if ('noNewline' in line.nextElementSibling.dataset) {
-          hasMetadata = true;
+      const { nextElementSibling } = line;
+      if (nextElementSibling instanceof HTMLElement) {
+        const metadata = nextElementSibling.dataset;
+        if ('lineAnnotation' in metadata || 'noNewline' in metadata) {
+          if ('noNewline' in metadata) {
+            hasMetadata = true;
+          }
+          measuredHeight += nextElementSibling.getBoundingClientRect().height;
         }
-        measuredHeight +=
-          line.nextElementSibling.getBoundingClientRect().height;
       }
 
       const expectedHeight = this.getLineHeight(lineIndex, hasMetadata);

@@ -103,6 +103,7 @@ export function resolveRegion(
       splitLineCount: 0,
       unifiedLineCount: 0,
     };
+    const { hunkContent } = newHunk;
 
     for (const [contentIndex, content] of hunk.hunkContent.entries()) {
       // If we are outside of the targeted hunk or content region
@@ -122,12 +123,12 @@ export function resolveRegion(
           additionLineIndex: cursor.nextAdditionLineIndex,
           deletionLineIndex: cursor.nextDeletionLineIndex,
         };
-        newHunk.hunkContent.push(newContent);
+        hunkContent.push(newContent);
         advanceCursor(newContent, cursor, newHunk);
       }
       // If we are at an index to delete, replace with an empty context node
       else if (indexesToDelete.has(contentIndex)) {
-        newHunk.hunkContent.push({
+        hunkContent.push({
           type: 'context',
           lines: 0,
           deletionLineIndex: cursor.nextDeletionLineIndex,
@@ -148,7 +149,7 @@ export function resolveRegion(
           deletionLineIndex: cursor.nextDeletionLineIndex,
           additionLineIndex: cursor.nextAdditionLineIndex,
         };
-        newHunk.hunkContent.push(newContent);
+        hunkContent.push(newContent);
         advanceCursor(newContent, cursor, newHunk);
       }
       // Looks like we have a change to resolve and push
@@ -171,7 +172,7 @@ export function resolveRegion(
           deletionLineIndex: cursor.nextDeletionLineIndex,
           additionLineIndex: cursor.nextAdditionLineIndex,
         };
-        newHunk.hunkContent.push(newContent);
+        hunkContent.push(newContent);
         advanceCursor(newContent, cursor, newHunk);
       }
     }
