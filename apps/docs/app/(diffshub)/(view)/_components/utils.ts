@@ -283,6 +283,59 @@ export function upsertSavedCommentSidebarEntry(
   return nextSections;
 }
 
+// Returns a filtered copy of the source keeping only paths whose effective git
+// status is not in `excludedStatuses`. Paths absent from gitStatus are treated
+// as 'modified' (the accumulator intentionally omits them so the tree renders
+// them as the visual default). The original sort function is preserved so patch
+// order is maintained for the visible subset without rebuilding rank tables.
+export function filterCodeViewFileTreeSource(
+  source: CodeViewFileTreeSource,
+  excludedStatuses: ReadonlySet<GitStatus>
+): CodeViewFileTreeSource {
+  if (excludedStatuses.size === 0) return source;
+
+  const pathStatusMap = new Map<string, GitStatus>(
+    source.gitStatus.map((e) => [e.path, e.status])
+  );
+
+  const filteredPaths = source.paths.filter((path) => {
+    const status = pathStatusMap.get(path) ?? 'modified';
+    return !excludedStatuses.has(status);
+  });
+
+  const filteredGitStatus = source.gitStatus.filter(
+    (e) => !excludedStatuses.has(e.status)
+  );
+
+  const filteredPathToItemId = new Map<string, string>();
+  for (const path of filteredPaths) {
+    const id = source.pathToItemId.get(path);
+    if (id != null) {
+      filteredPathToItemId.set(path, id);
+    }
+  }
+
+  return {
+    gitStatus: filteredGitStatus,
+    paths: filteredPaths,
+    pathToItemId: filteredPathToItemId,
+    sort: source.sort,
+  };
+}
+
+// Returns the set of GitStatus values that are actually present in the source.
+// Paths not listed in gitStatus are treated as 'modified'.
+export function getCodeViewFileTreeAvailableStatuses(
+  source: CodeViewFileTreeSource
+): Set<GitStatus> {
+  const statuses = new Set<GitStatus>(source.gitStatus.map((e) => e.status));
+  const pathsWithExplicitStatus = new Set(source.gitStatus.map((e) => e.path));
+  if (source.paths.some((p) => !pathsWithExplicitStatus.has(p))) {
+    statuses.add('modified');
+  }
+  return statuses;
+}
+
 export function removeSavedCommentSidebarEntry(
   sections: readonly CodeViewSavedCommentItem[],
   entry: CodeViewDeletedCommentEvent
