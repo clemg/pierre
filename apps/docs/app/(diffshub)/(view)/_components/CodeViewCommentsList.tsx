@@ -74,18 +74,16 @@ export const CodeViewCommentsList = memo(function CodeViewCommentsList({
                 onClick={() => onSelectComment?.(comment)}
               >
                 <CommentAuthorAvatar seed={comment.author} className="size-5" />
-                <div className="flex flex-col items-center gap-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">
-                      {comment.author} commented on{' '}
-                      <span
-                        className={cn(
-                          getCommentLineClassName(comment.side),
-                          'font-medium'
-                        )}
-                      >
-                        {getCommentLineLabel(comment.side, comment.lineNumber)}
-                      </span>
+                <div className="flex flex-col items-start gap-0.5">
+                  <div className="text-muted-foreground flex gap-1">
+                    {comment.author} commented on{' '}
+                    <span
+                      className={cn(
+                        getCommentLineClassName(comment.side),
+                        'font-medium'
+                      )}
+                    >
+                      {getCommentLineLabel(comment.side, comment.lineNumber)}
                     </span>
                   </div>
                   <p className="text-foreground w-full break-words whitespace-pre-wrap">
