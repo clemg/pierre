@@ -368,14 +368,14 @@ function FileTreeFilterButton({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel className="flex flex-col px-3 font-normal">
+      <DropdownMenuContent align="end" className="p-2">
+        <DropdownMenuLabel className="flex flex-col px-2 font-normal">
           Filter by Git status
           <small className="text-muted-foreground text-xs">
             {isMac ? 'Option' : 'Alt'}-click to filter a single status
           </small>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator className="mx-2" />
         {visibleItems.map(({ status, label, short, color }) => (
           <DropdownMenuCheckboxItem
             key={status}
@@ -390,6 +390,7 @@ function FileTreeFilterButton({
                 onToggle(status);
               }
             }}
+            className={`${!excludedStatuses.has(status) ? '' : 'text-muted-foreground'} px-2`}
           >
             <span
               className="mr-2 w-4 shrink-0 rounded-sm text-center font-mono text-xs font-semibold"
@@ -403,8 +404,12 @@ function FileTreeFilterButton({
             {label}
           </DropdownMenuCheckboxItem>
         ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={!isFiltered} onSelect={onClear}>
+        <DropdownMenuSeparator className="mx-2" />
+        <DropdownMenuItem
+          className="px-2"
+          disabled={!isFiltered}
+          onSelect={onClear}
+        >
           <IconXSquircle className="mr-2 opacity-50" />
           Clear filter
         </DropdownMenuItem>
