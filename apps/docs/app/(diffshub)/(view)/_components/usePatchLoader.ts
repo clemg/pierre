@@ -340,6 +340,7 @@ export function usePatchLoader({
 
           const fileDiff = processFile(fileText, {
             cacheKey: `${cacheKeyPrefix}-0-${accumulator.fileIndex}`,
+            detachStrings: true,
             isGitDiff: true,
           });
           if (fileDiff == null) {

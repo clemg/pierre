@@ -249,6 +249,9 @@ export class VirtualizedFileDiff<
   };
 
   public prepareVirtualizedItem(fileDiff: FileDiffMetadata): number {
+    if (fileDiff !== this.fileDiff) {
+      this.resetLayoutCache();
+    }
     this.fileDiff = fileDiff;
     this.top = this.getVirtualizedTop();
     this.computeApproximateSize();
@@ -511,6 +514,9 @@ export class VirtualizedFileDiff<
   override cleanUp(recycle = false): void {
     if (this.fileContainer != null && this.isSimpleMode()) {
       this.getSimpleVirtualizer()?.disconnect(this.fileContainer);
+    }
+    if (!recycle) {
+      this.resetLayoutCache();
     }
     this.isSetup = false;
     super.cleanUp(recycle);
