@@ -167,16 +167,16 @@
       light-dark(#f8f8f8, #070707)
     );
 
-    --trees-added-light: #16a994;
-    --trees-added-dark: #00cab1;
+    --trees-added-light: #18a46c;
+    --trees-added-dark: #07c480;
     --trees-ignored-light: #adadb1;
     --trees-ignored-dark: #4a4a4e;
     --trees-modified-light: #1ca1c7;
     --trees-modified-dark: #08c0ef;
-    --trees-renamed-light: #d5a910;
-    --trees-renamed-dark: #ffd452;
-    --trees-untracked-light: #16a994;
-    --trees-untracked-dark: #00cab1;
+    --trees-renamed-light: #1ca1c7;
+    --trees-renamed-dark: #08c0ef;
+    --trees-untracked-light: #18a46c;
+    --trees-untracked-dark: #07c480;
     --trees-deleted-light: #ff2e3f;
     --trees-deleted-dark: #ff6762;
 

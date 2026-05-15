@@ -1,8 +1,10 @@
 'use client';
 
-import { type DiffIndicators } from '@pierre/diffs';
+import { type DiffIndicators, resolveTheme } from '@pierre/diffs';
 import { type CodeViewHandle, useWorkerPool } from '@pierre/diffs/react';
+import { themeToTreeStyles } from '@pierre/trees';
 import {
+  type CSSProperties,
   type ReactNode,
   useCallback,
   useEffect,
@@ -15,6 +17,7 @@ import { CodeViewHeader } from './CodeViewHeader';
 import { CodeViewSidebar } from './CodeViewSidebar';
 import { CodeViewStatusPanel } from './CodeViewStatusPanel';
 import { CodeViewWrapper } from './CodeViewWrapper';
+import { PREVIEW_COLOR_SCHEME, PREVIEW_THEME } from './themes/previewTheme';
 import type {
   CodeViewDeletedCommentEvent,
   CodeViewSavedCommentEntry,
@@ -26,6 +29,7 @@ import {
   removeSavedCommentSidebarEntry,
   upsertSavedCommentSidebarEntry,
 } from './utils';
+import { useTheme } from '@/components/theme-provider';
 
 interface ReviewUIProps {
   domain?: string;
@@ -36,6 +40,7 @@ interface ReviewUIProps {
 export function ReviewUI({ domain, initialUrl, path }: ReviewUIProps) {
   useEffect(preloadAvatars, []);
 
+  const { setTheme } = useTheme();
   const isWorkerPoolReadyOrDisable = useIsWorkerPoolReadyOrDisabled();
   const [diffStyle, setDiffStyle] = useState<'split' | 'unified'>('split');
   const [fileTreeOverlayOpen, setFileTreeOverlayOpen] = useState(false);
@@ -43,6 +48,24 @@ export function ReviewUI({ domain, initialUrl, path }: ReviewUIProps) {
   const [showBackgrounds, setShowBackgrounds] = useState(true);
   const [diffIndicators, setDiffIndicators] = useState<DiffIndicators>('bars');
   const [lineNumbers, setLineNumbers] = useState(true);
+  const [treeThemeStyles, setTreeThemeStyles] = useState<CSSProperties | null>(
+    null
+  );
+
+  // On mount, apply the preview theme to both the UI color scheme and the
+  // file tree. The worker pool initialises with PREVIEW_THEME directly (via
+  // WorkerPoolContext), so diffs pick it up without any extra work here.
+  useEffect(() => {
+    setTheme(PREVIEW_COLOR_SCHEME);
+    let cancelled = false;
+    void resolveTheme(PREVIEW_THEME).then((resolved) => {
+      if (!cancelled) setTreeThemeStyles(themeToTreeStyles(resolved));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setTheme]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CodeViewHandle<CommentMetadata> | null>(null);
   const handlePatchLoadStart = useCallback(() => {
@@ -82,6 +105,7 @@ export function ReviewUI({ domain, initialUrl, path }: ReviewUIProps) {
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
+
   const handleSelectTreeItem = useCallback((itemId: string) => {
     setFileTreeOverlayOpen(false);
     viewerRef.current?.scrollTo({
@@ -142,18 +166,18 @@ export function ReviewUI({ domain, initialUrl, path }: ReviewUIProps) {
         className="[grid-area:header]"
         diffIndicators={diffIndicators}
         diffStyle={diffStyle}
+        fileTreeAvailable={treeSource != null}
+        fileTreeOverlayOpen={fileTreeOverlayOpen}
         initialUrl={initialUrl}
         lineNumbers={lineNumbers}
         overflow={overflow}
-        fileTreeOverlayOpen={fileTreeOverlayOpen}
-        fileTreeAvailable={treeSource != null}
-        onToggleFileTreeOverlay={handleToggleFileTreeOverlay}
         setDiffIndicators={setDiffIndicators}
         setDiffStyle={setDiffStyle}
         setLineNumbers={setLineNumbers}
         setOverflow={setOverflow}
         setShowBackgrounds={setShowBackgrounds}
         showBackgrounds={showBackgrounds}
+        onToggleFileTreeOverlay={handleToggleFileTreeOverlay}
       />
       {viewerAvailable && treeSource != null ? (
         <>
@@ -164,26 +188,28 @@ export function ReviewUI({ domain, initialUrl, path }: ReviewUIProps) {
             mobileOverlayOpen={fileTreeOverlayOpen}
             onMobileClose={handleCloseFileTreeOverlay}
             onSelectComment={handleSelectComment}
+            onSelectItem={handleSelectTreeItem}
             scrollRef={scrollRef}
             source={treeSource}
             streaming={loadState === 'streaming'}
-            onSelectItem={handleSelectTreeItem}
+            treeThemeStyles={treeThemeStyles}
           />
           <CodeViewWrapper
             key={viewerKey}
             className="[grid-area:viewer]"
-            diffStyle={diffStyle}
-            overflow={overflow}
-            showBackgrounds={showBackgrounds}
             diffIndicators={diffIndicators}
-            lineNumbers={lineNumbers}
-            scrollRef={scrollRef}
-            viewerRef={viewerRef}
+            diffStyle={diffStyle}
             initialItems={initialItems}
+            lineNumbers={lineNumbers}
             onCommentDeleted={handleCommentDeleted}
             onCommentSaved={handleCommentSaved}
             onLineLinkChange={onLineLinkChange}
             onViewerReady={onViewerReady}
+            overflow={overflow}
+            scrollRef={scrollRef}
+            showBackgrounds={showBackgrounds}
+            theme={PREVIEW_THEME}
+            viewerRef={viewerRef}
           />
         </>
       ) : (

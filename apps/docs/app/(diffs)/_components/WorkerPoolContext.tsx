@@ -7,6 +7,13 @@ import {
 } from '@pierre/diffs/react';
 import type { ReactNode } from 'react';
 
+import { PREVIEW_THEME } from '../../(diffshub)/(view)/_components/themes/previewTheme';
+import { registerPierreThemes } from '../../(diffshub)/(view)/_components/themes/registerPierreThemes';
+
+// Register custom Pierre themes before the pool first initialises so that
+// resolveThemes() can find them when the pool spins up.
+registerPierreThemes();
+
 function isMobileBrowser(): boolean {
   const navigator = global.navigator;
   if (navigator == null) {
@@ -46,7 +53,7 @@ const PoolOptions: WorkerPoolOptions = {
 };
 
 const HighlighterOptions: WorkerInitializationRenderOptions = {
-  theme: { dark: 'pierre-dark', light: 'pierre-light' },
+  theme: PREVIEW_THEME,
   langs: [
     'cpp',
     'css',

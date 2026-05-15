@@ -3,7 +3,14 @@
 import { useStableCallback } from '@pierre/diffs/react';
 import type { FileTree as FileTreeModel } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { type CSSProperties, memo, useEffect, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import type { FileTreePublicId } from '../../../../../../packages/trees/dist/model/publicTypes';
 import {
@@ -16,11 +23,11 @@ import type { CodeViewFileTreeSource } from './types';
 const DENSITY_OVERRIDE_STYLES = {
   '--trees-bg-override': 'var(--diffshub-sidebar-bg)',
   '--trees-density-override': 0.8,
-  '--trees-selected-fg-override': 'light-dark(#1c1c1e, #f0f0f2)',
+  // '--trees-selected-fg-override': 'light-dark(#1c1c1e, #f0f0f2)',
   '--trees-padding-inline-override': 8,
   '--trees-bg-muted': 'light-dark(#f5f5f5, #262626)',
   '--trees-search-bg-override': 'light-dark(#fff, #262626)',
-  '--trees-git-renamed-color-override': 'light-dark(#007aff, #007aff)',
+  // '--trees-git-renamed-color-override': 'light-dark(#007aff, #007aff)',
 } as CSSProperties;
 
 interface CodeViewFileTreeProps {
@@ -30,13 +37,20 @@ interface CodeViewFileTreeProps {
   onModelReady(model: FileTreeModel | null): void;
   onSelectItem(itemId: string): void;
   source: CodeViewFileTreeSource;
+  treeThemeStyles?: CSSProperties | null;
 }
 
 export const CodeViewFileTree = memo(function CodeViewFileTree({
   onModelReady,
   onSelectItem,
   source,
+  treeThemeStyles,
 }: CodeViewFileTreeProps) {
+  const fileTreeStyle = useMemo<CSSProperties>(
+    () => ({ ...treeThemeStyles, ...DENSITY_OVERRIDE_STYLES }),
+    [treeThemeStyles]
+  );
+
   const sourceRef = useRef(source);
   const previousSourceRef = useRef(source);
   const [initialVisibleRowCount] = useState(getInitialBatchSize);
@@ -86,7 +100,7 @@ export const CodeViewFileTree = memo(function CodeViewFileTree({
     <FileTree
       className="h-full min-h-0 overflow-auto overscroll-contain md:ml-3"
       model={model}
-      style={DENSITY_OVERRIDE_STYLES}
+      style={fileTreeStyle}
     />
   );
 });

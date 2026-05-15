@@ -1,6 +1,6 @@
 import type { ThemeRegistration, ThemeRegistrationResolved } from 'shiki';
 
-import { RegisteredCustomThemes } from './constants';
+import { RegisteredCustomThemes, ResolvedThemes } from './constants';
 
 export function registerCustomTheme(
   themeName: string,
@@ -14,4 +14,15 @@ export function registerCustomTheme(
     return;
   }
   RegisteredCustomThemes.set(themeName, loader);
+}
+
+// Replaces an existing theme registration and clears any cached resolution,
+// so the next resolveTheme() call picks up the new loader. Useful for
+// overriding a default theme with a locally-modified version.
+export function forceRegisterCustomTheme(
+  themeName: string,
+  loader: () => Promise<ThemeRegistrationResolved | ThemeRegistration>
+): void {
+  RegisteredCustomThemes.set(themeName, loader);
+  ResolvedThemes.delete(themeName);
 }

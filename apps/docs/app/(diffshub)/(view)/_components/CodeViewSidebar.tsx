@@ -9,6 +9,7 @@ import {
 import { FileTree } from '@pierre/trees';
 import { useFileTreeSearch } from '@pierre/trees/react';
 import {
+  type CSSProperties,
   memo,
   type ReactNode,
   type RefObject,
@@ -47,6 +48,7 @@ interface CodeViewSidebarProps {
   scrollRef: RefObject<HTMLDivElement | null>;
   source: CodeViewFileTreeSource;
   streaming: boolean;
+  treeThemeStyles?: CSSProperties | null;
 }
 
 export const CodeViewSidebar = memo(function CodeViewSidebar({
@@ -60,6 +62,7 @@ export const CodeViewSidebar = memo(function CodeViewSidebar({
   scrollRef,
   source,
   streaming,
+  treeThemeStyles,
 }: CodeViewSidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('files');
   const [activeStatusPanel, setActiveStatusPanel] =
@@ -175,6 +178,7 @@ export const CodeViewSidebar = memo(function CodeViewSidebar({
               source={source}
               onModelReady={handleModelReady}
               onSelectItem={onSelectItem}
+              treeThemeStyles={treeThemeStyles}
             />
           </div>
           <div

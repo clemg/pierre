@@ -4,9 +4,9 @@ import {
   type CodeViewItem,
   type CodeViewLineSelection,
   type CodeViewOptions,
-  DEFAULT_THEMES,
   type DiffIndicators,
   type DiffLineAnnotation,
+  type DiffsThemeNames,
   type LineAnnotation,
   type SelectedLineRange,
 } from '@pierre/diffs';
@@ -64,34 +64,36 @@ interface ActiveDraftComment {
 
 interface CodeViewWrapperProps {
   className?: string;
+  diffIndicators: DiffIndicators;
   diffStyle: 'split' | 'unified';
+  initialItems: CodeViewItem<CommentMetadata>[];
+  lineNumbers: boolean;
   onCommentDeleted(comment: CodeViewDeletedCommentEvent): void;
   onCommentSaved(comment: CodeViewSavedCommentEvent): void;
-  overflow: 'wrap' | 'scroll';
-  showBackgrounds: boolean;
-  diffIndicators: DiffIndicators;
-  lineNumbers: boolean;
-  scrollRef: RefObject<HTMLDivElement | null>;
-  viewerRef: RefObject<CodeViewHandle<CommentMetadata> | null>;
-  initialItems: CodeViewItem<CommentMetadata>[];
   onLineLinkChange(selection: CodeViewLineSelection | null): void;
   onViewerReady(): void;
+  overflow: 'wrap' | 'scroll';
+  scrollRef: RefObject<HTMLDivElement | null>;
+  showBackgrounds: boolean;
+  theme: DiffsThemeNames;
+  viewerRef: RefObject<CodeViewHandle<CommentMetadata> | null>;
 }
 
 export const CodeViewWrapper = memo(function CodeViewWrapper({
   className,
+  diffIndicators,
   diffStyle,
+  initialItems,
+  lineNumbers,
   onCommentDeleted,
   onCommentSaved,
-  overflow,
-  showBackgrounds,
-  diffIndicators,
-  lineNumbers,
-  scrollRef,
-  viewerRef,
-  initialItems,
   onLineLinkChange,
   onViewerReady,
+  overflow,
+  scrollRef,
+  showBackgrounds,
+  theme,
+  viewerRef,
 }: CodeViewWrapperProps) {
   const nextCommentKeyRef = useRef(0);
   const activeDraftRef = useRef<ActiveDraftComment | null>(null);
@@ -412,7 +414,7 @@ export const CodeViewWrapper = memo(function CodeViewWrapper({
         // Use this to validate itemMetrics when changing layout with unsafeCSS.
         // __devOnlyValidateItemHeights: true,
         layout: CODE_VIEW_LAYOUT,
-        theme: DEFAULT_THEMES,
+        theme,
         diffStyle,
         diffIndicators,
         overflow,
@@ -443,6 +445,7 @@ export const CodeViewWrapper = memo(function CodeViewWrapper({
       lineNumbers,
       overflow,
       showBackgrounds,
+      theme,
     ]
   );
   return (
