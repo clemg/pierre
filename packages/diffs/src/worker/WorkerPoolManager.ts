@@ -527,7 +527,7 @@ export class WorkerPoolManager {
     instance: FileRendererInstance,
     file: FileContents
   ): void {
-    if (isFilePlainText(file) || true) {
+    if (isFilePlainText(file)) {
       return;
     }
     // If we already have a task in progress for this same file content, we
@@ -569,7 +569,7 @@ export class WorkerPoolManager {
     instance: DiffRendererInstance,
     diff: FileDiffMetadata
   ): void {
-    if (isDiffPlainText(diff) || true) {
+    if (isDiffPlainText(diff)) {
       return;
     }
     // If we already have a task in progress for this same diff content, we
