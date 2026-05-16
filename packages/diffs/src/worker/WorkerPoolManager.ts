@@ -25,6 +25,8 @@ import type {
   ThemeRegistrationResolved,
 } from '../types';
 import { areDiffRenderOptionsEqual } from '../utils/areDiffRenderOptionsEqual';
+import { areDiffTargetsEqual } from '../utils/areDiffTargetsEqual';
+import { areFileRenderOptionsEqual } from '../utils/areFileRenderOptionsEqual';
 import { areFilesEqual } from '../utils/areFilesEqual';
 import { areThemesEqual } from '../utils/areThemesEqual';
 import {
@@ -527,7 +529,18 @@ export class WorkerPoolManager {
     instance: FileRendererInstance,
     file: FileContents
   ): void {
-    if (isFilePlainText(file)) {
+    const cachedResult = this.getFileResultCache(file);
+    // If we've already highlighted the file or it's plain text, we should not
+    // attempt to highlight. This should be mostly never hit, but it's just an
+    // extra level of safety
+    if (
+      isFilePlainText(file) ||
+      (cachedResult != null &&
+        areFileRenderOptionsEqual(
+          cachedResult.options,
+          this.getFileRenderOptions()
+        ))
+    ) {
       return;
     }
     // If we already have a task in progress for this same file content, we
@@ -569,7 +582,18 @@ export class WorkerPoolManager {
     instance: DiffRendererInstance,
     diff: FileDiffMetadata
   ): void {
-    if (isDiffPlainText(diff)) {
+    const cachedResult = this.getDiffResultCache(diff);
+    // If we've already highlighted the diff or it's plain text, we should not
+    // attempt to highlight. This should be mostly never hit, but it's just an
+    // extra level of safety
+    if (
+      isDiffPlainText(diff) ||
+      (cachedResult != null &&
+        areDiffRenderOptionsEqual(
+          cachedResult.options,
+          this.getDiffRenderOptions()
+        ))
+    ) {
       return;
     }
     // If we already have a task in progress for this same diff content, we
@@ -580,7 +604,7 @@ export class WorkerPoolManager {
           'instance' in task &&
           task.instance === instance &&
           task.request.type === 'diff' &&
-          task.request.diff === diff
+          areDiffTargetsEqual(task.request.diff, diff)
         ) {
           return;
         }

@@ -635,8 +635,7 @@ export class File<LAnnotation = undefined> {
   }
 
   public prewarmWorkerHighlight(file: FileContents): void {
-    if (this.workerManager?.isWorkingPool() !== true) return;
-    this.workerManager.highlightFileAST(this.fileRenderer, file);
+    this.fileRenderer.prewarmWorkerHighlight(file);
   }
 
   private cleanChildNodes() {
