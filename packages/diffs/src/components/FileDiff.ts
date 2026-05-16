@@ -962,6 +962,11 @@ export class FileDiff<LAnnotation = undefined> {
     return true;
   }
 
+  public prewarmWorkerHighlight(fileDiff: FileDiffMetadata): void {
+    if (this.workerManager?.isWorkingPool() !== true) return;
+    this.workerManager.highlightDiffAST(this.hunksRenderer, fileDiff);
+  }
+
   private cleanChildNodes() {
     this.resizeManager.cleanUp();
     this.scrollSyncManager.cleanUp();
