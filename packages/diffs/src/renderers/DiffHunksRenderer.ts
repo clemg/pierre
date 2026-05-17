@@ -591,24 +591,26 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
       return;
     }
 
-    if (
-      this.renderCache == null ||
-      !areDiffTargetsEqual(diff, this.renderCache.diff) ||
-      !areDiffRenderOptionsEqual(options, this.renderCache.options)
-    ) {
-      this.renderCache = {
+    const cache = this.getMatchingWorkerResultCache(diff, options);
+    if (cache != null) {
+      if (this.renderCache == null) {
+        this.renderCache = {
+          diff,
+          highlighted: true,
+          renderRange: undefined,
+          ...cache,
+        };
+      } else {
+        this.onHighlightSuccess(diff, cache.result, cache.options);
+      }
+    } else {
+      this.renderCache ??= {
         diff,
         options,
         highlighted: false,
         result: undefined,
         renderRange: undefined,
       };
-    }
-
-    const cache = this.getMatchingWorkerResultCache(diff, options);
-    if (cache != null) {
-      this.onHighlightSuccess(diff, cache.result, cache.options);
-    } else {
       this.workerManager.highlightDiffAST(this, diff);
     }
   }

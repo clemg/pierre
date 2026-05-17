@@ -343,24 +343,26 @@ export class FileRenderer<LAnnotation = undefined> {
       return;
     }
 
-    if (
-      this.renderCache == null ||
-      !areFilesEqual(file, this.renderCache.file) ||
-      !areFileRenderOptionsEqual(options, this.renderCache.options)
-    ) {
-      this.renderCache = {
+    const cache = this.getMatchingWorkerResultCache(file, options);
+    if (cache != null) {
+      if (this.renderCache == null) {
+        this.renderCache = {
+          file,
+          highlighted: true,
+          renderRange: undefined,
+          ...cache,
+        };
+      } else {
+        this.onHighlightSuccess(file, cache.result, cache.options);
+      }
+    } else {
+      this.renderCache ??= {
         file,
         options,
         highlighted: false,
         result: undefined,
         renderRange: undefined,
       };
-    }
-
-    const cache = this.getMatchingWorkerResultCache(file, options);
-    if (cache != null) {
-      this.onHighlightSuccess(file, cache.result, cache.options);
-    } else {
       this.workerManager.highlightFileAST(this, file);
     }
   }
