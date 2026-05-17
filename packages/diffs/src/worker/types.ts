@@ -188,7 +188,9 @@ export interface RenderFileTask {
   type: 'file';
   id: WorkerRequestId;
   request: RenderFileRequest;
-  instance: FileRendererInstance;
+  subscribers: Set<FileRendererInstance>;
+  cacheOnly: boolean;
+  workKey?: string;
   requestStart: number;
 }
 
@@ -196,7 +198,9 @@ export interface RenderDiffTask {
   type: 'diff';
   id: WorkerRequestId;
   request: RenderDiffRequest;
-  instance: DiffRendererInstance;
+  subscribers: Set<DiffRendererInstance>;
+  cacheOnly: boolean;
+  workKey?: string;
   requestStart: number;
 }
 

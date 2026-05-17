@@ -4,6 +4,7 @@ import { toHtml } from 'hast-util-to-html';
 import {
   CUSTOM_HEADER_SLOT_ID,
   DEFAULT_THEMES,
+  DEFAULT_TOKENIZE_MAX_LENGTH,
   DIFFS_TAG_NAME,
   EMPTY_RENDER_RANGE,
   HEADER_METADATA_SLOT_ID,
@@ -48,6 +49,7 @@ import {
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
 import { upsertHostThemeStyle } from '../utils/hostTheme';
+import { isFilePlainText } from '../utils/isFilePlainText';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { getMeasuredScrollbarGutter } from '../utils/scrollbarGutter';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
@@ -637,8 +639,18 @@ export class File<LAnnotation = undefined> {
   }
 
   public prewarmWorkerHighlight(): void {
-    if (this.file == null) return;
-    this.fileRenderer.prewarmWorkerHighlight(this.file);
+    const { file, workerManager } = this;
+    if (file == null || workerManager == null || isFilePlainText(file)) {
+      return;
+    }
+    const lines = this.fileRenderer.getOrCreateLineCache(file);
+    if (
+      lines.length >
+      (this.options.tokenizeMaxLength ?? DEFAULT_TOKENIZE_MAX_LENGTH)
+    ) {
+      return;
+    }
+    workerManager.prewarmFileAST(file);
   }
 
   private cleanChildNodes() {

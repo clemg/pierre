@@ -333,45 +333,6 @@ export class FileRenderer<LAnnotation = undefined> {
       : undefined;
   }
 
-  public prewarmWorkerHighlight(file: FileContents): void {
-    if (this.workerManager?.isWorkingPool() !== true) {
-      return;
-    }
-
-    const { options } = this.getRenderOptions(file);
-    const lines = this.getOrCreateLineCache(file);
-    if (
-      isFilePlainText(file) ||
-      isFileMassive(lines.length, this.getTokenizeMaxLength()) ||
-      this.hasHighlightedRenderCache(file, options)
-    ) {
-      return;
-    }
-
-    const cache = this.getMatchingWorkerResultCache(file, options);
-    if (cache != null) {
-      if (this.renderCache == null) {
-        this.renderCache = {
-          file,
-          highlighted: true,
-          renderRange: undefined,
-          ...cache,
-        };
-      } else {
-        this.onHighlightSuccess(file, cache.result, cache.options);
-      }
-    } else {
-      this.renderCache ??= {
-        file,
-        options,
-        highlighted: false,
-        result: undefined,
-        renderRange: undefined,
-      };
-      this.workerManager.highlightFileAST(this, file);
-    }
-  }
-
   async asyncRender(
     file: FileContents,
     renderRange: RenderRange = DEFAULT_RENDER_RANGE
