@@ -364,17 +364,16 @@ export class WorkerPoolManager {
   public cleanUpTasks(instance: RenderTaskInstance): void {
     this.detachInstanceFromQueuedTasks(instance);
     const requestId = this.activeRequestByInstance.get(instance);
-    if (requestId == null) {
-      return;
-    }
-    const task = this.activeTaskById.get(requestId);
-    if (isRenderTask(task)) {
-      this.detachInstanceFromRenderTask(task, instance);
-      if (!task.primeCache && task.instances.size === 0) {
-        this.removeActiveTask(task);
+    if (requestId != null) {
+      const task = this.activeTaskById.get(requestId);
+      if (isRenderTask(task)) {
+        this.detachInstanceFromRenderTask(task, instance);
+        if (!task.primeCache && task.instances.size === 0) {
+          this.removeActiveTask(task);
+        }
+      } else {
+        this.activeTaskById.delete(requestId);
       }
-    } else {
-      this.activeTaskById.delete(requestId);
     }
     this.activeRequestByInstance.delete(instance);
     this.queueBroadcastStateChanges();
