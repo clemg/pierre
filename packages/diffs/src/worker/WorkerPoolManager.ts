@@ -370,7 +370,7 @@ export class WorkerPoolManager {
     const task = this.activeTaskById.get(requestId);
     if (isRenderTask(task)) {
       this.detachInstanceFromRenderTask(task, instance);
-      if (!task.prewarm && task.instances.size === 0) {
+      if (!task.primeCache && task.instances.size === 0) {
         this.removeActiveTask(task);
       }
     } else {
@@ -592,7 +592,7 @@ export class WorkerPoolManager {
     }
     const existingTask = this.getTaskByHighlightKey(highlightKey);
     if (existingTask != null) {
-      existingTask.prewarm = true;
+      existingTask.primeCache = true;
     } else {
       this.submitCacheTask({ type: 'file', file }, highlightKey);
     }
@@ -661,7 +661,7 @@ export class WorkerPoolManager {
     }
     const existingTask = this.getTaskByHighlightKey(highlightKey);
     if (existingTask != null) {
-      existingTask.prewarm = true;
+      existingTask.primeCache = true;
     } else {
       this.submitCacheTask({ type: 'diff', diff }, highlightKey);
     }
@@ -789,7 +789,7 @@ export class WorkerPoolManager {
             id,
             request: { ...request, id },
             instances: new Set([instance as FileRendererInstance]),
-            prewarm: false,
+            primeCache: false,
             highlightKey,
             requestStart,
           };
@@ -799,7 +799,7 @@ export class WorkerPoolManager {
             id,
             request: { ...request, id },
             instances: new Set([instance as DiffRendererInstance]),
-            prewarm: false,
+            primeCache: false,
             highlightKey,
             requestStart,
           };
@@ -822,7 +822,7 @@ export class WorkerPoolManager {
             id,
             request: { ...request, id },
             instances: new Set<FileRendererInstance>(),
-            prewarm: true,
+            primeCache: true,
             highlightKey,
             requestStart,
           };
@@ -832,7 +832,7 @@ export class WorkerPoolManager {
             id,
             request: { ...request, id },
             instances: new Set<DiffRendererInstance>(),
-            prewarm: true,
+            primeCache: true,
             highlightKey,
             requestStart,
           };
@@ -1152,7 +1152,7 @@ export class WorkerPoolManager {
     }
     this.queuedTaskByInstance.delete(instance);
     this.detachInstanceFromRenderTask(task, instance);
-    if (!task.prewarm && task.instances.size === 0) {
+    if (!task.primeCache && task.instances.size === 0) {
       this.removeQueuedTask(task);
     }
   }

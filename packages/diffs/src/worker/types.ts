@@ -189,7 +189,9 @@ export interface RenderFileTask {
   id: WorkerRequestId;
   request: RenderFileRequest;
   instances: Set<FileRendererInstance>;
-  prewarm: boolean;
+  // If primeCache is true, then the request will still be sent to workers
+  // regardless of whether there's any instances subscribed to the task
+  primeCache: boolean;
   highlightKey?: string;
   requestStart: number;
 }
@@ -199,7 +201,9 @@ export interface RenderDiffTask {
   id: WorkerRequestId;
   request: RenderDiffRequest;
   instances: Set<DiffRendererInstance>;
-  prewarm: boolean;
+  // If primeCache is true, then the request will still be sent to workers
+  // regardless of whether there's any instances subscribed to the task
+  primeCache: boolean;
   highlightKey?: string;
   requestStart: number;
 }
