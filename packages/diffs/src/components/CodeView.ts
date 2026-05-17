@@ -771,11 +771,7 @@ export class CodeView<LAnnotation = undefined> {
     const item = this.idToItem.get(target.id);
     if (item == null) return;
 
-    if (item.type === 'file') {
-      item.instance.prewarmWorkerHighlight(item.item.file);
-    } else {
-      item.instance.prewarmWorkerHighlight(item.item.fileDiff);
-    }
+    item.instance.prewarmWorkerHighlight();
   }
 
   private resolveEffectiveScrollBehavior(

@@ -962,8 +962,9 @@ export class FileDiff<LAnnotation = undefined> {
     return true;
   }
 
-  public prewarmWorkerHighlight(fileDiff: FileDiffMetadata): void {
-    this.hunksRenderer.prewarmWorkerHighlight(fileDiff);
+  public prewarmWorkerHighlight(): void {
+    if (this.fileDiff == null) return;
+    this.hunksRenderer.prewarmWorkerHighlight(this.fileDiff);
   }
 
   private cleanChildNodes() {

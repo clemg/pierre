@@ -634,8 +634,9 @@ export class File<LAnnotation = undefined> {
     return true;
   }
 
-  public prewarmWorkerHighlight(file: FileContents): void {
-    this.fileRenderer.prewarmWorkerHighlight(file);
+  public prewarmWorkerHighlight(): void {
+    if (this.file == null) return;
+    this.fileRenderer.prewarmWorkerHighlight(this.file);
   }
 
   private cleanChildNodes() {
