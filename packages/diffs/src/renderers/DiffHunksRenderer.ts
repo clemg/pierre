@@ -226,13 +226,8 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
   }
 
   public cleanUp(): void {
-    this.highlighter = undefined;
-    this.diff = undefined;
-    this.renderCache = undefined;
-    this.additionAnnotations = {};
-    this.deletionAnnotations = {};
+    this.recycle();
     this.expandedHunks.clear();
-    this.workerManager?.cleanUpPendingTasks(this);
     this.workerManager = undefined;
     this.onRenderUpdate = undefined;
   }
@@ -243,7 +238,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
     this.renderCache = undefined;
     this.additionAnnotations = {};
     this.deletionAnnotations = {};
-    this.workerManager?.cleanUpPendingTasks(this);
+    this.workerManager?.cleanUpTasks(this);
   }
 
   public setOptions(options: DiffHunksRendererOptions): void {

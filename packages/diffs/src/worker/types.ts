@@ -188,9 +188,9 @@ export interface RenderFileTask {
   type: 'file';
   id: WorkerRequestId;
   request: RenderFileRequest;
-  subscribers: Set<FileRendererInstance>;
-  cacheOnly: boolean;
-  workKey?: string;
+  instances: Set<FileRendererInstance>;
+  prewarm: boolean;
+  highlightKey?: string;
   requestStart: number;
 }
 
@@ -198,9 +198,9 @@ export interface RenderDiffTask {
   type: 'diff';
   id: WorkerRequestId;
   request: RenderDiffRequest;
-  subscribers: Set<DiffRendererInstance>;
-  cacheOnly: boolean;
-  workKey?: string;
+  instances: Set<DiffRendererInstance>;
+  prewarm: boolean;
+  highlightKey?: string;
   requestStart: number;
 }
 
@@ -216,7 +216,7 @@ export interface WorkerStats {
   totalWorkers: number;
   busyWorkers: number;
   queuedTasks: number;
-  pendingTasks: number;
+  activeTasks: number;
   themeSubscribers: number;
   fileCacheSize: number;
   diffCacheSize: number;

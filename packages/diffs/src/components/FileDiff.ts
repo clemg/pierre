@@ -964,7 +964,7 @@ export class FileDiff<LAnnotation = undefined> {
     return true;
   }
 
-  public prewarmWorkerHighlight(): void {
+  public primeHighlightCache(): void {
     const { fileDiff, workerManager } = this;
     if (
       fileDiff == null ||
@@ -981,7 +981,7 @@ export class FileDiff<LAnnotation = undefined> {
     ) {
       return;
     }
-    workerManager.prewarmDiffAST(fileDiff);
+    workerManager.primeDiffHighlightCache(fileDiff);
   }
 
   private cleanChildNodes() {

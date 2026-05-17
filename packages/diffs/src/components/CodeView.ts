@@ -765,13 +765,13 @@ export class CodeView<LAnnotation = undefined> {
     }
   }
 
-  private prewarmScrollTarget(target: PendingScrollTarget): void {
+  private primeScrollTarget(target: PendingScrollTarget): void {
     if (target.type === 'position') return;
 
     const item = this.idToItem.get(target.id);
     if (item == null) return;
 
-    item.instance.prewarmWorkerHighlight();
+    item.instance.primeHighlightCache();
   }
 
   private resolveEffectiveScrollBehavior(
@@ -806,7 +806,7 @@ export class CodeView<LAnnotation = undefined> {
       return;
     }
 
-    this.prewarmScrollTarget(pendingTarget);
+    this.primeScrollTarget(pendingTarget);
 
     const behavior = this.resolveEffectiveScrollBehavior(
       pendingTarget,

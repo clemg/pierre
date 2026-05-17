@@ -134,7 +134,7 @@ export class FileRenderer<LAnnotation = undefined> {
   public recycle(): void {
     this.renderCache = undefined;
     this.highlighter = undefined;
-    this.workerManager?.cleanUpPendingTasks(this);
+    this.workerManager?.cleanUpTasks(this);
     this.lineCache = undefined;
   }
 

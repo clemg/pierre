@@ -638,7 +638,7 @@ export class File<LAnnotation = undefined> {
     return true;
   }
 
-  public prewarmWorkerHighlight(): void {
+  public primeHighlightCache(): void {
     const { file, workerManager } = this;
     if (file == null || workerManager == null || isFilePlainText(file)) {
       return;
@@ -650,7 +650,7 @@ export class File<LAnnotation = undefined> {
     ) {
       return;
     }
-    workerManager.prewarmFileAST(file);
+    workerManager.primeFileHighlightCache(file);
   }
 
   private cleanChildNodes() {
