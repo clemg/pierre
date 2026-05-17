@@ -640,7 +640,12 @@ export class File<LAnnotation = undefined> {
 
   public primeHighlightCache(): void {
     const { file, workerManager } = this;
-    if (file == null || workerManager == null || isFilePlainText(file)) {
+    if (
+      file == null ||
+      file.cacheKey == null ||
+      workerManager == null ||
+      isFilePlainText(file)
+    ) {
       return;
     }
     const lines = this.fileRenderer.getOrCreateLineCache(file);
