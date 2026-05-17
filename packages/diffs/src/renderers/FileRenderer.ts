@@ -126,10 +126,15 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   public cleanUp(): void {
-    this.renderCache = undefined;
-    this.highlighter = undefined;
+    this.recycle();
     this.workerManager = undefined;
     this.onRenderUpdate = undefined;
+  }
+
+  public recycle(): void {
+    this.renderCache = undefined;
+    this.highlighter = undefined;
+    this.workerManager?.cleanUpPendingTasks(this);
     this.lineCache = undefined;
   }
 

@@ -295,7 +295,9 @@ export class File<LAnnotation = undefined> {
     this.placeHolder = undefined;
     this.unsafeCSSStyle = undefined;
 
-    if (!recycle) {
+    if (recycle) {
+      this.fileRenderer.recycle();
+    } else {
       this.fileRenderer.cleanUp();
       this.workerManager = undefined;
       this.file = undefined;
