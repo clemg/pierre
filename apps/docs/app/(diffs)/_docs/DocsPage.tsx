@@ -21,7 +21,6 @@ import {
   FILE_DIFF_METADATA_TYPE,
   PARSE_DIFF_FROM_FILE_EXAMPLE,
   PARSE_PATCH_FILES_EXAMPLE,
-  POST_RENDER_PHASE_TYPE,
 } from '../docs/CoreTypes/constants';
 import {
   CUSTOM_HUNK_SEPARATORS_EXAMPLE,
@@ -213,13 +212,11 @@ async function CoreTypesSection() {
   const [
     fileContentsType,
     fileDiffMetadataType,
-    postRenderPhaseType,
     parseDiffFromFileExample,
     parsePatchFilesExample,
   ] = await Promise.all([
     preloadFile(FILE_CONTENTS_TYPE),
     preloadFile(FILE_DIFF_METADATA_TYPE),
-    preloadFile(POST_RENDER_PHASE_TYPE),
     preloadFile(PARSE_DIFF_FROM_FILE_EXAMPLE),
     preloadFile(PARSE_PATCH_FILES_EXAMPLE),
   ]);
@@ -228,7 +225,6 @@ async function CoreTypesSection() {
     scope: {
       fileContentsType,
       fileDiffMetadataType,
-      postRenderPhaseType,
       parseDiffFromFileExample,
       parsePatchFilesExample,
     },
