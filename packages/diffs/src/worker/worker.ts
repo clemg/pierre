@@ -14,6 +14,7 @@ import type {
   ThemedFileResult,
 } from '../types';
 import { replaceCustomExtensions } from '../utils/getFiletypeFromFileName';
+import { LineList } from '../utils/LineList';
 import { renderDiffWithHighlighter } from '../utils/renderDiffWithHighlighter';
 import { renderFileWithHighlighter } from '../utils/renderFileWithHighlighter';
 import type {
@@ -179,6 +180,11 @@ async function handleRenderDiff({
   if (resolvedLanguages != null) {
     attachResolvedLanguages(resolvedLanguages, highlighter);
   }
+  // The diff crossed a `postMessage` boundary, so its line lists arrived as
+  // plain objects: structured clone keeps the byte arena but drops the
+  // `LineList` prototype. Rebuild them before the renderer reads line content
+  diff.additionLines = LineList.revive(diff.additionLines);
+  diff.deletionLines = LineList.revive(diff.deletionLines);
   const result = renderDiffWithHighlighter(diff, highlighter, renderOptions);
   sendDiffSuccess(id, result, renderOptions);
 }
