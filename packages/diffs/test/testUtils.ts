@@ -12,7 +12,9 @@ export function withPlainLines<T>(value: T): T {
     return value.slice() as unknown as T;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => withPlainLines(item)) as unknown as T;
+    return (value as unknown[]).map((item) =>
+      withPlainLines(item)
+    ) as unknown as T;
   }
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {};
