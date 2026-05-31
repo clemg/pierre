@@ -442,8 +442,12 @@ describe('diffAcceptRejectHunk', () => {
     const [hunk] = result.hunks;
 
     expect(result.isPartial).toBe(true);
-    expect(result.deletionLines).toEqual(getResolvedLines(snapshot, 'accept'));
-    expect(result.additionLines).toEqual(getResolvedLines(snapshot, 'accept'));
+    expect(result.deletionLines.slice()).toEqual(
+      getResolvedLines(snapshot, 'accept')
+    );
+    expect(result.additionLines.slice()).toEqual(
+      getResolvedLines(snapshot, 'accept')
+    );
     expect(hunk?.collapsedBefore).toBe(5);
     expect(hunk?.additionStart).toBe(6);
     expect(hunk?.deletionStart).toBe(6);
@@ -531,8 +535,8 @@ describe('diffAcceptRejectHunk', () => {
 
     expect(hunk?.noEOFCRAdditions).toBe(true);
     expect(hunk?.noEOFCRDeletions).toBe(true);
-    expect(result.deletionLines).toEqual(expectedLines);
-    expect(result.additionLines).toEqual(expectedLines);
+    expect(result.deletionLines.slice()).toEqual(expectedLines);
+    expect(result.additionLines.slice()).toEqual(expectedLines);
   });
 
   test('resolveConflict strips merge conflict separators from a resolved region', () => {
@@ -566,12 +570,12 @@ describe('diffAcceptRejectHunk', () => {
         0
       )
     ).toBe(3);
-    expect(result.deletionLines).toEqual([
+    expect(result.deletionLines.slice()).toEqual([
       'before\n',
       'const value = 2;\n',
       'after\n',
     ]);
-    expect(result.additionLines).toEqual([
+    expect(result.additionLines.slice()).toEqual([
       'before\n',
       'const value = 2;\n',
       'after\n',
@@ -601,14 +605,14 @@ describe('diffAcceptRejectHunk', () => {
 
     const result = resolveConflict(fileDiff, actions[0]!, 'current');
 
-    expect(result.deletionLines).toEqual([
+    expect(result.deletionLines.slice()).toEqual([
       'start\n',
       'ours one\n',
       'middle\n',
       'ours two\n',
       'end\n',
     ]);
-    expect(result.additionLines).toEqual([
+    expect(result.additionLines.slice()).toEqual([
       'start\n',
       'ours one\n',
       'middle\n',

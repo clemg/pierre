@@ -18,6 +18,7 @@ import type {
 } from '../types';
 import { cleanLastNewline } from './cleanLastNewline';
 import { detachString, releaseStringDetachBuffer } from './detachString';
+import { LineList, releaseSealBuffer } from './LineList';
 
 interface ParsedHunkHeader {
   additionCount: number;
@@ -36,6 +37,7 @@ export function processPatch(
     return _processPatch(data, cacheKeyPrefix, throwOnError);
   } finally {
     releaseStringDetachBuffer();
+    releaseSealBuffer();
   }
 }
 
@@ -170,20 +172,20 @@ function _processFile(
         additionLines:
           !isPartial && oldFile != null && newFile != null
             ? splitFileContents(newFile.contents)
-            : [],
+            : new LineList(),
         deletionLines:
           !isPartial && oldFile != null && newFile != null
             ? splitFileContents(oldFile.contents)
-            : [],
+            : new LineList(),
         cacheKey: maybeDetachOptionalString(cacheKey),
       };
       // If either file is technically empty, then we should empty the
       // arrays respectively
       if (currentFile.additionLines.length === 1 && newFile?.contents === '') {
-        currentFile.additionLines.length = 0;
+        currentFile.additionLines.clear();
       }
       if (currentFile.deletionLines.length === 1 && oldFile?.contents === '') {
-        currentFile.deletionLines.length = 0;
+        currentFile.deletionLines.clear();
       }
 
       for (const line of lines) {
@@ -435,8 +437,9 @@ function _processFile(
         ) {
           const lastIndex = currentFile.additionLines.length - 1;
           if (lastIndex >= 0) {
-            currentFile.additionLines[lastIndex] = cleanLastNewline(
-              currentFile.additionLines[lastIndex]
+            currentFile.additionLines.set(
+              lastIndex,
+              cleanLastNewline(currentFile.additionLines.get(lastIndex))
             );
           }
         }
@@ -446,8 +449,9 @@ function _processFile(
         ) {
           const lastIndex = currentFile.deletionLines.length - 1;
           if (lastIndex >= 0) {
-            currentFile.deletionLines[lastIndex] = cleanLastNewline(
-              currentFile.deletionLines[lastIndex]
+            currentFile.deletionLines.set(
+              lastIndex,
+              cleanLastNewline(currentFile.deletionLines.get(lastIndex))
             );
           }
         }
@@ -539,6 +543,11 @@ function _processFile(
   ) {
     currentFile.prevName = undefined;
   }
+  // Compact each file's lines into one byte arena + offset table. This is the
+  // memory win: the retained model holds an arena per file instead of one
+  // `String` object per added/deleted/context line
+  currentFile.additionLines.seal();
+  currentFile.deletionLines.seal();
   return currentFile;
 }
 
@@ -587,12 +596,10 @@ function hasCommitMetadataBoundary(data: string): boolean {
   return data.startsWith('From ') || data.includes('\nFrom ');
 }
 
-function splitFileContents(contents: string): string[] {
-  const lines = splitWithNewlines(contents);
-  for (let index = 0; index < lines.length; index++) {
-    lines[index] = detachString(lines[index]);
-  }
-  return lines;
+function splitFileContents(contents: string): LineList {
+  // Sealing concatenates the lines into a fresh byte arena, so the per-line
+  // slices no longer pin `contents`, no need to detach each line individually
+  return LineList.sealed(splitWithNewlines(contents));
 }
 
 function splitWithNewlines(contents: string): string[] {
@@ -783,7 +790,10 @@ function parseRawLineType(
 
 function getParsedLineContent(rawLine: string): string {
   const processedLine = rawLine.slice(1);
-  return detachString(processedLine === '' ? '\n' : processedLine);
+  // No per-line detach: this is a substring of the file's diff text, and
+  // `_processFile` seals `additionLines`/`deletionLines` into a per-file arena
+  // at the end, which is what frees the original backing
+  return processedLine === '' ? '\n' : processedLine;
 }
 
 function createContentGroup(

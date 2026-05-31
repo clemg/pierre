@@ -4,6 +4,7 @@ import type {
   FileDiffMetadata,
   Hunk,
 } from '../types';
+import { LineList } from './LineList';
 
 interface RegionResolutionTarget {
   hunkIndex: number;
@@ -53,8 +54,8 @@ export function resolveRegion(
   const resolvedDiff: FileDiffMetadata = {
     ...diff,
     hunks: [],
-    deletionLines: [],
-    additionLines: [],
+    deletionLines: new LineList(),
+    additionLines: new LineList(),
     splitLineCount: 0,
     unifiedLineCount: 0,
     cacheKey:
@@ -208,20 +209,22 @@ export function resolveRegion(
   resolvedDiff.splitLineCount = cursor.splitLineCount;
   resolvedDiff.unifiedLineCount = cursor.unifiedLineCount;
 
+  resolvedDiff.deletionLines.seal();
+  resolvedDiff.additionLines.seal();
   return resolvedDiff;
 }
 
 function pushCollapsedContextLines(
   diff: FileDiffMetadata,
-  deletionLines: string[],
-  additionLines: string[],
+  deletionLines: LineList,
+  additionLines: LineList,
   deletionLineIndex: number,
   additionLineIndex: number,
   lineCount: number
 ) {
   for (let index = 0; index < lineCount; index++) {
-    const deletionLine = deletionLines[deletionLineIndex + index];
-    const additionLine = additionLines[additionLineIndex + index];
+    const deletionLine = deletionLines.get(deletionLineIndex + index);
+    const additionLine = additionLines.get(additionLineIndex + index);
     if (deletionLine == null || additionLine == null) {
       throw new Error(
         'pushCollapsedContextLines: missing collapsed context line'
@@ -270,12 +273,12 @@ function processCollapsedContext(
 function pushContentLinesToDiff(
   content: ContextContent | ChangeContent,
   diff: FileDiffMetadata,
-  deletionLines: string[],
-  additionLines: string[]
+  deletionLines: LineList,
+  additionLines: LineList
 ) {
   if (content.type === 'context') {
     for (let i = 0; i < content.lines; i++) {
-      const line = additionLines[content.additionLineIndex + i];
+      const line = additionLines.get(content.additionLineIndex + i);
       if (line == null) {
         console.error({ additionLines, content, i });
         throw new Error('pushContentLinesToDiff: Context line does not exist');
@@ -287,7 +290,7 @@ function pushContentLinesToDiff(
     const len = Math.max(content.deletions, content.additions);
     for (let i = 0; i < len; i++) {
       if (i < content.deletions) {
-        const line = deletionLines[content.deletionLineIndex + i];
+        const line = deletionLines.get(content.deletionLineIndex + i);
         if (line == null) {
           console.error({ deletionLines, content, i });
           throw new Error(
@@ -297,7 +300,7 @@ function pushContentLinesToDiff(
         diff.deletionLines.push(line);
       }
       if (i < content.additions) {
-        const line = additionLines[content.additionLineIndex + i];
+        const line = additionLines.get(content.additionLineIndex + i);
         if (line == null) {
           console.error({ additionLines, content, i });
           throw new Error(
@@ -314,12 +317,12 @@ function pushResolveLinesToDiff(
   resolution: 'deletions' | 'additions' | 'both',
   content: ChangeContent,
   diff: FileDiffMetadata,
-  deletionLines: string[],
-  additionLines: string[]
+  deletionLines: LineList,
+  additionLines: LineList
 ) {
   if (resolution === 'deletions' || resolution === 'both') {
     for (let i = 0; i < content.deletions; i++) {
-      const line = deletionLines[content.deletionLineIndex + i];
+      const line = deletionLines.get(content.deletionLineIndex + i);
       if (line == null) {
         console.error({ deletionLines, content, i });
         throw new Error('pushResolveLinesToDiff: Deletion line does not exist');
@@ -330,7 +333,7 @@ function pushResolveLinesToDiff(
   }
   if (resolution === 'additions' || resolution === 'both') {
     for (let i = 0; i < content.additions; i++) {
-      const line = additionLines[content.additionLineIndex + i];
+      const line = additionLines.get(content.additionLineIndex + i);
       if (line == null) {
         console.error({ additionLines, content, i });
         throw new Error('pushResolveLinesToDiff: Addition line does not exist');

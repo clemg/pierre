@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { VirtualizedFileDiff } from '../src/components/VirtualizedFileDiff';
 import { DEFAULT_CODE_VIEW_FILE_METRICS } from '../src/constants';
 import type { FileDiffMetadata, VirtualFileMetrics } from '../src/types';
+import { LineList } from '../src/utils/LineList';
 import { parseDiffFromFile } from '../src/utils/parseDiffFromFile';
 
 const metrics: VirtualFileMetrics = {
@@ -117,8 +118,8 @@ function createHugeSingleBlockDiff(lineCount: number): FileDiffMetadata {
     splitLineCount: lineCount,
     unifiedLineCount: lineCount,
     isPartial: true,
-    deletionLines: [],
-    additionLines: [],
+    deletionLines: new LineList(),
+    additionLines: new LineList(),
   };
 }
 

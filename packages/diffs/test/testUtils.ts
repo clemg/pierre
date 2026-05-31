@@ -2,6 +2,27 @@ import type { ElementContent, Element as HASTElement } from 'hast';
 
 import type { HunksRenderResult } from '../src/renderers/DiffHunksRenderer';
 import type { FileDiffMetadata, ParsedPatch } from '../src/types';
+import { LineList } from '../src/utils/LineList';
+
+// Deep-convert any `LineList` in a parsed model into a plain `string[]` so
+// snapshots show line content instead of the byte-arena internals. Everything
+// else is preserved, so snapshots match the pre-`LineList` format
+export function withPlainLines<T>(value: T): T {
+  if (value instanceof LineList) {
+    return value.slice() as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => withPlainLines(item)) as unknown as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value)) {
+      out[key] = withPlainLines((value as Record<string, unknown>)[key]);
+    }
+    return out as T;
+  }
+  return value;
+}
 
 // Assertion helpers
 

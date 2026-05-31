@@ -12,6 +12,7 @@ import type {
   FileDiffMetadata,
   PostRenderPhase,
 } from '../src/types';
+import { LineList } from '../src/utils/LineList';
 
 function installDom() {
   const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
@@ -203,8 +204,8 @@ const fileDiff: FileDiffMetadata = {
   splitLineCount: 0,
   unifiedLineCount: 0,
   isPartial: false,
-  deletionLines: [],
-  additionLines: [],
+  deletionLines: new LineList(),
+  additionLines: new LineList(),
 };
 
 describe('onPostRender phases', () => {

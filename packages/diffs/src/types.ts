@@ -12,6 +12,8 @@ import type {
   ThemeRegistrationResolved,
 } from 'shiki';
 
+import type { LineList } from './utils/LineList';
+
 export type { CreatePatchOptionsNonabortable };
 
 export type CodeViewScrollBehavior = 'instant' | 'smooth' | 'smooth-auto';
@@ -298,21 +300,21 @@ export interface FileDiffMetadata {
   isPartial: boolean;
 
   /**
-   * Array of lines from previous version of the file. If `isPartial` is false,
-   * it means that `deletionLines` can be considered the entire contents of the
-   * old version of the file.  Otherwise `deletionLines` will just be an array
-   * of all the content processed from the `context` and `deletion` lines of
-   * the patch.
+   * Lines from the previous version of the file. If `isPartial` is false, this
+   * can be considered the entire contents of the old version of the file.
+   * Otherwise it is all the content processed from the `context` and `deletion`
+   * lines of the patch. Access lines via `deletionLines.get(i)` /
+   * `deletionLines.length` (see {@link LineList}).
    */
-  deletionLines: string[];
+  deletionLines: LineList;
   /**
-   * Array of lines from new version of the file. If `isPartial` is false, it
-   * means that `additionLines` can be considered the entire contents of the
-   * new version of the file.  Otherwise `additionLines` will just be an array
-   * of all the content processed from the `context` and `addition` lines of
-   * the patch.
+   * Lines from the new version of the file. If `isPartial` is false, this can
+   * be considered the entire contents of the new version of the file.
+   * Otherwise it is all the content processed from the `context` and `addition`
+   * lines of the patch. Access lines via `additionLines.get(i)` /
+   * `additionLines.length` (see {@link LineList}).
    */
-  additionLines: string[];
+  additionLines: LineList;
   /**
    * This unique key is only used for Worker Pools to avoid subsequent requests
    * to highlight if we've already highlighted the diff.  Please note that if
