@@ -129,6 +129,12 @@ function _processFile(
     throwOnError = false,
   }: ProcessFileOptions = {}
 ): FileDiffMetadata | undefined {
+  // Detach the whole file's diff text once up front. The per-line content below
+  // is then a cheap substring of this file-sized copy, so it no longer pins the
+  // (possibly whole-patch) original backing string, and we skip a
+  // `TextEncoder`/`TextDecoder` round-trip per line, the dominant cost when
+  // parsing very large diffs (one detach per file instead of one per line)
+  fileDiffString = detachString(fileDiffString);
   let lastHunkEnd = 0;
   const hunks = splitAtLinePrefix(fileDiffString, '@@ ');
   let currentFile: FileDiffMetadata | undefined;
@@ -783,7 +789,9 @@ function parseRawLineType(
 
 function getParsedLineContent(rawLine: string): string {
   const processedLine = rawLine.slice(1);
-  return detachString(processedLine === '' ? '\n' : processedLine);
+  // No per-line detach: `_processFile` already detached the whole file text, so
+  // this substring only pins that file-sized copy, not the full patch
+  return processedLine === '' ? '\n' : processedLine;
 }
 
 function createContentGroup(
