@@ -5,6 +5,7 @@ import {
   type CodeViewItem,
   type CodeViewLineSelection,
   processFile,
+  releaseSealBuffer,
 } from '@pierre/diffs';
 import { type CodeViewHandle, useStableCallback } from '@pierre/diffs/react';
 import {
@@ -452,10 +453,19 @@ export function usePatchLoader({
 
         console.time('--     first streamed file');
         console.time('--     reading patch stream');
-        const fallbackPatchContent = await streamGitPatchFiles(
-          response.body,
-          appendStreamedFile
-        );
+        let fallbackPatchContent: string | undefined;
+        try {
+          fallbackPatchContent = await streamGitPatchFiles(
+            response.body,
+            appendStreamedFile
+          );
+        } finally {
+          // The streaming parse calls `processFile` once per file, which (unlike
+          // the batch `parsePatchFiles` path) never releases the shared seal
+          // scratch buffer so it can be reused across files. Free it now that the
+          // whole patch has streamed in
+          releaseSealBuffer();
+        }
         console.timeEnd('--     reading patch stream');
         if (!isCurrentRequest()) {
           return;

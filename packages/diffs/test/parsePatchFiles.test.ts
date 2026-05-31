@@ -15,6 +15,7 @@ import {
   countSplitRows,
   verifyPatchHunkValues,
 } from './testUtils';
+import { withPlainLines } from './testUtils';
 
 afterAll(async () => {
   await disposeHighlighter();
@@ -23,12 +24,12 @@ afterAll(async () => {
 describe('parsePatchFiles', () => {
   const result = parsePatchFiles(diffPatch);
   test('should parse diff.patch and match snapshot', () => {
-    expect(result).toMatchSnapshot('git pr patch file');
+    expect(withPlainLines(result)).toMatchSnapshot('git pr patch file');
   });
 
   test('patches with a final blank line should have a \\n added', () => {
     const result = parsePatchFiles(finalBlankLinePatch);
-    expect(result).toMatchSnapshot('final blank line patch');
+    expect(withPlainLines(result)).toMatchSnapshot('final blank line patch');
   });
 
   test('should have accurate hunk line values', () => {
@@ -57,7 +58,7 @@ describe('parsePatchFiles', () => {
       const hunk = result[0].files[0].hunks[0];
       expect(hunk.deletionCount).toBe(87);
       expect(hunk.deletionLines).toBe(86);
-      expect(result).toMatchSnapshot('malformed patch');
+      expect(withPlainLines(result)).toMatchSnapshot('malformed patch');
     } finally {
       consoleError.mockRestore();
     }
@@ -95,8 +96,8 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
-    expect(file?.deletionLines[0]).toBe('\uFEFFold\n');
-    expect(file?.additionLines[0]).toBe('\uFEFFnew\n');
+    expect(file?.deletionLines.get(0)).toBe('\uFEFFold\n');
+    expect(file?.additionLines.get(0)).toBe('\uFEFFnew\n');
   });
 
   test('preserves lone surrogate characters in parsed hunk lines', () => {
@@ -113,8 +114,8 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
-    expect(file?.deletionLines[0]).toBe('old\ud800\n');
-    expect(file?.additionLines[0]).toBe('new\ud800\n');
+    expect(file?.deletionLines.get(0)).toBe('old\ud800\n');
+    expect(file?.additionLines.get(0)).toBe('new\ud800\n');
   });
 
   test('parses quoted git diff headers with escaped file names', () => {

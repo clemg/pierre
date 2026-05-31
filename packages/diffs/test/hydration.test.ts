@@ -19,6 +19,7 @@ import { VirtualizedFile } from '../src/components/VirtualizedFile';
 import { VirtualizedFileDiff } from '../src/components/VirtualizedFileDiff';
 import type { Virtualizer } from '../src/components/Virtualizer';
 import type { FileContents, FileDiffMetadata } from '../src/types';
+import { LineList } from '../src/utils/LineList';
 
 function installDomConstructors() {
   class FakeHTMLElement {
@@ -226,8 +227,8 @@ const fileDiff: FileDiffMetadata = {
   splitLineCount: 0,
   unifiedLineCount: 0,
   isPartial: false,
-  deletionLines: [],
-  additionLines: [],
+  deletionLines: new LineList(),
+  additionLines: new LineList(),
 };
 
 describe('collapsed hydration', () => {

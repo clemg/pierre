@@ -92,6 +92,7 @@ export * from './utils/getTotalLineCountFromHunks';
 export * from './utils/hast_utils';
 export * from './utils/isDefaultRenderRange';
 export * from './utils/isWorkerContext';
+export * from './utils/LineList';
 export * from './utils/parseDiffDecorations';
 export * from './utils/parseDiffFromFile';
 export * from './utils/parseLineType';

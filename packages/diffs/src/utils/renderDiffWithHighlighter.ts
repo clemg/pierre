@@ -135,8 +135,8 @@ export function renderDiffWithHighlighter(
 
       if (type === 'change' && additionLine != null && deletionLine != null) {
         computeLineDiffDecorations({
-          additionLine: diff.additionLines[additionLine.lineIndex],
-          deletionLine: diff.deletionLines[deletionLine.lineIndex],
+          additionLine: diff.additionLines.get(additionLine.lineIndex),
+          deletionLine: diff.deletionLines.get(deletionLine.lineIndex),
           deletionLineIndex: bucket.deletionContent.length,
           additionLineIndex: bucket.additionContent.length,
           deletionDecorations: bucket.deletionDecorations,
@@ -148,7 +148,7 @@ export function renderDiffWithHighlighter(
 
       if (deletionLine != null) {
         appendContent(
-          diff.deletionLines[deletionLine.lineIndex],
+          diff.deletionLines.get(deletionLine.lineIndex),
           deletionLine.lineIndex,
           bucket.deletionSegments,
           bucket.deletionContent
@@ -166,7 +166,7 @@ export function renderDiffWithHighlighter(
 
       if (additionLine != null) {
         appendContent(
-          diff.additionLines[additionLine.lineIndex],
+          diff.additionLines.get(additionLine.lineIndex),
           additionLine.lineIndex,
           bucket.additionSegments,
           bucket.additionContent
