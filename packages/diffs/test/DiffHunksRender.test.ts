@@ -6,7 +6,12 @@ import {
   parseDiffFromFile,
 } from '../src';
 import { mockDiffs } from './mocks';
-import { assertDefined, collectAllElements, countSplitRows } from './testUtils';
+import {
+  assertDefined,
+  collectAllElements,
+  countSplitRows,
+  withPlainLines,
+} from './testUtils';
 
 afterAll(async () => {
   await disposeHighlighter();
@@ -30,7 +35,7 @@ describe('DiffHunksRenderer', () => {
       mockDiffs.diffRowBufferTest.oldFile,
       mockDiffs.diffRowBufferTest.newFile
     );
-    expect(diff).toMatchSnapshot('parsed diff');
+    expect(withPlainLines(diff)).toMatchSnapshot('parsed diff');
     const result = await instance.asyncRender(diff);
     assertDefined(
       result.additionsContentAST,
@@ -50,7 +55,7 @@ describe('DiffHunksRenderer', () => {
       mockDiffs.diffRowBufferTest.newFile,
       mockDiffs.diffRowBufferTest.oldFile
     );
-    expect(diff).toMatchSnapshot('parsed diff');
+    expect(withPlainLines(diff)).toMatchSnapshot('parsed diff');
     const result = await instance.asyncRender(diff);
     assertDefined(
       result.additionsContentAST,
@@ -73,7 +78,7 @@ describe('DiffHunksRenderer', () => {
       mockDiffs.diffRowBufferTest.oldFile,
       mockDiffs.diffRowBufferTest.newFile
     );
-    expect(diff).toMatchSnapshot('parsed diff');
+    expect(withPlainLines(diff)).toMatchSnapshot('parsed diff');
     const result = await instance.asyncRender(diff);
     expect(result.additionsContentAST).toBeUndefined();
     expect(result.deletionsContentAST).toBeUndefined();
@@ -91,7 +96,7 @@ describe('DiffHunksRenderer', () => {
       mockDiffs.diffRowBufferTest.newFile
     );
     expect(diff.hunks[0]?.collapsedBefore).toBe(0);
-    expect(diff).toMatchSnapshot('parsed diff');
+    expect(withPlainLines(diff)).toMatchSnapshot('parsed diff');
     const result = await instance.asyncRender(diff);
     expect(result.preNode.properties?.['data-diff-type']).toBe('single');
     assertDefined(
@@ -111,7 +116,7 @@ describe('DiffHunksRenderer', () => {
       contents: '',
     });
     expect(diff.hunks[0]?.collapsedBefore).toBe(0);
-    expect(diff).toMatchSnapshot('parsed diff');
+    expect(withPlainLines(diff)).toMatchSnapshot('parsed diff');
     const result = await instance.asyncRender(diff);
     expect(result.preNode.properties?.['data-diff-type']).toBe('single');
     assertDefined(

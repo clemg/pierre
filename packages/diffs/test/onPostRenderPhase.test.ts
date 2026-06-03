@@ -12,6 +12,7 @@ import type {
   FileDiffMetadata,
   PostRenderPhase,
 } from '../src/types';
+import { finishLines } from '../src/utils/diffLines';
 
 function installDom() {
   const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
@@ -203,8 +204,8 @@ const fileDiff: FileDiffMetadata = {
   splitLineCount: 0,
   unifiedLineCount: 0,
   isPartial: false,
-  deletionLines: [],
-  additionLines: [],
+  deletionLines: finishLines([]),
+  additionLines: finishLines([]),
 };
 
 describe('onPostRender phases', () => {

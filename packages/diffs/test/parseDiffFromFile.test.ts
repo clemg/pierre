@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import { parseDiffFromFile } from '../src/utils/parseDiffFromFile';
 import { fileNew, fileOld } from './mocks';
-import { assertDefined, verifyFileDiffHunkValues } from './testUtils';
+import {
+  assertDefined,
+  verifyFileDiffHunkValues,
+  withPlainLines,
+} from './testUtils';
 
 describe('parseDiffFromFile', () => {
   const result = parseDiffFromFile(
@@ -12,7 +16,7 @@ describe('parseDiffFromFile', () => {
 
   test('should parse diff from fileOld and fileNew and match snapshot', () => {
     expect(result.hunks.length).toBeGreaterThan(0);
-    expect(result).toMatchSnapshot();
+    expect(withPlainLines(result)).toMatchSnapshot();
   });
 
   test('should have accurate hunk line values', () => {

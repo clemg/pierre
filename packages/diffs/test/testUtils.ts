@@ -2,6 +2,47 @@ import type { ElementContent, Element as HASTElement } from 'hast';
 
 import type { HunksRenderResult } from '../src/renderers/DiffHunksRenderer';
 import type { FileDiffMetadata, ParsedPatch } from '../src/types';
+import { type DiffLines, linesToArray } from '../src/utils/diffLines';
+
+// The parser stores line content compactly as `DiffLines`. Deep-convert any
+// `DiffLines` in a parsed model into a plain `string[]` so snapshots show line
+// content instead of the byte-arena internals; every other field is preserved,
+// so snapshots keep matching the original `string[]` format.
+function isDiffLines(value: object): value is DiffLines {
+  const v = value as {
+    length?: unknown;
+    lines?: unknown;
+    bytes?: unknown;
+    offsets?: unknown;
+  };
+  if (typeof v.length !== 'number') {
+    return false;
+  }
+  // arena arm carries bytes + offsets; plain (fallback) arm carries a lines array
+  return (
+    (v.bytes instanceof Uint8Array && ArrayBuffer.isView(v.offsets)) ||
+    Array.isArray(v.lines)
+  );
+}
+
+export function withPlainLines<T>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    if (isDiffLines(value)) {
+      return linesToArray(value) as unknown as T;
+    }
+    if (Array.isArray(value)) {
+      return (value as unknown[]).map((item) =>
+        withPlainLines(item)
+      ) as unknown as T;
+    }
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value)) {
+      out[key] = withPlainLines((value as Record<string, unknown>)[key]);
+    }
+    return out as T;
+  }
+  return value;
+}
 
 // Assertion helpers
 
