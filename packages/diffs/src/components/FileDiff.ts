@@ -64,6 +64,7 @@ import {
   wrapThemeCSS,
   wrapUnsafeCSS,
 } from '../utils/cssWrappers';
+import { joinLines } from '../utils/diffLines';
 import { getDiffHunksRendererOptions } from '../utils/getDiffHunksRendererOptions';
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
@@ -1059,7 +1060,7 @@ export class FileDiff<
         cacheKey,
       } as FileContents;
       Object.defineProperty(file, 'contents', {
-        get: () => fileDiff.deletionLines.join(''),
+        get: () => joinLines(fileDiff.deletionLines),
       });
       return file;
     }
@@ -1079,7 +1080,7 @@ export class FileDiff<
         cacheKey,
       } as FileContents;
       Object.defineProperty(file, 'contents', {
-        get: () => fileDiff.additionLines.join(''),
+        get: () => joinLines(fileDiff.additionLines),
       });
       return file;
     }
