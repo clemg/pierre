@@ -7,6 +7,7 @@ import type {
   HunkExpansionRegion,
   VirtualFileMetrics,
 } from '../src/types';
+import { finishLines } from '../src/utils/diffLines';
 import { iterateOverDiff } from '../src/utils/iterateOverDiff';
 import { parseDiffFromFile } from '../src/utils/parseDiffFromFile';
 
@@ -126,8 +127,8 @@ function createHugeSingleBlockDiff(lineCount: number): FileDiffMetadata {
     splitLineCount: lineCount,
     unifiedLineCount: lineCount,
     isPartial: true,
-    deletionLines: [],
-    additionLines: [],
+    deletionLines: finishLines([]),
+    additionLines: finishLines([]),
   };
 }
 

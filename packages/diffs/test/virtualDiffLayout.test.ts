@@ -6,6 +6,7 @@ import type {
   HunkSeparators,
   VirtualFileMetrics,
 } from '../src/types';
+import { finishLines } from '../src/utils/diffLines';
 import {
   getExpandedRegion,
   getLeadingHunkSeparatorLayout,
@@ -274,8 +275,8 @@ function createTrailingDiff(trailingLineCount: number): FileDiffMetadata {
     splitLineCount: 2 + trailingLineCount,
     unifiedLineCount: 2 + trailingLineCount,
     isPartial: false,
-    deletionLines: createLines(2 + trailingLineCount),
-    additionLines: createLines(2 + trailingLineCount),
+    deletionLines: finishLines(createLines(2 + trailingLineCount)),
+    additionLines: finishLines(createLines(2 + trailingLineCount)),
   };
 }
 

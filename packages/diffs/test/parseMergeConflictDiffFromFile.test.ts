@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
+import { linesToArray } from '../src/utils/diffLines';
 import { parseMergeConflictDiffFromFile } from '../src/utils/parseMergeConflictDiffFromFile';
 import { splitFileContents } from '../src/utils/splitFileContents';
+import { withPlainLines } from './testUtils';
 
 const fileConflictLarge = readFileSync(
   resolve(__dirname, '../../../apps/demo/src/mocks/fileConflictLarge.txt'),
@@ -41,10 +43,10 @@ describe('parseMergeConflictDiffFromFile', () => {
     expect(incomingFile.contents).not.toContain('>>>>>>> feature\n');
     expect(incomingFile.contents).not.toContain('const ttl = 12;\n');
 
-    expect(fileDiff.deletionLines).toEqual(
+    expect(linesToArray(fileDiff.deletionLines)).toEqual(
       splitFileContents(currentFile.contents)
     );
-    expect(fileDiff.additionLines).toEqual(
+    expect(linesToArray(fileDiff.additionLines)).toEqual(
       splitFileContents(incomingFile.contents)
     );
 
@@ -160,7 +162,7 @@ describe('parseMergeConflictDiffFromFile', () => {
         { name: 'fileConflictLarge.ts', contents: fileConflictLarge },
         maxContextLines
       );
-      expect(result).toMatchSnapshot(
+      expect(withPlainLines(result)).toMatchSnapshot(
         `fileConflictLarge raw-result maxContentLines=${maxContextLines}`
       );
     }

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { parseDiffFromFile } from '../src';
 import type { FileDiffMetadata, Hunk } from '../src/types';
+import { finishLines } from '../src/utils/diffLines';
 import {
   type DiffLineCallbackProps,
   type DiffLineMetadata,
@@ -649,11 +650,11 @@ function createSingleHunkDiff({
     unifiedLineCount:
       collapsedBefore + counts.unifiedLineCount + trailingLineCount,
     isPartial: false,
-    deletionLines: createLines(
-      collapsedBefore + counts.deletionCount + trailingLineCount
+    deletionLines: finishLines(
+      createLines(collapsedBefore + counts.deletionCount + trailingLineCount)
     ),
-    additionLines: createLines(
-      collapsedBefore + counts.additionCount + trailingLineCount
+    additionLines: finishLines(
+      createLines(collapsedBefore + counts.additionCount + trailingLineCount)
     ),
   };
 }
@@ -692,8 +693,12 @@ function createWindowedSeparatorDiff(
     splitLineCount: COLLAPSED_BEFORE + counts.splitLineCount,
     unifiedLineCount: COLLAPSED_BEFORE + counts.unifiedLineCount,
     isPartial: false,
-    deletionLines: createLines(COLLAPSED_BEFORE + counts.deletionCount),
-    additionLines: createLines(COLLAPSED_BEFORE + counts.additionCount),
+    deletionLines: finishLines(
+      createLines(COLLAPSED_BEFORE + counts.deletionCount)
+    ),
+    additionLines: finishLines(
+      createLines(COLLAPSED_BEFORE + counts.additionCount)
+    ),
   };
 }
 
