@@ -4,7 +4,7 @@ import {
   areSelectionsEqual,
   type CodeViewItem,
   type CodeViewLineSelection,
-  processFile,
+  processFileBytes,
 } from '@pierre/diffs';
 import { type CodeViewHandle, useStableCallback } from '@pierre/diffs/react';
 import {
@@ -401,13 +401,13 @@ export function usePatchLoader({
 
           publishTreeSource();
         };
-        const appendStreamedFile = async (fileText: string) => {
+        const appendStreamedFile = async (fileBytes: Uint8Array) => {
           if (!hasReceivedFirstStreamedFile) {
             hasReceivedFirstStreamedFile = true;
             console.timeEnd('--     first streamed file');
           }
 
-          const patchMetadata = getStreamedPatchMetadata(fileText);
+          const patchMetadata = getStreamedPatchMetadata(fileBytes);
           if (patchMetadata != null) {
             streamTreePathPrefix = getPatchTreePathPrefix(
               patchMetadata,
@@ -415,7 +415,7 @@ export function usePatchLoader({
             );
           }
 
-          const fileDiff = processFile(fileText, {
+          const fileDiff = processFileBytes(fileBytes, {
             cacheKey: `${cacheKeyPrefix}-0-${accumulator.fileIndex}`,
             isGitDiff: true,
           });
