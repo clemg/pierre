@@ -96,6 +96,7 @@ export * from './utils/isWorkerContext';
 export * from './utils/parseDiffDecorations';
 export * from './utils/parseDiffFromFile';
 export * from './utils/parseLineType';
+export * from './utils/parsePatchBytes';
 export * from './utils/parsePatchFiles';
 export * from './utils/prefersReducedMotion';
 export * from './utils/prerenderHTMLIfNecessary';
