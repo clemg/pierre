@@ -1,0 +1,87 @@
+body {
+  font-family: system-ui, sans-serif;
+  color: #1f2328;
+  background: #ffffff;
+  margin: 1rem auto;
+  max-width: 1100px;
+  padding: 0 1rem;
+  line-height: 1.45;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin-top: 2rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 2px solid #d0d7de;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border: 1px solid #d0d7de;
+  padding: 0.3rem 0.7rem;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  background: #f6f8fa;
+}
+
+button {
+  padding: 0.4rem 1.2rem;
+  border: 1px solid #1f883d;
+  border-radius: 6px;
+  background: #1f883d;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #ffffff;
+  border-color: #d0d7de;
+  color: #cf222e;
+}
+
+#status {
+  color: #0969da;
+}
+
+#log {
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  padding: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+}
+
+#screencast {
+  border: 1px solid #d0d7de;
+  max-width: 100%;
+}
+
+.run-done-ok {
+  color: #1a7f37;
+}
+
+.run-done-fail {
+  color: #cf222e;
+}
+
+.run-queued {
+  color: #57606a;
+}
+
+#history th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}

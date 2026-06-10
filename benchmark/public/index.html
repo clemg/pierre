@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>diffshub bench</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>diffshub bench</h1>
+    <p>
+      Benchmarks <code>@pierre/diffs</code> branches against real diffs, live.
+      Each column is a branch ("version"): the server clones it, builds its
+      diffshub app and serves it locally (builds are cached until the branch
+      moves, so the first run of a version takes a few minutes). Patches are
+      downloaded from GitHub once and cached, so runs never re-download. Each
+      checked cell becomes one run: a fresh headless Chromium loads the diff on
+      that version, waits for the parse to finish, then reads the renderer's
+      real memory from the OS before and after a forced GC. Runs execute
+      strictly one at a time, in order, fully isolated from each other &mdash;
+      watch them live below.
+    </p>
+
+    <h2>matrix</h2>
+    <table id="matrix">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+    <p>
+      passes per checked cell:
+      <input id="passes" type="number" min="1" max="5" value="1" />
+      <button id="run">run</button>
+      <button id="cancel" class="secondary">cancel everything</button>
+    </p>
+    <p id="status">connecting&hellip;</p>
+
+    <h2>schedule</h2>
+    <ul id="schedule"></ul>
+
+    <h2>live view</h2>
+    <p id="live-label">no run in progress</p>
+    <img id="screencast" alt="" hidden width="900" />
+
+    <h2>live log</h2>
+    <pre id="log"></pre>
+
+    <h2>results (median over ok passes)</h2>
+    <p>
+      wall = stream span as logged by the app (includes reading the patch from
+      the local cache); CPU = renderer main-thread task time over the same
+      window. <a href="/api/results.jsonl" download>raw results</a>
+    </p>
+    <table id="results">
+      <thead>
+        <tr>
+          <th>version</th>
+          <th>diff</th>
+          <th>runs</th>
+          <th>parse CPU</th>
+          <th>parse wall</th>
+          <th>peak MB</th>
+          <th>settled MB</th>
+          <th>after-GC MB</th>
+          <th>JS heap MB</th>
+          <th>failures</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h2>history</h2>
+    <p>
+      Every finished run, newest first, persisted on the server. Click a column
+      header to sort.
+    </p>
+    <table id="history">
+      <thead>
+        <tr></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <script src="app.js"></script>
+  </body>
+</html>
