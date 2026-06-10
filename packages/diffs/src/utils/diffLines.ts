@@ -74,6 +74,13 @@ export function plainLines(lines: string[]): DiffLines {
   return { length: lines.length, lines };
 }
 
+// The native check is faster than the regex: engines answer it from the
+// string's internal representation (a one-byte string can't contain a
+// surrogate) instead of scanning every code unit — see the MDN link below.
+// The parser runs this over every parsed file's whole text, so prefer the
+// native check whenever the engine has it (Chrome 111+, Safari 16.4+, Node 20+)
+const hasNativeIsWellFormed = typeof ''.isWellFormed === 'function';
+
 /**
  * Whether `text` contains a lone (unpaired) surrogate code unit, which cannot
  * be represented in UTF-8 (`TextEncoder` rewrites it to U+FFFD). Valid surrogate
@@ -82,10 +89,12 @@ export function plainLines(lines: string[]): DiffLines {
  * file once so `finishLines` can skip the per-line check on the common path
  *
  * See: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/isWellFormed
- * function stolen from: https://github.com/tc39/proposal-is-usv-string#algorithm
+ * fallback regex stolen from: https://github.com/tc39/proposal-is-usv-string#algorithm
  */
 export function isWellFormed(text: string): boolean {
-  return !/\p{Surrogate}/u.test(text);
+  return hasNativeIsWellFormed
+    ? text.isWellFormed()
+    : !/\p{Surrogate}/u.test(text);
 }
 
 /**
