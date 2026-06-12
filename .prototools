@@ -8,6 +8,6 @@ moon = "2.3.3"
 gh = "file://./.proto/plugins/gh.toml"
 
 [settings]
-auto-clean = true
+auto-clean = false
 auto-install = true
 telemetry = false
