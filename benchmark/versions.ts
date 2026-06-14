@@ -35,20 +35,12 @@ export const VERSIONS: Version[] = [
     description: 'pierrecomputer/pierre beta-1.3',
   },
   {
-    key: 'byte-arena',
-    label: 'byte-arena (PR #775)',
+    key: 'byte-arena-parsing',
+    label: 'byte arena + parser (PR #775)',
     remote: 'origin',
-    ref: 'clemg/diff-byte-arena',
+    ref: 'clemg/byte-arena-parsing',
     description:
-      'per-file UTF-8 byte arena for parsed diff lines (clemg/diff-byte-arena)',
-  },
-  {
-    key: 'parse-bytes',
-    label: 'parse-bytes',
-    remote: 'origin',
-    ref: 'clemg/diff-parse-bytes',
-    description:
-      'byte arena + byte-level patch parsing and streaming (clemg/diff-parse-bytes)',
+      'per-file UTF-8 byte arena plus byte-level patch parsing and streaming (clemg/byte-arena-parsing)',
   },
 ];
 
