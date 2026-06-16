@@ -6,7 +6,7 @@ import type {
   FileDiffMetadata,
 } from '../src/types';
 import { diffAcceptRejectHunk } from '../src/utils/diffAcceptRejectHunk';
-import { linesToArray } from '../src/utils/diffLines';
+import { type DiffLines, linesToArray } from '../src/utils/diffLines';
 import { parseDiffFromFile } from '../src/utils/parseDiffFromFile';
 import { parseMergeConflictDiffFromFile } from '../src/utils/parseMergeConflictDiffFromFile';
 import { parsePatchFiles } from '../src/utils/parsePatchFiles';
@@ -30,6 +30,11 @@ type BlockSnapshot = ContextBlockSnapshot | ChangeBlockSnapshot;
 
 interface HunkSnapshot {
   blocks: BlockSnapshot[];
+}
+
+// Read a sub-range of one side's lines as a plain string[] for comparison.
+function sliceLines(lines: DiffLines, start: number, end: number): string[] {
+  return linesToArray(lines).slice(start, end);
 }
 
 // Create one realistic parsed diff with several hunk shapes. The tests use
@@ -134,7 +139,8 @@ function snapshotBlock(
   if (content.type === 'context') {
     return {
       type: 'context',
-      lines: linesToArray(diff.additionLines).slice(
+      lines: sliceLines(
+        diff.additionLines,
         content.additionLineIndex,
         content.additionLineIndex + content.lines
       ),
@@ -143,11 +149,13 @@ function snapshotBlock(
 
   return {
     type: 'change',
-    deletionLines: linesToArray(diff.deletionLines).slice(
+    deletionLines: sliceLines(
+      diff.deletionLines,
       content.deletionLineIndex,
       content.deletionLineIndex + content.deletions
     ),
-    additionLines: linesToArray(diff.additionLines).slice(
+    additionLines: sliceLines(
+      diff.additionLines,
       content.additionLineIndex,
       content.additionLineIndex + content.additions
     ),
@@ -209,13 +217,15 @@ function assertUnresolvedHunkMatchesSnapshot(
       }
 
       expect(
-        linesToArray(diff.deletionLines).slice(
+        sliceLines(
+          diff.deletionLines,
           content.deletionLineIndex,
           content.deletionLineIndex + content.lines
         )
       ).toEqual(expectedBlock.lines);
       expect(
-        linesToArray(diff.additionLines).slice(
+        sliceLines(
+          diff.additionLines,
           content.additionLineIndex,
           content.additionLineIndex + content.lines
         )
@@ -229,13 +239,15 @@ function assertUnresolvedHunkMatchesSnapshot(
     }
 
     expect(
-      linesToArray(diff.deletionLines).slice(
+      sliceLines(
+        diff.deletionLines,
         content.deletionLineIndex,
         content.deletionLineIndex + content.deletions
       )
     ).toEqual(expectedBlock.deletionLines);
     expect(
-      linesToArray(diff.additionLines).slice(
+      sliceLines(
+        diff.additionLines,
         content.additionLineIndex,
         content.additionLineIndex + content.additions
       )
@@ -269,13 +281,15 @@ function assertResolvedHunkMatchesExpected(
     )
   ).toBe(expectedLines.length);
   expect(
-    linesToArray(diff.deletionLines).slice(
+    sliceLines(
+      diff.deletionLines,
       hunk.deletionLineIndex,
       hunk.deletionLineIndex + expectedLines.length
     )
   ).toEqual(expectedLines);
   expect(
-    linesToArray(diff.additionLines).slice(
+    sliceLines(
+      diff.additionLines,
       hunk.additionLineIndex,
       hunk.additionLineIndex + expectedLines.length
     )

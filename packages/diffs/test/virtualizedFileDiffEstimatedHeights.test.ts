@@ -13,7 +13,12 @@ import type {
   RenderWindow,
   VirtualFileMetrics,
 } from '../src/types';
-import { linesToArray, plainLines } from '../src/utils/diffLines';
+import {
+  EMPTY_DIFF_LINES,
+  finishLines,
+  linesToArray,
+  plainLines,
+} from '../src/utils/diffLines';
 import { iterateOverDiff } from '../src/utils/iterateOverDiff';
 import { parseDiffFromFile } from '../src/utils/parseDiffFromFile';
 import { recomputeDiffHunks } from '../src/utils/updateDiffHunks';
@@ -158,8 +163,8 @@ function createHugeSingleBlockDiff(lineCount: number): FileDiffMetadata {
     splitLineCount: lineCount,
     unifiedLineCount: lineCount,
     isPartial: true,
-    deletionLines: plainLines([]),
-    additionLines: plainLines([]),
+    deletionLines: finishLines([]),
+    additionLines: finishLines([]),
   };
 }
 
@@ -172,8 +177,8 @@ function createNoHunkDiff(): FileDiffMetadata {
     splitLineCount: 0,
     unifiedLineCount: 0,
     isPartial: false,
-    deletionLines: plainLines([]),
-    additionLines: plainLines([]),
+    deletionLines: EMPTY_DIFF_LINES,
+    additionLines: EMPTY_DIFF_LINES,
   };
 }
 

@@ -2,6 +2,7 @@ import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 
 import { disposeHighlighter } from '../src/highlighter/shared_highlighter';
 import { DiffHunksRenderer } from '../src/renderers/DiffHunksRenderer';
+import { lineAt, linesToArray } from '../src/utils/diffLines';
 import { parsePatchFiles, processFile } from '../src/utils/parsePatchFiles';
 import {
   diffPatch,
@@ -13,9 +14,9 @@ import {
   assertDefined,
   countRenderedLines,
   countSplitRows,
-  linesOf,
   patchDigest,
   verifyPatchHunkValues,
+  withPlainLines,
 } from './testUtils';
 
 afterAll(async () => {
@@ -32,7 +33,7 @@ describe('parsePatchFiles', () => {
 
   test('patches with a final blank line should have a \\n added', () => {
     const result = parsePatchFiles(finalBlankLinePatch);
-    expect(result).toMatchSnapshot('final blank line patch');
+    expect(withPlainLines(result)).toMatchSnapshot('final blank line patch');
   });
 
   test('should have accurate hunk line values', () => {
@@ -57,7 +58,7 @@ describe('parsePatchFiles', () => {
       const hunk = result[0].files[0].hunks[0];
       expect(hunk.deletionCount).toBe(87);
       expect(hunk.deletionLines).toBe(86);
-      expect(result).toMatchSnapshot('malformed patch');
+      expect(withPlainLines(result)).toMatchSnapshot('malformed patch');
     } finally {
       consoleError.mockRestore();
     }
@@ -173,16 +174,17 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
+    assertDefined(file, 'expected a parsed file');
     expect(result[0]?.files).toHaveLength(1);
-    expect(file?.name).toBe('sql/test.sql');
-    expect(linesOf(file?.deletionLines)).toEqual([
+    expect(file.name).toBe('sql/test.sql');
+    expect(linesToArray(file.deletionLines)).toEqual([
       '-- This is a test sql file\n',
       '-- This is an sql comment\n',
       '\n',
       'CREATE TABLE users (\n',
       'id BIGSERIAL PRIMARY KEY,\n',
     ]);
-    expect(linesOf(file?.additionLines)).toEqual([
+    expect(linesToArray(file.additionLines)).toEqual([
       '-- This is a test sql file\n',
       '\n',
       'CREATE TABLE users (\n',
@@ -204,10 +206,11 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
+    assertDefined(file, 'expected a parsed file');
     expect(result[0]?.files).toHaveLength(1);
-    expect(file?.name).toBe('markers.txt');
-    expect(linesOf(file?.deletionLines)).toEqual(['-- old marker\n']);
-    expect(linesOf(file?.additionLines)).toEqual(['++ new marker\n']);
+    expect(file.name).toBe('markers.txt');
+    expect(linesToArray(file.deletionLines)).toEqual(['-- old marker\n']);
+    expect(linesToArray(file.additionLines)).toEqual(['++ new marker\n']);
   });
 
   test('preserves leading BOM characters in parsed hunk lines', () => {
@@ -224,8 +227,9 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
-    expect(linesOf(file?.deletionLines)?.[0]).toBe('\uFEFFold\n');
-    expect(linesOf(file?.additionLines)?.[0]).toBe('\uFEFFnew\n');
+    assertDefined(file, 'expected a parsed file');
+    expect(lineAt(file.deletionLines, 0)).toBe('\uFEFFold\n');
+    expect(lineAt(file.additionLines, 0)).toBe('\uFEFFnew\n');
   });
 
   test('preserves lone surrogate characters in parsed hunk lines', () => {
@@ -242,8 +246,9 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
-    expect(linesOf(file?.deletionLines)?.[0]).toBe('old\ud800\n');
-    expect(linesOf(file?.additionLines)?.[0]).toBe('new\ud800\n');
+    assertDefined(file, 'expected a parsed file');
+    expect(lineAt(file.deletionLines, 0)).toBe('old\ud800\n');
+    expect(lineAt(file.additionLines, 0)).toBe('new\ud800\n');
   });
 
   test('parses quoted git diff headers with escaped file names', () => {

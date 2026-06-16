@@ -5,6 +5,27 @@ import type { HunksRenderResult } from '../src/renderers/DiffHunksRenderer';
 import type { FileDiffMetadata, ParsedPatch } from '../src/types';
 import { type DiffLines, linesToArray } from '../src/utils/diffLines';
 
+// The parser stores each side's lines compactly as `DiffLines`. Expand those two
+// fields back to plain `string[]` so snapshots show line content instead of the
+// byte-arena internals and keep matching the original format.
+// Same as the parsed types, but with each side's lines expanded back to string[].
+type PlainFile = Omit<FileDiffMetadata, 'additionLines' | 'deletionLines'> & {
+  additionLines: string[];
+  deletionLines: string[];
+};
+type PlainPatch = Omit<ParsedPatch, 'files'> & { files: PlainFile[] };
+
+export function withPlainLines(patches: ParsedPatch[]): PlainPatch[] {
+  return patches.map((patch) => ({
+    ...patch,
+    files: patch.files.map((file) => ({
+      ...file,
+      additionLines: linesToArray(file.additionLines),
+      deletionLines: linesToArray(file.deletionLines),
+    })),
+  }));
+}
+
 // Assertion helpers
 
 /**

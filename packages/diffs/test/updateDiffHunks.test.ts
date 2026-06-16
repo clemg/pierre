@@ -101,12 +101,12 @@ function setAdditionLineText(
   line: number,
   lineText: string
 ): void {
-  const prevLine = lineAt(diff.additionLines, line);
+  // Edit through the plain form and hand the side back, like the editor does
+  const lines = linesToArray(diff.additionLines);
+  const prevLine = lines[line];
   if (prevLine == null) {
     throw new Error(`Missing addition line ${line}`);
   }
-  // Edit through the plain form and hand the side back, like the editor does
-  const lines = linesToArray(diff.additionLines);
   if (prevLine.endsWith('\r\n')) {
     lines[line] = `${lineText}\r\n`;
   } else if (prevLine.endsWith('\n')) {

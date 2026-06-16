@@ -11,7 +11,7 @@ import type {
   FileDiffMetadata,
   LineTypes,
 } from '../src/types';
-import { plainLines } from '../src/utils/diffLines';
+import { EMPTY_DIFF_LINES } from '../src/utils/diffLines';
 import { fileNew, fileOld } from './mocks';
 import {
   annotationProjection,
@@ -54,8 +54,8 @@ function createNoHunkDiff(): FileDiffMetadata {
     splitLineCount: 0,
     unifiedLineCount: 0,
     isPartial: false,
-    deletionLines: plainLines([]),
-    additionLines: plainLines([]),
+    deletionLines: EMPTY_DIFF_LINES,
+    additionLines: EMPTY_DIFF_LINES,
   };
 }
 
