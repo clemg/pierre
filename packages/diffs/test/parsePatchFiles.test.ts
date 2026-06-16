@@ -13,6 +13,7 @@ import {
   assertDefined,
   countRenderedLines,
   countSplitRows,
+  linesOf,
   patchDigest,
   verifyPatchHunkValues,
 } from './testUtils';
@@ -174,14 +175,14 @@ describe('parsePatchFiles', () => {
     const file = result[0]?.files[0];
     expect(result[0]?.files).toHaveLength(1);
     expect(file?.name).toBe('sql/test.sql');
-    expect(file?.deletionLines).toEqual([
+    expect(linesOf(file?.deletionLines)).toEqual([
       '-- This is a test sql file\n',
       '-- This is an sql comment\n',
       '\n',
       'CREATE TABLE users (\n',
       'id BIGSERIAL PRIMARY KEY,\n',
     ]);
-    expect(file?.additionLines).toEqual([
+    expect(linesOf(file?.additionLines)).toEqual([
       '-- This is a test sql file\n',
       '\n',
       'CREATE TABLE users (\n',
@@ -205,8 +206,8 @@ describe('parsePatchFiles', () => {
     const file = result[0]?.files[0];
     expect(result[0]?.files).toHaveLength(1);
     expect(file?.name).toBe('markers.txt');
-    expect(file?.deletionLines).toEqual(['-- old marker\n']);
-    expect(file?.additionLines).toEqual(['++ new marker\n']);
+    expect(linesOf(file?.deletionLines)).toEqual(['-- old marker\n']);
+    expect(linesOf(file?.additionLines)).toEqual(['++ new marker\n']);
   });
 
   test('preserves leading BOM characters in parsed hunk lines', () => {
@@ -223,8 +224,8 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
-    expect(file?.deletionLines[0]).toBe('\uFEFFold\n');
-    expect(file?.additionLines[0]).toBe('\uFEFFnew\n');
+    expect(linesOf(file?.deletionLines)?.[0]).toBe('\uFEFFold\n');
+    expect(linesOf(file?.additionLines)?.[0]).toBe('\uFEFFnew\n');
   });
 
   test('preserves lone surrogate characters in parsed hunk lines', () => {
@@ -241,8 +242,8 @@ describe('parsePatchFiles', () => {
     );
 
     const file = result[0]?.files[0];
-    expect(file?.deletionLines[0]).toBe('old\ud800\n');
-    expect(file?.additionLines[0]).toBe('new\ud800\n');
+    expect(linesOf(file?.deletionLines)?.[0]).toBe('old\ud800\n');
+    expect(linesOf(file?.additionLines)?.[0]).toBe('new\ud800\n');
   });
 
   test('parses quoted git diff headers with escaped file names', () => {

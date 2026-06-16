@@ -3,8 +3,19 @@ import type { ElementContent, Element as HASTElement } from 'hast';
 import { DEFAULT_COLLAPSED_CONTEXT_THRESHOLD } from '../src/constants';
 import type { HunksRenderResult } from '../src/renderers/DiffHunksRenderer';
 import type { FileDiffMetadata, ParsedPatch } from '../src/types';
+import { type DiffLines, linesToArray } from '../src/utils/diffLines';
 
 // Assertion helpers
+
+/**
+ * `linesToArray` for the assertions that read a side off an optional file diff
+ * (`expect(file?.additionLines)`). Passing the missing case through as
+ * `undefined` keeps those assertions failing on a missing file exactly as they
+ * did when the sides were plain `string[]`.
+ */
+export function linesOf(lines: DiffLines | undefined): string[] | undefined {
+  return lines == null ? undefined : linesToArray(lines);
+}
 
 export function assertDefined<T>(
   value: T | undefined | null,

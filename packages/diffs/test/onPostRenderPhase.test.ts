@@ -11,6 +11,7 @@ import type {
   FileDiffMetadata,
   PostRenderPhase,
 } from '../src/types';
+import { plainLines } from '../src/utils/diffLines';
 import {
   createRoot,
   dispatchScroll,
@@ -91,8 +92,8 @@ const fileDiff: FileDiffMetadata = {
   splitLineCount: 0,
   unifiedLineCount: 0,
   isPartial: false,
-  deletionLines: [],
-  additionLines: [],
+  deletionLines: plainLines([]),
+  additionLines: plainLines([]),
 };
 
 describe('onPostRender phases', () => {
