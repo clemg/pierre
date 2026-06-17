@@ -38,6 +38,16 @@ RUN ARCH=$(dpkg --print-architecture) \
     | tar -xz -C /usr/local --strip-components=1 \
   && node --version
 
+# moon drives each branch's build: the monorepo has no package.json build
+# scripts (moon owns building, via per-package tsdown/codegen tasks), so the
+# bench shells out to moon instead of guessing each package's recipe. With no
+# .moon/toolchain.yml, moon runs task commands against the node/bun already on
+# PATH (no proto needed). Pinned to the repo's .prototools moon version.
+ARG MOON_VERSION=2.3.3
+RUN curl -fsSL https://moonrepo.dev/install/moon.sh | bash -s -- "${MOON_VERSION}" \
+  && cp /root/.moon/bin/moon /usr/local/bin/moon \
+  && moon --version
+
 WORKDIR /app
 COPY benchmark/ ./
 

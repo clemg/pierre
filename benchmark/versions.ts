@@ -7,7 +7,7 @@
 // submission, so a version is rebuilt exactly when its branch moved.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { PATCH_PROXY_PORT } from './patchProxy';
 
@@ -51,7 +51,7 @@ const UPSTREAM_URL =
 const ARM_PORT = Number(process.env.ARM_PORT ?? 4600);
 // Bump when the build recipe changes (toolchain, route rewrite…): cached
 // builds from an older recipe are then rebuilt instead of reused
-const BUILD_RECIPE = 'node22-patchcache-v1';
+const BUILD_RECIPE = 'moon-build-v1';
 const BUILD_TIMEOUT_MS = 30 * 60_000;
 const START_TIMEOUT_MS = 90_000;
 
@@ -195,8 +195,8 @@ export function builtSha(version: Version): string | undefined {
   return marker.includes(':') ? marker.split(':')[1] : undefined;
 }
 
-// Checks out the branch head into the version's worktree and builds it
-// (workspace packages first, then the Next app). No-op when the cached
+// Checks out the branch head into the version's worktree and builds it with
+// moon (dependency packages first, then the Next app). No-op when the cached
 // build already matches the branch head.
 export async function prepareVersion(
   version: Version,
@@ -228,45 +228,28 @@ export async function prepareVersion(
 
   await run(['bun', 'install'], { cwd: root, log });
 
-  // The monorepo builds its libraries with tsdown, driven by moon (the
-  // `tsdown` task tag runs `tsdown --clean`); there are no package.json
-  // `build` scripts to call here — moon owns building. The bench runs Next
-  // directly without moon, so it must replicate that one build step itself,
-  // otherwise no `dist/` is emitted and the Next app fails to resolve every
-  // `@pierre/*` workspace dependency (module-not-found at build time). So
-  // build every package that ships a tsdown config. tsdown emits isolated
-  // declarations, so one package's build never needs another's dist; we
-  // still build the ones with no workspace deps first to mirror moon's
-  // `^:build` dependency ordering.
-  const packagesDir = join(root, 'packages');
-  if (existsSync(packagesDir)) {
-    const tsdownPackages: { dir: string; workspaceDepCount: number }[] = [];
-    for (const entry of new Bun.Glob('*/package.json').scanSync(packagesDir)) {
-      const packageRoot = join(packagesDir, entry, '..');
-      if (!existsSync(join(packageRoot, 'tsdown.config.ts'))) {
-        continue;
-      }
-      const manifest = JSON.parse(
-        readFileSync(join(packagesDir, entry), 'utf8')
-      ) as { dependencies?: Record<string, string> };
-      const workspaceDepCount = Object.keys(manifest.dependencies ?? {}).filter(
-        (name) => name.startsWith('@pierre/')
-      ).length;
-      tsdownPackages.push({ dir: packageRoot, workspaceDepCount });
-    }
-    tsdownPackages.sort((a, b) => a.workspaceDepCount - b.workspaceDepCount);
-    for (const pkg of tsdownPackages) {
-      await run(['bun', 'x', 'tsdown', '--clean'], { cwd: pkg.dir, log });
-    }
-  }
-
   const appDir = findAppDir(root);
   rewriteRouteForPatchCache(appDir, log);
-  // Next must run under real node: under bun (no node in PATH), Turbopack
-  // builds fail to emit the metadata routes' app-paths-manifest.json
-  await run(['node', nextBin(root, appDir), 'build'], {
-    cwd: appDir,
-    env: { NEXT_PUBLIC_SITE: 'diffshub' },
+
+  // Build with moon, exactly as the repo does. There are no package.json
+  // `build` scripts to call — moon owns building, and the packages don't
+  // share one recipe (libraries build with tsdown, but e.g. @pierre/theme
+  // runs a codegen script). Building `<app>:build` makes moon walk the whole
+  // dependency graph (`^:build`) and run each package's own build first, then
+  // `next build` — so every `@pierre/*` dependency resolves to its emitted
+  // `dist/`. `next` runs under real node via its shebang (bun's node shim
+  // breaks Turbopack's metadata routes). CI='' so moon never treats this
+  // shell as CI and skips a task.
+  const appProject = basename(appDir);
+  // moon's VCS layer errors inside a linked git worktree unless the repo
+  // opts into per-worktree git config
+  await run(['git', 'config', 'extensions.worktreeConfig', 'true'], {
+    cwd: root,
+    log,
+  });
+  await run(['moon', 'run', `${appProject}:build`], {
+    cwd: root,
+    env: { NEXT_PUBLIC_SITE: 'diffshub', CI: '' },
     log,
   });
 
