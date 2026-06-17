@@ -44,26 +44,17 @@
     <h2>live log</h2>
     <pre id="log"></pre>
 
-    <h2>results (median over ok passes)</h2>
+    <h2>results (mean over ok passes)</h2>
     <p>
-      wall = stream span as logged by the app (includes reading the patch from
-      the local cache); CPU = renderer main-thread task time over the same
-      window. <a href="/api/results.jsonl" download>raw results</a>
+      One row per version × diff, each value the mean over that cell's ok
+      passes. Click a column header to sort. wall = stream span as logged by
+      the app (includes reading the patch from the local cache); CPU = renderer
+      main-thread task time over the same window.
+      <a href="/api/results.jsonl" download>raw results</a>
     </p>
     <table id="results">
       <thead>
-        <tr>
-          <th>version</th>
-          <th>diff</th>
-          <th>runs</th>
-          <th>parse CPU</th>
-          <th>parse wall</th>
-          <th>peak MB</th>
-          <th>settled MB</th>
-          <th>after-GC MB</th>
-          <th>JS heap MB</th>
-          <th>failures</th>
-        </tr>
+        <tr></tr>
       </thead>
       <tbody></tbody>
     </table>

@@ -46,11 +46,6 @@ const DIFF_PRESETS = [
     timeoutMs: 10 * 60_000,
   },
   {
-    label: 'bun compare (76MB)',
-    path: '/oven-sh/bun/compare/bun-v1.2.15...bun-v1.3.14',
-    timeoutMs: 10 * 60_000,
-  },
-  {
     label: 'linux v6.0..v7.0 (678MB)',
     path: '/torvalds/linux/compare/v6.0...v7.0',
     timeoutMs: 25 * 60_000,

@@ -228,19 +228,35 @@ export async function prepareVersion(
 
   await run(['bun', 'install'], { cwd: root, log });
 
-  // Workspace packages don't share a build entrypoint across branches, so
-  // build every package that declares a build script, like the apps'
-  // build:deps scripts do
+  // The monorepo builds its libraries with tsdown, driven by moon (the
+  // `tsdown` task tag runs `tsdown --clean`); there are no package.json
+  // `build` scripts to call here — moon owns building. The bench runs Next
+  // directly without moon, so it must replicate that one build step itself,
+  // otherwise no `dist/` is emitted and the Next app fails to resolve every
+  // `@pierre/*` workspace dependency (module-not-found at build time). So
+  // build every package that ships a tsdown config. tsdown emits isolated
+  // declarations, so one package's build never needs another's dist; we
+  // still build the ones with no workspace deps first to mirror moon's
+  // `^:build` dependency ordering.
   const packagesDir = join(root, 'packages');
   if (existsSync(packagesDir)) {
+    const tsdownPackages: { dir: string; workspaceDepCount: number }[] = [];
     for (const entry of new Bun.Glob('*/package.json').scanSync(packagesDir)) {
       const packageRoot = join(packagesDir, entry, '..');
+      if (!existsSync(join(packageRoot, 'tsdown.config.ts'))) {
+        continue;
+      }
       const manifest = JSON.parse(
         readFileSync(join(packagesDir, entry), 'utf8')
-      ) as { scripts?: Record<string, string> };
-      if (manifest.scripts?.build != null) {
-        await run(['bun', 'run', 'build'], { cwd: packageRoot, log });
-      }
+      ) as { dependencies?: Record<string, string> };
+      const workspaceDepCount = Object.keys(manifest.dependencies ?? {}).filter(
+        (name) => name.startsWith('@pierre/')
+      ).length;
+      tsdownPackages.push({ dir: packageRoot, workspaceDepCount });
+    }
+    tsdownPackages.sort((a, b) => a.workspaceDepCount - b.workspaceDepCount);
+    for (const pkg of tsdownPackages) {
+      await run(['bun', 'x', 'tsdown', '--clean'], { cwd: pkg.dir, log });
     }
   }
 

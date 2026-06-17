@@ -1,6 +1,6 @@
 // Thin client over the bench server's SSE feed: renders the version × diff
-// matrix, the queue/current state, the live screencast + console log, and a
-// medians table computed from the raw pass results.
+// matrix, the queue/current state, the live screencast + console log, a
+// per-cell means summary, and the full sortable run history.
 
 const matrixHead = document.querySelector('#matrix thead');
 const matrixBody = document.querySelector('#matrix tbody');
@@ -149,15 +149,11 @@ function showFrame(jpegBase64) {
   screencast.hidden = false;
 }
 
-function median(values) {
+function mean(values) {
   if (values.length === 0) {
     return undefined;
   }
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[middle]
-    : (sorted[middle - 1] + sorted[middle]) / 2;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function formatMB(value) {
@@ -171,6 +167,87 @@ function formatParse(ms) {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
+// Mean of one metric across a group's ok passes; null samples are skipped.
+function okMean(group, select) {
+  return mean(
+    group.passes
+      .filter((pass) => pass.ok)
+      .map(select)
+      .filter((value) => value != null)
+  );
+}
+
+const SUMMARY_COLUMNS = [
+  { key: 'version', label: 'version', value: (g) => g.version },
+  { key: 'diff', label: 'diff', value: (g) => g.diff },
+  { key: 'runs', label: 'runs', value: (g) => g.passes.length },
+  {
+    key: 'cpu',
+    label: 'parse CPU',
+    value: (g) => okMean(g, (pass) => pass.mainThreadMs),
+  },
+  {
+    key: 'wall',
+    label: 'parse wall',
+    value: (g) => okMean(g, (pass) => pass.parseMs),
+  },
+  {
+    key: 'peak',
+    label: 'peak MB',
+    value: (g) => okMean(g, (pass) => pass.settled?.peakMB),
+  },
+  {
+    key: 'settled',
+    label: 'settled MB',
+    value: (g) =>
+      okMean(g, (pass) =>
+        pass.settled == null ? null : pass.settled.rssMB + pass.settled.swapMB
+      ),
+  },
+  {
+    key: 'aftergc',
+    label: 'after-GC MB',
+    value: (g) =>
+      okMean(g, (pass) =>
+        pass.afterGC == null ? null : pass.afterGC.rssMB + pass.afterGC.swapMB
+      ),
+  },
+  {
+    key: 'jsheap',
+    label: 'JS heap MB',
+    value: (g) => okMean(g, (pass) => pass.afterGC?.jsHeapMB),
+  },
+  {
+    key: 'failures',
+    label: 'failures',
+    value: (g) => g.passes.filter((pass) => pass.ok === false).length,
+  },
+];
+
+// Group by diff first so the versions of one diff sit next to each other
+const summarySort = { key: 'diff', descending: false };
+
+function formatSummaryCell(column, group) {
+  const value = column.value(group);
+  if (value == null) {
+    return '—';
+  }
+  if (
+    column.key === 'version' ||
+    column.key === 'diff' ||
+    column.key === 'runs' ||
+    column.key === 'failures'
+  ) {
+    return String(value);
+  }
+  if (column.key === 'cpu' || column.key === 'wall') {
+    return formatParse(value);
+  }
+  return formatMB(value);
+}
+
+// One row per version × diff, each metric the mean over that cell's ok
+// passes, sortable by any column (same click-to-sort as the history table)
 function renderResults() {
   const groups = new Map();
   for (const result of results) {
@@ -184,58 +261,57 @@ function renderResults() {
     }
     group.passes.push(result);
   }
+
+  const headRow = document.querySelector('#results thead tr');
+  if (headRow.children.length === 0) {
+    for (const column of SUMMARY_COLUMNS) {
+      const th = document.createElement('th');
+      th.addEventListener('click', () => {
+        if (summarySort.key === column.key) {
+          summarySort.descending = !summarySort.descending;
+        } else {
+          summarySort.key = column.key;
+          summarySort.descending = true;
+        }
+        renderResults();
+      });
+      headRow.append(th);
+    }
+  }
+  for (let i = 0; i < SUMMARY_COLUMNS.length; i++) {
+    const column = SUMMARY_COLUMNS[i];
+    headRow.children[i].textContent =
+      column.key === summarySort.key
+        ? `${column.label} ${summarySort.descending ? '▼' : '▲'}`
+        : column.label;
+  }
+
+  const sortColumn = SUMMARY_COLUMNS.find((c) => c.key === summarySort.key);
+  const sorted = [...groups.values()].sort((a, b) => {
+    const left = sortColumn.value(a);
+    const right = sortColumn.value(b);
+    if (left == null && right == null) {
+      return 0;
+    }
+    if (left == null) {
+      return 1;
+    }
+    if (right == null) {
+      return -1;
+    }
+    const order = left < right ? -1 : left > right ? 1 : 0;
+    return summarySort.descending ? -order : order;
+  });
+
   resultsBody.textContent = '';
-  for (const group of groups.values()) {
-    const ok = group.passes.filter((pass) => pass.ok);
-    const failures = group.passes.length - ok.length;
+  for (const group of sorted) {
     const row = document.createElement('tr');
-    const cells = [
-      group.version,
-      group.diff,
-      String(group.passes.length),
-      formatParse(
-        median(ok.map((pass) => pass.mainThreadMs).filter((v) => v != null))
-      ),
-      formatParse(
-        median(ok.map((pass) => pass.parseMs).filter((v) => v != null))
-      ),
-      formatMB(
-        median(ok.map((pass) => pass.settled?.peakMB).filter((v) => v != null))
-      ),
-      formatMB(
-        median(
-          ok
-            .map((pass) =>
-              pass.settled == null
-                ? null
-                : pass.settled.rssMB + pass.settled.swapMB
-            )
-            .filter((v) => v != null)
-        )
-      ),
-      formatMB(
-        median(
-          ok
-            .map((pass) =>
-              pass.afterGC == null
-                ? null
-                : pass.afterGC.rssMB + pass.afterGC.swapMB
-            )
-            .filter((v) => v != null)
-        )
-      ),
-      formatMB(
-        median(
-          ok.map((pass) => pass.afterGC?.jsHeapMB).filter((v) => v != null)
-        )
-      ),
-      failures > 0
-        ? `${failures} (${group.passes.find((pass) => pass.ok === false)?.error ?? ''})`
-        : '0',
-    ];
-    for (const text of cells) {
+    if (group.passes.every((pass) => pass.ok === false)) {
+      row.className = 'run-done-fail';
+    }
+    for (const column of SUMMARY_COLUMNS) {
       const cell = document.createElement('td');
-      cell.textContent = text;
+      cell.textContent = formatSummaryCell(column, group);
       row.append(cell);
     }
     resultsBody.append(row);
