@@ -43,8 +43,12 @@ RUN ARCH=$(dpkg --print-architecture) \
 # bench shells out to moon instead of guessing each package's recipe. With no
 # .moon/toolchain.yml, moon runs task commands against the node/bun already on
 # PATH (no proto needed). Pinned to the repo's .prototools moon version.
+# xz-utils: moon ships its binary as a .tar.xz and the base image has no xz.
 ARG MOON_VERSION=2.3.3
-RUN curl -fsSL https://moonrepo.dev/install/moon.sh | bash -s -- "${MOON_VERSION}" \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends xz-utils \
+  && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL https://moonrepo.dev/install/moon.sh | bash -s -- "${MOON_VERSION}" \
   && cp /root/.moon/bin/moon /usr/local/bin/moon \
   && moon --version
 
