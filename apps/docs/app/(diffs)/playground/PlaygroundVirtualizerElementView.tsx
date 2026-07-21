@@ -10,6 +10,7 @@ import {
 } from '@pierre/diffs';
 import type { EditorOptions } from '@pierre/diffs/editor';
 import { FileDiff, useStableCallback, Virtualizer } from '@pierre/diffs/react';
+import { IconCheckboxFill, IconSquircleLg } from '@pierre/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 
@@ -219,19 +220,30 @@ function ElementVirtualizerDiff({
     }
   );
 
-  const renderHeaderMetadata = useStableCallback(() => {
+  // Must NOT be a stable callback: FileDiff invokes renderHeaderMetadata
+  // synchronously during render, but useStableCallback only refreshes its inner
+  // ref in a commit-phase insertion effect. Reading `editing` (render-phase
+  // state) through a stable wrapper would render the button one toggle behind —
+  // the header would reflect the previous `editing` value. A per-`editing`
+  // useCallback hands renderDiffChildren the current closure each toggle.
+  const renderHeaderMetadata = useCallback(() => {
     return (
-      <label className="flex cursor-pointer items-center gap-[4px] text-xs select-none">
-        <input
-          type="checkbox"
-          className="cursor-pointer"
-          checked={editing}
-          onChange={(event) => setEditing(event.target.checked)}
+      <button
+        type="button"
+        onClick={() => setEditing((current) => !current)}
+        aria-pressed={editing}
+        className="playground-edit-toggle"
+      >
+        <IconCheckboxFill
+          size={12}
+          className="playground-edit-toggle-icon-on"
         />
-        Edit
-      </label>
+        <IconSquircleLg size={12} className="playground-edit-toggle-icon-off" />
+        <span className="playground-edit-toggle-label-on">Editing</span>
+        <span className="playground-edit-toggle-label-off">Edit</span>
+      </button>
     );
-  });
+  }, [editing]);
 
   return (
     <FileDiff
