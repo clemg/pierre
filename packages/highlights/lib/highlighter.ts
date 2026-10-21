@@ -18,6 +18,7 @@ import {
   lineRecordsToTokens,
   multiThemeBlob,
   multiThemeHtmlOpeners,
+  rangeToToken,
   resolveOptionThemes,
   themeMeta,
 } from './tokens';
@@ -233,10 +234,19 @@ export class HighlightsHighlighter implements Highlighter {
     const themes = resolveOptionThemes(options);
     const cssVariablePrefix =
       options.cssVariablePrefix ?? defaultCssVariablePrefix;
-    const recs = this.tokenizeLineRecords(
-      langIdOf(options.lang),
-      this.writeInput(input)
+    const maxLineLength = options.tokenizeMaxLineLength ?? 0;
+    // Lines at or above the limit are emitted as one unstyled token, so a
+    // trailing run of them cannot affect later lines. Lex only up to the last
+    // styled line and synthesize the rest, instead of lexing code whose
+    // tokens are discarded.
+    const trailing =
+      maxLineLength > 0
+        ? trailingUnstyledLines(code, maxLineLength)
+        : undefined;
+    const inputLength = this.writeInput(
+      trailing === undefined ? input : code.slice(0, trailing.prefixEnd)
     );
+    const recs = this.tokenizeLineRecords(langIdOf(options.lang), inputLength);
     const tokens = lineRecordsToTokens(
       code,
       recs,
@@ -244,6 +254,17 @@ export class HighlightsHighlighter implements Highlighter {
       cssVariablePrefix,
       options.tokenizeMaxLineLength
     );
+    if (trailing !== undefined) {
+      // Without a styled line, the lexer output is one placeholder empty line.
+      if (!trailing.styled) tokens.length = 0;
+      for (const { start, end } of trailing.lines) {
+        tokens.push(
+          end > start
+            ? [rangeToToken(code, start, end, 0, themes, cssVariablePrefix)]
+            : []
+        );
+      }
+    }
     return { tokens, ...themeMeta(themes, cssVariablePrefix) };
   }
 
@@ -299,6 +320,55 @@ export class HighlightsHighlighter implements Highlighter {
     this.pageN = this.memory.buffer.byteLength / pageSize;
     this.buffer = new Uint8Array(this.memory.buffer);
     this.dv = new DataView(this.memory.buffer);
+  }
+}
+
+/**
+ * Split off the trailing run that `tokenizeMaxLineLength` leaves unstyled:
+ * every line after the last line whose content is shorter than `max`, plus
+ * empty lines. Returns the prefix to lex, whether that prefix has a styled
+ * line, and the trailing lines to synthesize. Undefined when nothing is
+ * skipped.
+ */
+function trailingUnstyledLines(
+  code: string,
+  max: number
+):
+  | {
+      prefixEnd: number;
+      styled: boolean;
+      lines: { start: number; end: number }[];
+    }
+  | undefined {
+  const lines: { start: number; end: number }[] = [];
+  let overlong = false;
+  let lineEnd = code.length;
+  for (;;) {
+    const start = lineEnd === 0 ? 0 : code.lastIndexOf('\n', lineEnd - 1) + 1;
+    let end = lineEnd;
+    if (lineEnd === code.length) {
+      // A final LF terminates an empty last line; it is not content.
+      if (end > start && code.charCodeAt(end - 1) === 10) {
+        end -= 1;
+        if (end > start && code.charCodeAt(end - 1) === 13) end -= 1;
+      }
+    } else if (end > start && code.charCodeAt(end - 1) === 13) {
+      // A CR directly before this line's LF is part of the terminator.
+      end -= 1;
+    }
+    if (end > start && end - start < max) {
+      if (!overlong) return undefined;
+      lines.reverse();
+      return { prefixEnd: end, styled: true, lines };
+    }
+    if (end > start) overlong = true;
+    lines.push({ start, end });
+    if (start === 0) {
+      if (!overlong) return undefined;
+      lines.reverse();
+      return { prefixEnd: 0, styled: false, lines };
+    }
+    lineEnd = start - 1;
   }
 }
 
@@ -509,6 +579,34 @@ export class StreamTokenizer extends TransformStream<
     if (this.#hl == null) throw new Error('stream has ended');
     try {
       if (this.#pendingByteLength > 0) {
+        // The buffered bytes are the unfinished last line. If the line cap
+        // collapses it to one token, nothing later can observe the lexer
+        // state, so skip the scan (the common one-line minified bundle).
+        if (
+          this.#maxLineLength !== undefined &&
+          this.#maxLineLength > 0 &&
+          this.#pendingByteLength >= this.#maxLineLength
+        ) {
+          const code =
+            this.#tail +
+            this.#pendingSurrogate +
+            dec.decode(this.#pendingBytes.subarray(0, this.#pendingByteLength));
+          if (code.length >= this.#maxLineLength) {
+            return [
+              [
+                rangeToToken(
+                  code,
+                  0,
+                  code.length,
+                  0,
+                  this.#themes,
+                  this.#cssVariablePrefix,
+                  this.#streamChar
+                ),
+              ],
+            ];
+          }
+        }
         return this.#tokenizeChunk(
           this.#pendingBytes.subarray(0, this.#pendingByteLength),
           this.#tail + this.#pendingSurrogate
@@ -519,6 +617,25 @@ export class StreamTokenizer extends TransformStream<
       if (this.#tail === '') return [[]];
       const code = this.#tail;
       this.#tail = '';
+      if (
+        this.#maxLineLength !== undefined &&
+        this.#maxLineLength > 0 &&
+        code.length >= this.#maxLineLength
+      ) {
+        return [
+          [
+            rangeToToken(
+              code,
+              0,
+              code.length,
+              0,
+              this.#themes,
+              this.#cssVariablePrefix,
+              this.#streamChar
+            ),
+          ],
+        ];
+      }
       return this.#tokenizeChunk(code);
     } finally {
       this.dispose();

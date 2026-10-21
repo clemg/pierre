@@ -640,6 +640,65 @@ void t.test('tokenizeMaxLineLength collapses overlong lines', () => {
   assert.deepEqual(streamed, tokens);
 });
 
+void t.test('tokenizeMaxLineLength skips lexing a capped stream tail', () => {
+  const longLine = 'x'.repeat(5000);
+  for (const code of [
+    longLine,
+    longLine + '\n',
+    'let a = 1;\n' + longLine + '\n' + 'y'.repeat(6000),
+  ]) {
+    const options = {
+      lang: 'ts',
+      theme: pierreDark,
+      tokenizeMaxLineLength: 1000,
+    } as const;
+    const expected = codeToTokens(code, options).tokens;
+    for (const input of [code, new TextEncoder().encode(code)]) {
+      const stream = new StreamTokenizer(options);
+      const streamed = [...stream.pushCode(input), ...stream.end()];
+      assert.deepEqual(streamed, expected);
+    }
+  }
+  // A text prefix followed by bytes keeps the prefix at the head of the line.
+  const prefix = 'let a = 1;\n' + 'x'.repeat(500);
+  const suffix = new TextEncoder().encode('y'.repeat(5000));
+  const mixed = new StreamTokenizer({
+    lang: 'ts',
+    theme: pierreDark,
+    tokenizeMaxLineLength: 1000,
+  });
+  const streamed = [
+    ...mixed.pushCode(prefix),
+    ...mixed.pushCode(suffix),
+    ...mixed.end(),
+  ];
+  assert.deepEqual(
+    streamed,
+    codeToTokens(prefix + 'y'.repeat(5000), {
+      lang: 'ts',
+      theme: pierreDark,
+      tokenizeMaxLineLength: 1000,
+    }).tokens
+  );
+  // A high surrogate split from its pair at a string/byte boundary stays
+  // before the buffered bytes, matching the normal tokenization path.
+  const dangling = 'a'.repeat(20) + '\uD800';
+  const bytes = new TextEncoder().encode('b'.repeat(20));
+  const split = new StreamTokenizer({
+    lang: 'js',
+    theme: pierreDark,
+    tokenizeMaxLineLength: 10,
+  });
+  assert.deepEqual(
+    [...split.pushCode(dangling), ...split.pushCode(bytes), ...split.end()],
+    codeToTokens(dangling + 'b'.repeat(20), {
+      lang: 'js',
+      theme: pierreDark,
+      tokenizeMaxLineLength: 10,
+    }).tokens
+  );
+});
+
 void t.test(
   'tokenizeMaxLineLength includes the exact UTF-16 limit and excludes terminators',
   () => {
@@ -674,6 +733,45 @@ void t.test(
           const stream = new StreamTokenizer(options);
           assert.deepEqual([...stream.pushCode(code), ...stream.end()], tokens);
         }
+      }
+    }
+  }
+);
+
+void t.test(
+  'tokenizeMaxLineLength skips lexing trailing unstyled lines',
+  () => {
+    // Every line at or above the limit is emitted as one unstyled token, so a
+    // trailing run of them can be synthesized without lexing the code. The
+    // full-record host splitter is the independent oracle for the output.
+    const samples = [
+      '// license\n' + 'x'.repeat(5000) + '\n',
+      'a\n' + 'x'.repeat(5000) + '\n\n\n',
+      'x'.repeat(5000) + '\na\n',
+      'a\n' + 'x'.repeat(5000) + '\n' + 'y'.repeat(6000),
+      'a\r\n' + 'x'.repeat(3000) + '\r\n',
+      'a\n' + 'x'.repeat(3000) + '\r',
+      'a\n' + ' '.repeat(3000) + '\n',
+      'a\n\n' + 'x'.repeat(3000) + '\n\nb\n',
+      'a\n' + 'x'.repeat(5000),
+    ];
+    for (const code of samples) {
+      for (const max of [1, 10, 1000, 5000]) {
+        const options = {
+          lang: 'ts',
+          theme: pierreDark,
+          tokenizeMaxLineLength: max,
+        } as const;
+        assert.deepEqual(
+          codeToTokens(code, options).tokens,
+          hostTokens(code, 'ts', max),
+          `max ${max}: ${JSON.stringify(code.slice(0, 20))}`
+        );
+        assert.deepEqual(
+          codeToTokens(new TextEncoder().encode(code), options).tokens,
+          hostTokens(code, 'ts', max),
+          `bytes max ${max}: ${JSON.stringify(code.slice(0, 20))}`
+        );
       }
     }
   }
