@@ -2092,6 +2092,100 @@ void t.test(
 );
 
 void t.test(
+  'live wasm: line descriptors are sized up front instead of doubling',
+  () => {
+    // Doubling the 32-byte descriptor table leaves every previous table in a
+    // huge-block free list that small allocations never use, so init retained
+    // tens of megabytes of dead tables on large documents.
+    interface RawLive {
+      memory: WebAssembly.Memory;
+      liveStage(len: number): number;
+      liveInitDoc(ptr: number, len: number, lang: number): void;
+      liveRun(budget: number): number;
+      liveLineCount(): number;
+      liveStats(k: number): number;
+    }
+    const env = { is_id_start: () => 1, is_id_continue: () => 1 };
+    const raw = new WebAssembly.Instance(wasmModule, { env })
+      .exports as unknown as RawLive;
+    const code = Array.from(
+      { length: 100_000 },
+      (_, i) => `const value${i} = ${i};`
+    ).join('\n');
+    const bytes = new TextEncoder().encode(code);
+    const ptr = raw.liveStage(bytes.length);
+    new Uint8Array(raw.memory.buffer).set(bytes, ptr);
+    raw.liveInitDoc(ptr, bytes.length, LANGS.ts);
+    raw.liveRun(0x7fffffff);
+    assert.equal(raw.liveLineCount(), 100_000);
+    // Growing the table by doubling used to retain about 4 MiB of dead
+    // tables here; the exact table plus a small insertion headroom keeps the
+    // whole instance under 10 MiB.
+    assert.ok(
+      raw.memory.buffer.byteLength < 10 * 1024 * 1024,
+      `retained ${raw.memory.buffer.byteLength} bytes of wasm memory`
+    );
+    assert.ok(
+      raw.liveStats(4) < 256 * 1024,
+      `retained ${raw.liveStats(4)} bytes in the free lists`
+    );
+  }
+);
+
+void t.test('live wasm: line insertions reuse the descriptor headroom', () => {
+  interface RawLive {
+    memory: WebAssembly.Memory;
+    lineCap: WebAssembly.Global;
+    lineTable: WebAssembly.Global;
+    liveStage(len: number): number;
+    liveInitDoc(ptr: number, len: number, lang: number): void;
+    liveApplyEdits(ptr: number): void;
+    liveRun(budget: number): number;
+    liveLineCount(): number;
+  }
+  const env = { is_id_start: () => 1, is_id_continue: () => 1 };
+  const raw = new WebAssembly.Instance(wasmModule, { env })
+    .exports as unknown as RawLive;
+  const enc = new TextEncoder();
+  const code = Array.from(
+    { length: 10_000 },
+    (_, i) => `const value${i} = ${i};`
+  ).join('\n');
+  const bytes = enc.encode(code);
+  const ptr = raw.liveStage(bytes.length);
+  new Uint8Array(raw.memory.buffer).set(bytes, ptr);
+  raw.liveInitDoc(ptr, bytes.length, LANGS.ts);
+  raw.liveRun(0x7fffffff);
+  const table = raw.lineTable.value;
+  const capacity = raw.lineCap.value;
+  const memory = raw.memory.buffer.byteLength;
+  const text = enc.encode('let inserted = 1;\n');
+  for (let i = 0; i < 100; i++) {
+    const staged = raw.liveStage(28 + text.length);
+    new Uint32Array(raw.memory.buffer, staged, 7).set([
+      1,
+      0,
+      0,
+      0,
+      0,
+      28,
+      text.length,
+    ]);
+    new Uint8Array(raw.memory.buffer).set(text, staged + 28);
+    raw.liveApplyEdits(staged);
+    raw.liveRun(0x7fffffff);
+  }
+  assert.equal(raw.liveLineCount(), 10_100);
+  assert.equal(raw.lineTable.value, table, 'the table moved');
+  assert.equal(raw.lineCap.value, capacity, 'the table grew');
+  assert.equal(
+    raw.memory.buffer.byteLength,
+    memory,
+    'wasm memory grew for the insertions'
+  );
+});
+
+void t.test(
   'live wasm: a shrunk staging block leaves only class-sized free blocks',
   () => {
     // The document initializer trims the staged block to the encoded length.

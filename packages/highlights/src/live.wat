@@ -1167,14 +1167,39 @@
     (i32.store8 (i32.const 1) (i32.const 3))
     (call $lvShrink (local.get $ptr) (local.get $len))
     (call $lvStateInit)
-    (global.set $lvLineCap (i32.const 0))
     (global.set $lvLineCount (i32.const 0))
     (global.set $lvGapAt (i32.const 0))
-    (global.set $lvLineTab (call $lvAlloc (i32.const 8192)))
-    (global.set $lvLineCap (i32.const 256))
+    (local.set $p (local.get $ptr))
+    (local.set $lineStart (i32.const 0))
+    (local.set $stop (i32.add (local.get $ptr) (local.get $len)))
+    ;; count the line descriptors first: growing the table by doubling leaves
+    ;; dozens of megabytes of dead tables in the size-class free lists
+    (block $countDone
+      (loop $count
+        (local.set $p
+          (call $scanFindSpecial (local.get $p) (local.get $stop) (i32.const 10) (i32.const 0) (i32.const 1)))
+        (br_if $countDone (i32.ge_u (local.get $p) (local.get $stop)))
+        (local.set $lineStart (i32.add (local.get $lineStart) (i32.const 1)))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (if
+          (i32.and
+            (i32.eq (i32.load8_u (i32.sub (local.get $p) (i32.const 1))) (i32.const 13))
+            (i32.and
+              (i32.lt_u (local.get $p) (local.get $stop))
+              (i32.eq (i32.load8_u (local.get $p)) (i32.const 10))))
+          (then (local.set $p (i32.add (local.get $p) (i32.const 1)))))
+        (br $count)))
+    ;; exact descriptors plus room for interactive insertions; small
+    ;; documents keep the old exact table so a line count stays equal to its
+    ;; capacity
+    (if (i32.ge_u (local.get $lineStart) (i32.const 1023))
+      (then (local.set $lineStart (i32.add (local.get $lineStart) (i32.const 1024)))))
+    (local.set $lineStart (i32.add (local.get $lineStart) (i32.const 1)))
+    (global.set $lvLineTab
+      (call $lvAlloc (i32.shl (local.get $lineStart) (i32.const 5))))
+    (global.set $lvLineCap (local.get $lineStart))
     (local.set $p (local.get $ptr))
     (local.set $lineStart (local.get $ptr))
-    (local.set $stop (i32.add (local.get $ptr) (local.get $len)))
     ;; every CR or LF terminates a line: CRLF as one 2-byte terminator, a
     ;; lone CR (flag bit 16) and a lone LF as 1-byte terminators
     (block $done

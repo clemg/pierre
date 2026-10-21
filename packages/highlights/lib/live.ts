@@ -137,9 +137,19 @@ const fatalDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const loneSurrogateRe =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
+/** True when a string contains a surrogate that is not part of a pair. */
+function hasLoneSurrogate(s: string): boolean {
+  // isWellFormed() is a native scan on current runtimes; the regex fallback
+  // covers engines that predate it.
+  const wellFormed = (s as { isWellFormed?: () => boolean }).isWellFormed;
+  return typeof wellFormed === 'function'
+    ? !wellFormed.call(s)
+    : loneSurrogateRe.test(s);
+}
+
 /** Encode preserving lone surrogates as 3-byte WTF-8 sequences. */
 function encodeLiveText(s: string): Uint8Array {
-  if (!loneSurrogateRe.test(s)) return enc.encode(s);
+  if (!hasLoneSurrogate(s)) return enc.encode(s);
   const out = new Uint8Array(s.length * 3);
   let w = 0;
   for (let i = 0; i < s.length; i++) {
