@@ -30,6 +30,8 @@
   (global $spanCacheMode (mut i32) (i32.const -1))
   (global $spanReserve (mut i32) (i32.const 96))
   (global $tokens (mut i32) (i32.const 0))
+  ;; mode 3 writes UTF-16 line records directly; live mode 5 keeps byte ends.
+  (global $lineRecords (mut i32) (i32.const 0))
   (global $recCarryHl (mut i32) (i32.const -1))
   (global $streaming (mut i32) (i32.const 0))
   (global $streamReset (mut i32) (i32.const 0))
@@ -313,6 +315,10 @@
   ;; Records cover the input without gaps. Each starts at the previous
   ;; record's end, or 0 for the first record.
   (func $recTok (param $hl i32) (param $rhs i32)
+    (if (global.get $lineRecords)
+      (then
+        (call $recLineTok (local.get $hl) (local.get $rhs))
+        (return)))
     (if
       (i32.and
         (i32.gt_u (global.get $out) (i32.load (i32.const 6)))
@@ -334,21 +340,36 @@
       (then
         (global.set $recCarryHl (i32.const -1))
         (return)))
-    (if (i32.ge_s (global.get $recCarryHl) (i32.const 0))
+    (if (i32.lt_s (global.get $recCarryHl) (i32.const 0))
+      (then (return)))
+    (if (global.get $lineRecords)
       (then
-        (call $ensureCap (i32.const 16))
-        (i32.store (global.get $out) (i32.const 0))
-        (i32.store offset=4 (global.get $out) (global.get $recCarryHl))
-        (global.set $out (i32.add (global.get $out) (i32.const 8))))))
+        (global.set $recOpenHl (global.get $recCarryHl))
+        (return)))
+    (call $ensureCap (i32.const 16))
+    (i32.store (global.get $out) (i32.const 0))
+    (i32.store offset=4 (global.get $out) (global.get $recCarryHl))
+    (global.set $out (i32.add (global.get $out) (i32.const 8))))
 
   (func $recStreamEnd
+    (if (global.get $lineRecords)
+      (then
+        (if (i32.ge_s (global.get $recOpenHl) (i32.const 0))
+          (then (global.set $recCarryHl (global.get $recOpenHl))))
+        (return)))
     (if (i32.gt_u (global.get $out) (i32.load (i32.const 6)))
       (then (global.set $recCarryHl (i32.load (i32.sub (global.get $out) (i32.const 4)))))))
 
-  ;; Line-aware record state for $recLinesPost: the UTF-16 end of the last
-  ;; record written and its token id, -1 after a terminator or at the start.
+  ;; Line-aware record state. $recLastEnd/$recLastHl track the last record
+  ;; written (-1 after a terminator). $recByte/$recChar map the converted byte
+  ;; cursor to its UTF-16 offset, $recNext is the next LF or non-ASCII byte,
+  ;; and $recOpenHl is the style a gap or line continuation keeps.
   (global $recLastEnd (mut i32) (i32.const 0))
   (global $recLastHl (mut i32) (i32.const -1))
+  (global $recByte (mut i32) (i32.const 0))
+  (global $recChar (mut i32) (i32.const 0))
+  (global $recNext (mut i32) (i32.const 0))
+  (global $recOpenHl (mut i32) (i32.const -1))
 
   ;; Append a line-aware `(endUtf16:u32, hl:u32)` record. Token id -1 marks a
   ;; line terminator and ends after it. Other equal neighbors merge.
@@ -416,116 +437,89 @@
         (br $wide)))
     (select (local.get $p) (global.get $eof) (i32.lt_u (local.get $p) (global.get $eof))))
 
-  ;; Convert byte-end records to line-based UTF-16 records after lexing.
-  ;; Preserve emission order because malformed input can emit backward ranges.
-  ;; ASCII records without LF need only one subtraction. Scan for the next
-  ;; LF or non-ASCII byte once per line or non-ASCII run, not per record.
-  (func $recLinesPost
-    (local $rec i32)
-    (local $oldEnd i32)
-    (local $hl i32)
+  ;; Convert the byte span [$recByte, $rhs) to line-based UTF-16 records as it
+  ;; arrives, rather than building byte records and converting them after
+  ;; lexing. Preserve emission order because malformed input can emit backward
+  ;; ranges. ASCII spans without LF need only one subtraction: scan for the
+  ;; next LF or non-ASCII byte once per line or non-ASCII run, not per record.
+  (func $recLineTok (param $hl i32) (param $rhs i32)
     (local $p i32)    ;; the next input byte to convert
-    (local $rhs i32)  ;; the record end as an address
     (local $char i32) ;; UTF-16 offset of $p
     (local $next i32) ;; the next LF or non-ASCII byte at or after $p
     (local $b i32)
     (local $step i32)
     (local $cut i32)
     (local $w v128)
-    (local $lastEnd i32) ;; $recLastEnd and $recLastHl, kept in locals between
-    (local $lastHl i32)  ;; line breaks: the per-record append below uses them
-    (local.set $rec (i32.load (i32.const 6)))
-    (local.set $oldEnd (global.get $out))
-    (global.set $out (i32.and (i32.add (local.get $oldEnd) (i32.const 15)) (i32.const -16)))
-    (i32.store (i32.const 6) (global.get $out))
-    (local.set $lastHl (i32.const -1))
-    (local.set $p (global.get $srcBase))
-    (local.set $next (call $recFindSpecial (local.get $p)))
+    (local.set $p (global.get $recByte))
+    (local.set $char (global.get $recChar))
+    (if (i32.le_u (local.get $rhs) (local.get $p)) (then (return)))
+    (local.set $next (global.get $recNext))
+    (if (i32.lt_u (local.get $next) (local.get $p))
+      (then (local.set $next (call $recFindSpecial (local.get $p)))))
     (block $done
-      (loop $records
-        (br_if $done (i32.ge_u (local.get $rec) (local.get $oldEnd)))
-        (local.set $rhs (i32.add (global.get $srcBase) (i32.load (local.get $rec))))
-        (local.set $hl (i32.load offset=4 (local.get $rec)))
-        (local.set $rec (i32.add (local.get $rec) (i32.const 8)))
-        ;; a non-forward record adds nothing
-        (br_if $records (i32.le_u (local.get $rhs) (local.get $p)))
-        (block $converted
-          (loop $bytes
-            (br_if $converted (i32.ge_u (local.get $p) (local.get $rhs)))
-            ;; the rest of the record is plain ASCII
-            (if (i32.le_u (local.get $rhs) (local.get $next))
-              (then
-                (local.set $char (i32.add (local.get $char) (i32.sub (local.get $rhs) (local.get $p))))
-                (local.set $p (local.get $rhs))
-                (br $converted)))
-            (local.set $char (i32.add (local.get $char) (i32.sub (local.get $next) (local.get $p))))
-            (local.set $p (local.get $next))
-            (local.set $b (i32.load8_u (local.get $p)))
-            (if (i32.eq (local.get $b) (i32.const 10))
-              (then
-                ;; close the line through the shared writers, which see the
-                ;; record state in the globals
-                (global.set $recLastEnd (local.get $lastEnd))
-                (global.set $recLastHl (local.get $lastHl))
-                (local.set $cut (local.get $char))
-                (if
-                  (i32.and
-                    (i32.gt_u (local.get $p) (global.get $srcBase))
-                    (i32.eq (i32.load8_u (i32.sub (local.get $p) (i32.const 1))) (i32.const 13)))
-                  (then
-                    (local.set $cut (i32.sub (local.get $cut) (i32.const 1)))
-                    (call $recLineTrim (local.get $cut))))
-                (call $recLineWrite (local.get $hl) (local.get $cut))
-                (local.set $char (i32.add (local.get $char) (i32.const 1)))
-                (local.set $p (i32.add (local.get $p) (i32.const 1)))
-                (call $recLineWrite (i32.const -1) (local.get $char))
-                (local.set $lastEnd (global.get $recLastEnd))
-                (local.set $lastHl (global.get $recLastHl)))
-              (else
-                ;; Count UTF-16 units up to the record end or the next LF, 16
-                ;; bytes per step: one per byte that is not a continuation
-                ;; byte, and one more per four-byte lead. A code point cut by
-                ;; the record end counts at its lead; its tail counts zero.
-                (loop $wide
-                  (local.set $w (v128.load (local.get $p)))
-                  (local.set $step
-                    (i32.ctz
-                      (i32.or
-                        (i8x16.bitmask (i8x16.eq (local.get $w) (i8x16.splat (i32.const 10))))
-                        (i32.const 0x10000))))
-                  (if (i32.lt_u (i32.sub (local.get $rhs) (local.get $p)) (local.get $step))
-                    (then (local.set $step (i32.sub (local.get $rhs) (local.get $p)))))
-                  (local.set $b (i32.sub (i32.shl (i32.const 1) (local.get $step)) (i32.const 1)))
-                  (local.set $char
-                    (i32.add
-                      (local.get $char)
-                      (i32.add
-                        (i32.popcnt
-                          (i32.and
-                            (local.get $b)
-                            (i8x16.bitmask (i8x16.gt_s (local.get $w) (i8x16.splat (i32.const -65))))))
-                        (i32.popcnt
-                          (i32.and
-                            (local.get $b)
-                            (i8x16.bitmask (i8x16.ge_u (local.get $w) (i8x16.splat (i32.const 0xf0)))))))))
-                  (local.set $p (i32.add (local.get $p) (local.get $step)))
-                  (br_if $wide (i32.eq (local.get $step) (i32.const 16))))))
-            (local.set $next (call $recFindSpecial (local.get $p)))
-            (br $bytes)))
-        ;; $recLineWrite for a content record, on locals: extend the open
-        ;; record when the token id matches, else append one
-        (if (i32.gt_u (local.get $char) (local.get $lastEnd))
+      (loop $bytes
+        (br_if $done (i32.ge_u (local.get $p) (local.get $rhs)))
+        ;; the rest of the span is plain ASCII
+        (if (i32.le_u (local.get $rhs) (local.get $next))
           (then
-            (if (i32.eq (local.get $hl) (local.get $lastHl))
-              (then (i32.store (i32.sub (global.get $out) (i32.const 8)) (local.get $char)))
-              (else
-                (call $ensureCap (i32.const 16))
-                (i32.store (global.get $out) (local.get $char))
-                (i32.store offset=4 (global.get $out) (local.get $hl))
-                (global.set $out (i32.add (global.get $out) (i32.const 8)))
-                (local.set $lastHl (local.get $hl))))
-            (local.set $lastEnd (local.get $char))))
-        (br $records))))
+            (local.set $char (i32.add (local.get $char) (i32.sub (local.get $rhs) (local.get $p))))
+            (local.set $p (local.get $rhs))
+            (br $done)))
+        (local.set $char (i32.add (local.get $char) (i32.sub (local.get $next) (local.get $p))))
+        (local.set $p (local.get $next))
+        (local.set $b (i32.load8_u (local.get $p)))
+        (if (i32.eq (local.get $b) (i32.const 10))
+          (then
+            (local.set $cut (local.get $char))
+            (if
+              (i32.and
+                (i32.gt_u (local.get $p) (global.get $srcBase))
+                (i32.eq (i32.load8_u (i32.sub (local.get $p) (i32.const 1))) (i32.const 13)))
+              (then
+                (local.set $cut (i32.sub (local.get $cut) (i32.const 1)))
+                (call $recLineTrim (local.get $cut))))
+            (call $recLineWrite (local.get $hl) (local.get $cut))
+            (local.set $char (i32.add (local.get $char) (i32.const 1)))
+            (local.set $p (i32.add (local.get $p) (i32.const 1)))
+            (call $recLineWrite (i32.const -1) (local.get $char)))
+          (else
+            ;; Count UTF-16 units up to the span end or the next LF, 16
+            ;; bytes per step: one per byte that is not a continuation
+            ;; byte, and one more per four-byte lead. A code point cut by
+            ;; the span end counts at its lead; its tail counts zero.
+            (loop $wide
+              (local.set $w (v128.load (local.get $p)))
+              (local.set $step
+                (i32.ctz
+                  (i32.or
+                    (i8x16.bitmask (i8x16.eq (local.get $w) (i8x16.splat (i32.const 10))))
+                    (i32.const 0x10000))))
+              (if (i32.lt_u (i32.sub (local.get $rhs) (local.get $p)) (local.get $step))
+                (then (local.set $step (i32.sub (local.get $rhs) (local.get $p)))))
+              (local.set $b (i32.sub (i32.shl (i32.const 1) (local.get $step)) (i32.const 1)))
+              (local.set $char
+                (i32.add
+                  (local.get $char)
+                  (i32.add
+                    (i32.popcnt
+                      (i32.and
+                        (local.get $b)
+                        (i8x16.bitmask (i8x16.gt_s (local.get $w) (i8x16.splat (i32.const -65))))))
+                    (i32.popcnt
+                      (i32.and
+                        (local.get $b)
+                        (i8x16.bitmask (i8x16.ge_u (local.get $w) (i8x16.splat (i32.const 0xf0)))))))))
+              (local.set $p (i32.add (local.get $p) (local.get $step)))
+              (br_if $wide (i32.eq (local.get $step) (i32.const 16))))))
+        (local.set $next (call $recFindSpecial (local.get $p)))
+        (br $bytes)))
+    ;; extend the open record when the token id matches, else append one
+    (if (i32.gt_u (local.get $char) (global.get $recLastEnd))
+      (then (call $recLineWrite (local.get $hl) (local.get $char))))
+    (global.set $recByte (local.get $rhs))
+    (global.set $recChar (local.get $char))
+    (global.set $recNext (local.get $next))
+    (global.set $recOpenHl (local.get $hl)))
 
   ;; emit the token bytes [$lhs,$rhs) styled as $hl
   (func $emitTok (param $hl i32) (param $lhs i32) (param $rhs i32)
@@ -555,7 +549,17 @@
       (then (return)))
     (if (global.get $tokens)
       (then
-        ;; a gap keeps the open record's style, mirroring HTML span merging
+        (if (global.get $lineRecords)
+          (then
+            ;; a gap keeps the open span's style, mirroring HTML span merging
+            (call $recLineTok
+              (select
+                (global.get $recOpenHl)
+                (enum.get $Token.none)
+                (i32.ge_s (global.get $recOpenHl) (i32.const 0)))
+              (local.get $rhs))
+            (return)))
+        ;; byte records: extend the previous record or start a plain one
         (if (i32.gt_u (global.get $out) (i32.load (i32.const 6)))
           (then
             (i32.store
@@ -977,7 +981,10 @@
     (local $offset i32)
     (local $changed v128)
     (global.set $cssVariables (i32.eq (i32.load8_u (i32.const 1)) (i32.const 1)))
-    (global.set $tokens (i32.eq (i32.load8_u (i32.const 1)) (i32.const 3)))
+    (global.set $lineRecords (i32.eq (i32.load8_u (i32.const 1)) (i32.const 3)))
+    (global.set $tokens
+      (i32.or (global.get $lineRecords)
+        (i32.eq (i32.load8_u (i32.const 1)) (i32.const 5))))
     (global.set $htmlOpeners
       (select (i32.load (i32.const 14)) (i32.const 0)
         (i32.eq (i32.load8_u (i32.const 1)) (i32.const 4))))
@@ -987,6 +994,13 @@
     (global.set $eof (i32.add (global.get $srcBase) (i32.load (i32.const 2))))
     (global.set $end (global.get $eof))
     (global.set $ptr (global.get $srcBase))
+    ;; Each call converts from the start of its own input chunk.
+    (global.set $recByte (global.get $srcBase))
+    (global.set $recChar (i32.const 0))
+    (global.set $recNext (i32.const 0))
+    (global.set $recLastEnd (i32.const 0))
+    (global.set $recLastHl (i32.const -1))
+    (global.set $recOpenHl (i32.const -1))
     (global.set $out (i32.and (i32.add (global.get $eof) (i32.const 47)) (i32.const -16)))
     ;; The prefix or theme blob sits before the output.
     (if (i32.or (global.get $cssVariables) (global.get $themeBlob))
@@ -1081,7 +1095,5 @@
   (func $hlEnd
     (if (i32.eqz (global.get $tokens))
       (then (call $epilogue)))
-    (if (global.get $tokens)
-      (then (call $recLinesPost)))
     (i32.store (i32.const 10) (i32.sub (global.get $out) (i32.load (i32.const 6)))))
 )

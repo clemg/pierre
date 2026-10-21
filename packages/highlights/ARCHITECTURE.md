@@ -136,14 +136,16 @@ such as a `#!` line or front matter applies there too.
 
 ## Token records
 
-Mode 3 first emits `(endByte: u32, tokenId: u32)` pairs. Each record starts at
-the previous end, or zero for the first record. After the scan, `$recLinesPost`
-converts the pairs to `(endUtf16: u32, tokenId: u32)` and splits them at LF/CRLF
-boundaries.
+Mode 3 emits `(endUtf16: u32, tokenId: u32)` pairs directly during the scan and
+splits them at LF/CRLF boundaries. Each record starts at the previous end, or
+zero for the first record. ID `0xffffffff` marks a line terminator. That record
+ends after the terminator.
 
 The conversion scans the input for line breaks and non-ASCII bytes once. A plain
-ASCII record needs one subtraction. ID `0xffffffff` marks a line terminator.
-That record ends after the terminator.
+ASCII record needs one subtraction. Emitting line records directly avoids a
+second array: for minified input the old byte-record array was as large as the
+records it produced. The live tokenizer uses internal mode 5, which keeps byte
+ends because it converts and interns each line separately.
 
 `lineRecordsToTokens` splits the source string into one `ThemedToken` array per
 line. The arrays exclude line terminators. Offsets for complete input and

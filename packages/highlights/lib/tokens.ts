@@ -407,6 +407,89 @@ function lightDarkStyle(
   return htmlStyle;
 }
 
+/**
+ * Token constructors. Assigning `Object.prototype` as the prototype keeps the
+ * results plain objects for `deepEqual`, `JSON`, and prototype checks, while
+ * giving the engine one fixed allocation shape per token kind. That is faster
+ * than literals plus a conditional `type` property on large inputs.
+ */
+type TokenCtor = new (
+  content: string,
+  offset: number,
+  color: string | undefined,
+  fontStyle: number
+) => ThemedToken;
+type TypedTokenCtor = new (
+  content: string,
+  offset: number,
+  color: string | undefined,
+  fontStyle: number,
+  type: number
+) => ThemedToken;
+type HtmlTokenCtor = new (
+  content: string,
+  offset: number,
+  htmlStyle: Record<string, string>
+) => ThemedToken;
+type HtmlTypedTokenCtor = new (
+  content: string,
+  offset: number,
+  htmlStyle: Record<string, string>,
+  type: number
+) => ThemedToken;
+
+const Token = function (
+  this: ThemedToken,
+  content: string,
+  offset: number,
+  color: string | undefined,
+  fontStyle: number
+) {
+  this.content = content;
+  this.offset = offset;
+  this.color = color;
+  this.fontStyle = fontStyle;
+} as unknown as TokenCtor;
+const TypedToken = function (
+  this: ThemedToken,
+  content: string,
+  offset: number,
+  color: string | undefined,
+  fontStyle: number,
+  type: number
+) {
+  this.content = content;
+  this.offset = offset;
+  this.color = color;
+  this.fontStyle = fontStyle;
+  this.type = type;
+} as unknown as TypedTokenCtor;
+const HtmlToken = function (
+  this: ThemedToken,
+  content: string,
+  offset: number,
+  htmlStyle: Record<string, string>
+) {
+  this.content = content;
+  this.offset = offset;
+  this.htmlStyle = htmlStyle;
+} as unknown as HtmlTokenCtor;
+const HtmlTypedToken = function (
+  this: ThemedToken,
+  content: string,
+  offset: number,
+  htmlStyle: Record<string, string>,
+  type: number
+) {
+  this.content = content;
+  this.offset = offset;
+  this.htmlStyle = htmlStyle;
+  this.type = type;
+} as unknown as HtmlTypedTokenCtor;
+for (const ctor of [Token, TypedToken, HtmlToken, HtmlTypedToken]) {
+  (ctor as unknown as { prototype: object }).prototype = Object.prototype;
+}
+
 /** Convert UTF-16 token records with `0xffffffff` line markers to tokens. */
 export function lineRecordsToTokens(
   code: string,
@@ -421,6 +504,15 @@ export function lineRecordsToTokens(
   const { styles, fg, role } = themes[0];
   const htmlStyles =
     role === 'single' ? undefined : themeHtmlStyles(themes, cssVariablePrefix);
+  // Resolve each token id's style once for the whole call.
+  const colors = new Array<string | undefined>(standardTypes.length);
+  const fonts = new Uint8Array(standardTypes.length);
+  for (let hl = 0; hl < standardTypes.length; hl++) {
+    const style = styles[hl];
+    colors[hl] = style?.color ?? fg;
+    fonts[hl] =
+      (style?.italic === true ? 1 : 0) | ((style?.weight ?? 0) >= 600 ? 2 : 0);
+  }
   let start = 0;
   for (let rec = 0; ; rec += 2) {
     const first = rec;
@@ -446,27 +538,23 @@ export function lineRecordsToTokens(
         const end = recs[at];
         if (end > start) {
           const hl = recs[at + 1];
+          const type = standardTypes[hl];
+          const content = code.slice(start, end);
+          const offset = start + offsetBase;
           let token: ThemedToken;
           if (htmlStyles === undefined) {
-            const style = styles[hl];
-            token = {
-              content: code.slice(start, end),
-              offset: start + offsetBase,
-              color: style?.color ?? fg,
-              fontStyle:
-                (style?.italic === true ? 1 : 0) |
-                ((style?.weight ?? 0) >= 600 ? 2 : 0),
-            };
+            token =
+              type === 0
+                ? new Token(content, offset, colors[hl], fonts[hl])
+                : new TypedToken(content, offset, colors[hl], fonts[hl], type);
           } else {
-            token = {
-              content: code.slice(start, end),
-              offset: start + offsetBase,
-              htmlStyle:
-                htmlStyles[hl] ?? themeHtmlStyle(themes, hl, cssVariablePrefix),
-            };
+            const htmlStyle =
+              htmlStyles[hl] ?? themeHtmlStyle(themes, hl, cssVariablePrefix);
+            token =
+              type === 0
+                ? new HtmlToken(content, offset, htmlStyle)
+                : new HtmlTypedToken(content, offset, htmlStyle, type);
           }
-          const type = standardTypes[hl];
-          if (type !== 0) token.type = type;
           line[count++] = token;
           start = end;
         }

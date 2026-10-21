@@ -4,7 +4,8 @@
     [] page 1         (control, static data, and scratch)
       [0]             language id (u8)
       [1]             output mode (u8): 0 inline colors, 1 CSS variables,
-                      2 packed theme set, 3 UTF-16 line records, 4 HTML openers
+                      2 packed theme set, 3 UTF-16 line records, 4 HTML openers,
+                      5 byte records for the live tokenizer
       [2:6)           input length (u32 LE)
       [6:10)          output start (u32 LE)
       [10:14)         output length (u32 LE)
